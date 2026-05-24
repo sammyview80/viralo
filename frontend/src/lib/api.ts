@@ -186,6 +186,7 @@ export interface VideoResponse {
   storage_url: string | null;
   thumbnail_url: string | null;
   duration_sec: number | null;
+  celery_task_id: string | null;
   created_at: string;
 }
 
@@ -194,6 +195,11 @@ export interface VideoListResponse {
   total: number;
   page: number;
   per_page: number;
+}
+
+export interface ClipPlatformContent {
+  description: string;
+  tags: string[];
 }
 
 export interface ClipApiResponse {
@@ -209,23 +215,47 @@ export interface ClipApiResponse {
   storage_url: string | null;
   thumbnail_url: string | null;
   caption_srt: string | null;
+  clip_metadata: {
+    ai_title?: string;
+    platforms?: Record<string, ClipPlatformContent>;
+  } | null;
   created_at: string;
 }
 
+export interface ClipConfig {
+  language?: string;
+  max_clips?: number;
+  min_score?: number;
+  platforms?: string[];
+  topic_focus?: string | null;
+  add_captions?: boolean;
+  caption_style?: string;
+  aspect_ratio?: string;
+  duration_max?: number;
+  duration_min?: number;
+  output_quality?: "source" | "1080p" | "720p" | "480p";
+}
+
 export const videoApi = {
-  upload: (file: File, title: string) => {
+  upload: (file: File, title: string, config?: ClipConfig) => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("title", title);
+    if (config) fd.append("config", JSON.stringify(config));
     return videoReq<VideoResponse>("POST", "/video/upload", fd);
   },
-  youtube: (url: string, title?: string) =>
-    videoReq<VideoResponse>("POST", "/video/youtube", { url, ...(title ? { title } : {}) }),
+  youtube: (url: string, title?: string, config?: ClipConfig) =>
+    videoReq<VideoResponse>("POST", "/video/youtube", {
+      url,
+      ...(title ? { title } : {}),
+      ...(config ? { config } : {}),
+    }),
   get:     (id: string) => videoReq<VideoResponse>("GET", `/videos/${id}`),
   list:    (page = 1, per_page = 20) =>
     videoReq<VideoListResponse>("GET", `/videos?page=${page}&per_page=${per_page}`),
   clips:   (videoId: string) =>
     videoReq<ClipApiResponse[]>("GET", `/clips?video_id=${videoId}`),
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),
-  retry:   (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
+  retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
+  fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
 };

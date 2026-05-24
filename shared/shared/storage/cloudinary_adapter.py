@@ -11,8 +11,12 @@ class CloudinaryAdapter(StorageAdapter):
 
     async def upload(self, data, path: str, content_type: str = "video/mp4") -> str:
         content = data if isinstance(data, bytes) else data.read()
+        # Strip file extension from public_id — Cloudinary appends it automatically
+        import os as _os
+        public_id = _os.path.splitext(path)[0]
+        resource_type = "image" if content_type.startswith("image/") else "video"
         result = cloudinary.uploader.upload(
-            content, public_id=path, resource_type="video", overwrite=True
+            content, public_id=public_id, resource_type=resource_type, overwrite=True
         )
         return result["secure_url"]
 

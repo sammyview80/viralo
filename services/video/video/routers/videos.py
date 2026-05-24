@@ -21,6 +21,8 @@ from video.schemas import (
     VideoResponse,
     VideoUpdateRequest,
     YouTubeImportRequest,
+    YouTubeInspectRequest,
+    YouTubeInspectResponse,
 )
 
 router = APIRouter(tags=["video"])
@@ -38,6 +40,92 @@ def _get_celery():
 # ---------------------------------------------------------------------------
 # Upload & import
 # ---------------------------------------------------------------------------
+
+@router.post("/video/youtube/inspect", response_model=YouTubeInspectResponse)
+async def inspect_youtube(
+    body: YouTubeInspectRequest,
+    token: TokenPayload = Depends(get_current_user),
+):
+    import re
+    import subprocess
+
+    url = body.url.strip()
+
+    # Validate it's a YouTube URL
+    yt_pattern = re.compile(
+        r"(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})"
+    )
+    match = yt_pattern.search(url)
+    if not match:
+        return YouTubeInspectResponse(valid=False, url=url, error="Not a valid YouTube URL")
+
+    video_id = match.group(1)
+
+    try:
+        result = subprocess.run(
+            [
+                "yt-dlp",
+                "--no-download",
+                "--dump-json",
+                "--no-playlist",
+                "--extractor-args", "youtube:player_client=android",
+                "--no-check-certificate",
+                url,
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            # Try without extractor args as fallback
+            result = subprocess.run(
+                ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", url],
+                capture_output=True, text=True, timeout=30,
+            )
+        if result.returncode != 0 or not result.stdout.strip():
+            return YouTubeInspectResponse(
+                valid=False, url=url, video_id=video_id,
+                error=result.stderr.strip()[:300] or "yt-dlp returned no data",
+            )
+
+        import json as _json
+        data = _json.loads(result.stdout.strip().splitlines()[0])
+
+        duration = data.get("duration")
+        upload_raw = data.get("upload_date", "")
+        upload_date = (
+            f"{upload_raw[:4]}-{upload_raw[4:6]}-{upload_raw[6:]}"
+            if len(upload_raw) == 8 else upload_raw
+        )
+
+        # Best thumbnail: prefer maxresdefault or largest
+        thumbnails = data.get("thumbnails", [])
+        thumb_url = data.get("thumbnail")
+        if thumbnails:
+            best = max(
+                (t for t in thumbnails if t.get("url")),
+                key=lambda t: (t.get("width", 0) or 0),
+                default=None,
+            )
+            if best:
+                thumb_url = best["url"]
+
+        return YouTubeInspectResponse(
+            valid=True,
+            url=url,
+            video_id=video_id,
+            title=data.get("title"),
+            channel=data.get("uploader") or data.get("channel"),
+            duration_sec=int(duration) if duration else None,
+            thumbnail_url=thumb_url,
+            view_count=data.get("view_count"),
+            upload_date=upload_date or None,
+            description=(data.get("description") or "")[:500] or None,
+        )
+
+    except subprocess.TimeoutExpired:
+        return YouTubeInspectResponse(valid=False, url=url, video_id=video_id, error="Metadata fetch timed out")
+    except Exception as exc:
+        return YouTubeInspectResponse(valid=False, url=url, video_id=video_id, error=str(exc)[:300])
+
 
 @router.post("/video/upload", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_video(
@@ -251,6 +339,70 @@ async def update_video(
     return VideoResponse.model_validate(video)
 
 
+@router.post("/videos/{video_id}/fetch-metadata", response_model=VideoResponse)
+async def fetch_video_metadata(
+    video_id: uuid.UUID,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Fetch title + thumbnail from YouTube and patch the video record."""
+    import re, subprocess, json as _json
+
+    result = await db.execute(
+        select(Video).where(Video.id == video_id, Video.status != "deleted")
+    )
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found.")
+    if video.source_type != "youtube_url" or not video.source_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a YouTube video.")
+
+    url = video.source_url.strip()
+    try:
+        proc = subprocess.run(
+            ["yt-dlp", "--no-download", "--dump-json", "--no-playlist",
+             "--extractor-args", "youtube:player_client=android",
+             "--no-check-certificate", url],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            proc = subprocess.run(
+                ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", url],
+                capture_output=True, text=True, timeout=30,
+            )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                                detail=proc.stderr.strip()[:300] or "yt-dlp returned no data")
+
+        data = _json.loads(proc.stdout.strip().splitlines()[0])
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Metadata fetch timed out")
+
+    title = data.get("title")
+    thumbnails = data.get("thumbnails", [])
+    thumb_url = data.get("thumbnail")
+    if thumbnails:
+        best = max(
+            (t for t in thumbnails if t.get("url")),
+            key=lambda t: (t.get("width", 0) or 0),
+            default=None,
+        )
+        if best:
+            thumb_url = best["url"]
+    duration = data.get("duration")
+
+    if title:
+        video.title = title
+    if thumb_url:
+        video.thumbnail_url = thumb_url
+    if duration and not video.duration_sec:
+        video.duration_sec = int(duration)
+
+    await db.commit()
+    await db.refresh(video)
+    return VideoResponse.model_validate(video)
+
+
 @router.delete("/videos/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_video(
     video_id: uuid.UUID,
@@ -293,6 +445,40 @@ async def delete_video(
     await db.commit()
 
 
+@router.post("/videos/{video_id}/cancel", response_model=VideoResponse)
+async def cancel_video(
+    video_id: uuid.UUID,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    result = await db.execute(
+        select(Video).where(Video.id == video_id, Video.status != "deleted")
+    )
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found.")
+
+    if video.status not in ("queued", "processing"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot cancel a video with status '{video.status}'. Only queued/processing videos can be cancelled.",
+        )
+
+    # Revoke Celery task — terminate=True sends SIGTERM to the worker process
+    if video.celery_task_id:
+        try:
+            celery_app = _get_celery()
+            celery_app.control.revoke(video.celery_task_id, terminate=True, signal="SIGTERM")
+        except Exception:
+            pass  # Worker may already be done; DB update is the source of truth
+
+    video.status = "cancelled"
+    video.pipeline_step = "cancelled"
+    await db.commit()
+    await db.refresh(video)
+    return VideoResponse.model_validate(video)
+
+
 @router.post("/videos/{video_id}/retry", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
 async def retry_video(
     video_id: uuid.UUID,
@@ -305,10 +491,10 @@ async def retry_video(
     video = result.scalar_one_or_none()
     if not video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found.")
-    if video.status != "failed":
+    if video.status not in ("failed", "cancelled"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot retry a video with status '{video.status}'. Only 'failed' videos can be retried.",
+            detail=f"Cannot retry a video with status '{video.status}'. Only failed/cancelled videos can be retried.",
         )
 
     tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id

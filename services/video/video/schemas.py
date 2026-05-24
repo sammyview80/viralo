@@ -4,15 +4,34 @@ from pydantic import BaseModel, Field
 
 
 class ClipConfig(BaseModel):
+    # Clip boundaries
     duration_min: int = Field(default=15, ge=5, le=300, description="Min clip length in seconds")
     duration_max: int = Field(default=60, ge=10, le=600, description="Max clip length in seconds")
-    aspect_ratio: Literal["9:16", "1:1", "16:9", "4:5"] = "9:16"
-    platforms: list[Literal["tiktok", "reels", "shorts", "twitter", "linkedin"]] = ["tiktok", "reels", "shorts"]
-    max_clips: int = Field(default=10, ge=1, le=30)
-    min_score: float = Field(default=0.5, ge=0.0, le=1.0, description="AI virality score threshold")
-    language: str = Field(default="en", description="Transcript language hint")
-    add_captions: bool = True
-    topic_focus: str | None = Field(default=None, description="Optional topic to focus clips on")
+    max_clips: int = Field(default=5, ge=1, le=30, description="Max number of clips to generate")
+
+    # Output format
+    aspect_ratio: Literal["9:16", "1:1", "16:9", "4:5"] = Field(default="9:16", description="Output aspect ratio")
+    platforms: list[Literal["tiktok", "reels", "shorts", "twitter", "linkedin"]] = Field(
+        default=["tiktok", "reels", "shorts"], description="Target platforms for clip labelling"
+    )
+
+    # AI scoring
+    min_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Min virality score 0-1 (0.5 = balanced, 0.8 = viral only)")
+
+    # Captions
+    add_captions: bool = Field(default=True, description="Burn captions into clip")
+    caption_style: Literal["capcut", "capcut-bold", "classic", "minimal"] = Field(
+        default="capcut", description="Caption visual style"
+    )
+
+    # Output quality
+    output_quality: Literal["source", "1080p", "720p", "480p"] = Field(
+        default="1080p", description="Output resolution cap (source = no downscale)"
+    )
+
+    # Content
+    language: str = Field(default="en", description="Spoken language (en, es, fr, ...)")
+    topic_focus: str | None = Field(default=None, description="Guide AI to focus on specific topic")
 
 
 class VideoResponse(BaseModel):
@@ -26,6 +45,7 @@ class VideoResponse(BaseModel):
     thumbnail_url: str | None
     duration_sec: int | None
     clip_config: dict | None = None
+    celery_task_id: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
 
@@ -43,6 +63,7 @@ class ClipResponse(BaseModel):
     storage_url: str | None
     thumbnail_url: str | None
     caption_srt: str | None
+    clip_metadata: dict | None = None
     created_at: Any
     model_config = {"from_attributes": True}
 
@@ -63,3 +84,21 @@ class YouTubeImportRequest(BaseModel):
 class VideoUpdateRequest(BaseModel):
     title: str | None = None
     topic: str | None = None
+
+
+class YouTubeInspectRequest(BaseModel):
+    url: str
+
+
+class YouTubeInspectResponse(BaseModel):
+    valid: bool
+    url: str
+    video_id: str | None = None
+    title: str | None = None
+    channel: str | None = None
+    duration_sec: int | None = None
+    thumbnail_url: str | None = None
+    view_count: int | None = None
+    upload_date: str | None = None
+    description: str | None = None
+    error: str | None = None
