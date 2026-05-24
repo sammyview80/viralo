@@ -26,7 +26,7 @@ const PLATFORMS = [
     icon: "▶",
     color: "text-red-400",
     quota: "~6 uploads/day",
-    oauth_url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${YOUTUBE_CLIENT_ID}&redirect_uri=${REDIRECT}&response_type=code&scope=https://www.googleapis.com/auth/youtube.upload&access_type=offline`,
+    oauth_url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${YOUTUBE_CLIENT_ID}&redirect_uri=${REDIRECT}&response_type=code&scope=https://www.googleapis.com/auth/youtube.upload&access_type=offline&state=youtube`,
   },
   {
     id: "instagram",
@@ -34,7 +34,7 @@ const PLATFORMS = [
     icon: "📸",
     color: "text-purple-400",
     quota: "25 posts/day",
-    oauth_url: `https://api.instagram.com/oauth/authorize?client_id=${IG_CLIENT_ID}&redirect_uri=${REDIRECT}&scope=instagram_content_publish&response_type=code`,
+    oauth_url: `https://api.instagram.com/oauth/authorize?client_id=${IG_CLIENT_ID}&redirect_uri=${REDIRECT}&scope=instagram_content_publish&response_type=code&state=instagram`,
   },
   {
     id: "tiktok",
@@ -42,7 +42,7 @@ const PLATFORMS = [
     icon: "♪",
     color: "text-rose-400",
     quota: "25 videos/day",
-    oauth_url: `https://www.tiktok.com/v2/auth/authorize/?client_key=${TIKTOK_KEY}&scope=video.publish&response_type=code&redirect_uri=${REDIRECT}`,
+    oauth_url: `https://www.tiktok.com/v2/auth/authorize/?client_key=${TIKTOK_KEY}&scope=video.publish&response_type=code&redirect_uri=${REDIRECT}&state=tiktok`,
   },
   {
     id: "twitter",
@@ -50,7 +50,7 @@ const PLATFORMS = [
     icon: "✕",
     color: "text-sky-400",
     quota: "34 posts/day",
-    oauth_url: `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${TWITTER_KEY}&redirect_uri=${REDIRECT}&scope=tweet.write%20users.read%20media.write&code_challenge=challenge&code_challenge_method=plain`,
+    oauth_url: `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${TWITTER_KEY}&redirect_uri=${REDIRECT}&scope=tweet.write%20users.read%20media.write&code_challenge=challenge&code_challenge_method=plain&state=twitter`,
   },
   {
     id: "linkedin",
@@ -58,7 +58,7 @@ const PLATFORMS = [
     icon: "in",
     color: "text-blue-400",
     quota: "—",
-    oauth_url: `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${LI_CLIENT_ID}&redirect_uri=${REDIRECT}&scope=w_member_social`,
+    oauth_url: `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${LI_CLIENT_ID}&redirect_uri=${REDIRECT}&scope=w_member_social&state=linkedin`,
   },
   {
     id: "facebook",
@@ -66,7 +66,7 @@ const PLATFORMS = [
     icon: "f",
     color: "text-indigo-400",
     quota: "200 calls/hr",
-    oauth_url: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${REDIRECT}&scope=pages_manage_posts,pages_read_engagement`,
+    oauth_url: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${REDIRECT}&scope=pages_manage_posts,pages_read_engagement&state=facebook`,
   },
 ];
 

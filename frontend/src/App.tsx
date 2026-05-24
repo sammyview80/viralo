@@ -4,6 +4,7 @@ import { routeToPage, WorkspacePage } from "@/components/workspace-pages";
 import { LoginPage } from "@/app/auth/LoginPage";
 import { RegisterPage } from "@/app/auth/RegisterPage";
 import { OnboardingPage } from "@/workspace/pages/OnboardingPage";
+import { OAuthCallbackPage } from "@/workspace/pages/OAuthCallbackPage";
 import { useAuth, hydrate } from "@/stores/auth";
 import { usePathname } from "@/lib/router";
 
@@ -37,8 +38,9 @@ export default function App() {
   }
 
   /* ── Auth pages ── */
-  if (path === "/login")    return <LoginPage />;
-  if (path === "/register") return <RegisterPage />;
+  if (path === "/login")         return <LoginPage />;
+  if (path === "/register")      return <RegisterPage />;
+  if (path === "/oauth/callback") return <OAuthCallbackPage />;
 
   /* ── Unauthenticated guard ── */
   if (!user) {
