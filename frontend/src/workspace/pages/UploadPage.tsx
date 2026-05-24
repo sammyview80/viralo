@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Shell } from "../Shell";
-import { videoApi, type VideoResponse, type ClipApiResponse, type ClipConfig } from "@/lib/api";
+import { videoApi, platformApi, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount } from "@/lib/api";
 
 /* ─── Types ─── */
 type Source = "file" | "yt";
@@ -604,6 +604,103 @@ function pipelineStepIdx(step: string | null): number {
   return idx >= 0 ? idx : 0;
 }
 
+/* ─── Social connect banner shown during processing ─── */
+const SOCIAL_PLATFORMS = [
+  { id: "youtube",   label: "YouTube",   icon: "▶", color: "bg-red-500" },
+  { id: "instagram", label: "Instagram", icon: "◎", color: "bg-gradient-to-br from-fuchsia-500 to-orange-400" },
+  { id: "tiktok",    label: "TikTok",    icon: "♪", color: "bg-zinc-900" },
+  { id: "twitter",   label: "Twitter/X", icon: "𝕏", color: "bg-zinc-100 text-zinc-900" },
+  { id: "linkedin",  label: "LinkedIn",  icon: "in", color: "bg-blue-700" },
+  { id: "facebook",  label: "Facebook",  icon: "f",  color: "bg-blue-600" },
+];
+
+function SocialConnectBanner() {
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    platformApi.listAccounts()
+      .then(setAccounts)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+
+  const connectedIds = new Set(accounts.filter((a) => a.is_active).map((a) => a.platform));
+  const unconnected = SOCIAL_PLATFORMS.filter((p) => !connectedIds.has(p.id));
+
+  if (unconnected.length === 0) {
+    return (
+      <div className="mt-6 rounded-[13px] border border-emerald-300/15 bg-emerald-400/[.04] p-4">
+        <div className="flex items-center gap-3">
+          <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-emerald-300/25 bg-emerald-400/10 text-emerald-300 text-sm">✓</div>
+          <div>
+            <div className="text-[13px] font-semibold text-emerald-300">All platforms connected</div>
+            <div className="text-[11.5px] text-zinc-500">Clips will be ready to publish when processing completes.</div>
+          </div>
+          <a href="/integrations" className="ml-auto text-[11.5px] font-semibold text-zinc-400 transition hover:text-white">Manage →</a>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {accounts.filter((a) => a.is_active).map((a) => {
+            const plat = SOCIAL_PLATFORMS.find((p) => p.id === a.platform);
+            return (
+              <span key={a.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1 text-[11px] font-semibold text-zinc-300">
+                <span className={cn("inline-grid h-4 w-4 place-items-center rounded-[3px] text-[8px] font-black text-white", plat?.color ?? "bg-zinc-700")}>{plat?.icon}</span>
+                {a.platform_username ?? a.platform}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 rounded-[13px] border border-[#ff3d6a]/15 bg-[#ff3d6a]/[.04] p-4" style={{ animation: "fadeUp .3s .4s cubic-bezier(.22,.8,.4,1) both" }}>
+      <div className="flex items-start gap-3">
+        <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a] text-sm">↗</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-semibold">Connect social accounts while you wait</div>
+          <div className="mt-0.5 text-[11.5px] text-zinc-500">
+            {connectedIds.size > 0
+              ? `${connectedIds.size} connected · connect more to publish clips instantly`
+              : "Your clips will be ready soon — connect accounts to publish with one click"}
+          </div>
+        </div>
+        <a href="/integrations"
+          className="ml-auto flex-none rounded-[8px] border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-3 py-1.5 text-[12px] font-semibold text-[#ff3d6a] transition hover:bg-[#ff3d6a]/20">
+          Connect →
+        </a>
+      </div>
+
+      {connectedIds.size > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {accounts.filter((a) => a.is_active).map((a) => {
+            const plat = SOCIAL_PLATFORMS.find((p) => p.id === a.platform);
+            return (
+              <span key={a.id} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+                <span className={cn("inline-grid h-3.5 w-3.5 place-items-center rounded-[2px] text-[7px] font-black text-white", plat?.color ?? "bg-zinc-700")}>{plat?.icon}</span>
+                {a.platform_username ?? a.platform}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {unconnected.map((p) => (
+          <a key={p.id} href="/integrations"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[11px] font-semibold text-zinc-400 transition hover:border-white/[.12] hover:text-zinc-200">
+            <span className={cn("inline-grid h-3.5 w-3.5 place-items-center rounded-[2px] text-[7px] font-black", p.color, p.id === "twitter" ? "" : "text-white")}>{p.icon}</span>
+            + {p.label}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Processing view (SSE + polling fallback) ─── */
 function ProcessingView({
   video,
@@ -694,6 +791,8 @@ function ProcessingView({
           <div className="h-full rounded-full bg-gradient-to-r from-[#ff3d6a] to-[#ff7a3d] transition-[width_.3s_linear]" style={{ width: `${overallPct}%` }} />
         </div>
       </div>
+
+      <SocialConnectBanner />
 
       <div className="space-y-2">
         {PROC_STEPS.map((step, i) => {
