@@ -622,7 +622,7 @@ function ProcessingView({
   // SSE for real-time progress messages
   useEffect(() => {
     if (!current.celery_task_id || doneRef.current) return;
-    const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+    const token = localStorage.getItem("viralo_access_token") || "";
     const url = `http://localhost:8003/api/v1/video/progress/${current.celery_task_id}`;
     const es = new EventSource(`${url}?token=${encodeURIComponent(token)}`);
     es.onmessage = (e) => {

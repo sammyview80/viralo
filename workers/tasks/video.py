@@ -122,7 +122,7 @@ class VideoMeta:
 @contextmanager
 def _get_session(tenant_id: str):
     with Session(engine) as session:
-        session.execute(text(f"SET LOCAL app.current_tenant = '{tenant_id}'"))
+        session.execute(text("SET LOCAL app.current_tenant = :tid"), {"tid": str(tenant_id)})
         try:
             yield session
             session.commit()
@@ -395,6 +395,8 @@ def _transcribe(source_path: str, duration: float, language: str = "en") -> list
 
 def _build_timed_transcript(words: list[WordTimestamp]) -> str:
     """Build M:SS-stamped transcript lines for LLM input."""
+    if not words:
+        return ""
     lines, current, current_start = [], [], words[0].start
     for w in words:
         current.append(w.word)
@@ -688,17 +690,17 @@ def _generate_captions(words: list[WordTimestamp], clip: ClipResult, max_words: 
         if is_break:
             segments.append(CaptionSegment(
                 text=" ".join(cw.word for cw in current),
-                start=current[0].start - clip.start,
-                end=current[-1].end - clip.start,
-                words=[WordTimestamp(cw.word, cw.start - clip.start, cw.end - clip.start) for cw in current],
+                start=max(0.0, current[0].start - clip.start),
+                end=max(0.0, current[-1].end - clip.start),
+                words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start), max(0.0, cw.end - clip.start)) for cw in current],
             ))
             current = []
     if current:
         segments.append(CaptionSegment(
             text=" ".join(cw.word for cw in current),
-            start=current[0].start - clip.start,
-            end=current[-1].end - clip.start,
-            words=[WordTimestamp(cw.word, cw.start - clip.start, cw.end - clip.start) for cw in current],
+            start=max(0.0, current[0].start - clip.start),
+            end=max(0.0, current[-1].end - clip.start),
+            words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start), max(0.0, cw.end - clip.start)) for cw in current],
         ))
     return segments
 
@@ -742,7 +744,7 @@ def _build_caption_timeline(segments: list[CaptionSegment], style: str) -> dict:
                     t_end = t_start + 0.12
                 for cs in range(int(t_start * 100), int(t_end * 100)):
                     # Store (word_list, active_index) for inline per-word highlight
-                    timeline[cs] = (words, i)
+                    timeline[cs] = (list(words), i)
         else:
             for cs in range(int(seg.start * 100), int(seg.end * 100)):
                 timeline[cs] = (seg.text, None)
