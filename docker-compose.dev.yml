@@ -1,0 +1,81 @@
+version: "3.9"
+
+# Overlay for local development: hot reload, volume mounts, debug ports
+
+services:
+  core-service:
+    build:
+      target: development
+    command: uvicorn core.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./services/core:/app/services/core
+      - ./shared:/app/shared
+
+  video-service:
+    build:
+      target: development
+    command: uvicorn video.main:app --host 0.0.0.0 --port 8003 --reload
+    volumes:
+      - ./services/video:/app/services/video
+      - ./shared:/app/shared
+      - ./workers:/app/workers
+
+  agent-service:
+    build:
+      target: development
+    command: uvicorn agent.main:app --host 0.0.0.0 --port 8004 --reload
+    volumes:
+      - ./services/agent:/app/services/agent
+      - ./shared:/app/shared
+      - ./workers:/app/workers
+
+  workflow-service:
+    build:
+      target: development
+    command: uvicorn workflow.main:app --host 0.0.0.0 --port 8005 --reload
+    volumes:
+      - ./services/workflow:/app/services/workflow
+      - ./shared:/app/shared
+      - ./workers:/app/workers
+      - ./nodes:/app/nodes
+
+  platform-service:
+    build:
+      target: development
+    command: uvicorn platform.main:app --host 0.0.0.0 --port 8006 --reload
+    volumes:
+      - ./services/platform:/app/services/platform
+      - ./shared:/app/shared
+      - ./workers:/app/workers
+
+  celery-video:
+    command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=2 --loglevel=debug
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+
+  celery-agent:
+    command: celery -A workers.celery_app worker -Q viralo.agent.run --concurrency=1 --loglevel=debug
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+
+  celery-workflow:
+    command: celery -A workers.celery_app worker -Q viralo.workflow.execute --concurrency=2 --loglevel=debug
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+      - ./nodes:/app/nodes
+
+  celery-post:
+    command: celery -A workers.celery_app worker -Q viralo.post.publish,viralo.analytics.ingest --concurrency=2 --loglevel=debug
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+
+  celery-beat:
+    build:
+      target: development
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared

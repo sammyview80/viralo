@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 38% 5%;
+    --foreground: 225 22% 95%;
+    --card: 224 30% 7%;
+    --card-foreground: 225 22% 95%;
+    --primary: 346 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 224 18% 12%;
+    --secondary-foreground: 225 22% 95%;
+    --muted: 224 16% 13%;
+    --muted-foreground: 222 8% 56%;
+    --accent: 346 100% 62%;
+    --accent-foreground: 0 0% 100%;
+    --border: 0 0% 100%;
+    --input: 0 0% 100%;
+    --ring: 346 100% 62%;
+    --radius: 9px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  body::before {
+    background:
+      radial-gradient(800px 520px at 14% -2%, rgba(255, 61, 106, .04), transparent 60%),
+      radial-gradient(560px 560px at 94% 108%, rgba(61, 170, 255, .02), transparent 60%);
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: fixed;
+    z-index: 0;
+  }
+
+  body::after {
+    background-image: radial-gradient(circle, rgba(255,255,255,.028) 1px, transparent 1px);
+    background-size: 28px 28px;
+    content: "";
+    inset: 0;
+    mask-image: radial-gradient(ellipse 100% 100% at 50% 50%, rgba(0,0,0,.4) 0%, transparent 80%);
+    pointer-events: none;
+    position: fixed;
+    z-index: 0;
+  }
+}
+
+@layer utilities {
+  .surface {
+    background: rgba(14, 18, 27, .78);
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, .035);
+    border: 1px solid rgba(255, 255, 255, .07);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}

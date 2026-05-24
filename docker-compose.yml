@@ -1,0 +1,278 @@
+version: "3.9"
+
+x-service-defaults: &service-defaults
+  networks:
+    - viralo-internal
+  restart: unless-stopped
+  env_file:
+    - .env
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  # ── Infrastructure ────────────────────────────────────────────────────────
+
+  postgres:
+    <<: *service-defaults
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: viralo
+      POSTGRES_PASSWORD: viralo
+      POSTGRES_DB: viralo
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U viralo"]
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "redis-cli", "ping"]
+
+  rabbitmq:
+    <<: *service-defaults
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: viralo
+      RABBITMQ_DEFAULT_PASS: viralo
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+
+  nginx:
+    <<: *service-defaults
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      core-service:
+        condition: service_healthy
+      video-service:
+        condition: service_healthy
+      agent-service:
+        condition: service_healthy
+      workflow-service:
+        condition: service_healthy
+      platform-service:
+        condition: service_healthy
+
+  # ── API Services ──────────────────────────────────────────────────────────
+
+  core-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+
+  video-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    ports:
+      - "8003:8003"
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health')\""]
+
+  agent-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8004/health')\""]
+
+  workflow-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/workflow/Dockerfile
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8005/health')\""]
+
+  platform-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/platform/Dockerfile
+    ports:
+      - "8006:8006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8006/health')\""]
+
+  # ── Workers ───────────────────────────────────────────────────────────────
+
+  celery-video:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=4 --loglevel=info
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-agent:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.agent.run --concurrency=1 --loglevel=debug
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-workflow:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/workflow/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.workflow.execute --concurrency=8 --loglevel=info
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-post:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/platform/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.post.publish,viralo.analytics.ingest --concurrency=10 --loglevel=info
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+    command: celery -A workers.celery_app beat --loglevel=info
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Dev Tools ─────────────────────────────────────────────────────────────
+
+  flower:
+    <<: *service-defaults
+    image: mher/flower:2.0
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: amqp://viralo:viralo@rabbitmq:5672//
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  pgadmin:
+    <<: *service-defaults
+    image: dpage/pgadmin4:latest
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@viralo.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+
+networks:
+  viralo-internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  video-temp:
+  video-storage:
