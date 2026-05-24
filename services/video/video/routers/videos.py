@@ -158,12 +158,26 @@ async def upload_video(
         while chunk := await file.read(1024 * 1024):
             await f.write(chunk)
 
+    # Upload source to persistent storage so retry can re-use it
+    original_storage_key: str | None = None
+    try:
+        from shared.storage.base import get_storage
+        storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+        storage_key = f"originals/{tenant_id}/{video_id}/{safe_name}"
+        async with aiofiles.open(tmp_path, "rb") as sf:
+            content = await sf.read()
+        import io as _io
+        original_storage_key = await storage.upload(_io.BytesIO(content), storage_key, file.content_type or "video/mp4")
+    except Exception:
+        pass  # non-fatal — retry just won't work for uploads
+
     video = Video(
         id=video_id,
         title=title,
         source_type="uploaded",
         status="queued",
         clip_config=clip_config.model_dump(),
+        original_storage_key=original_storage_key,
     )
     db.add(video)
     await db.commit()
@@ -513,9 +527,14 @@ async def retry_video(
             queue="viralo.video.generate",
         )
     else:
+        if not video.original_storage_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Original file no longer available for retry. Please re-upload.",
+            )
         task = celery_app.send_task(
             "workers.tasks.video.process_uploaded_video",
-            args=[str(tenant_id), str(video_id), None, clip_config],
+            args=[str(tenant_id), str(video_id), video.original_storage_key, clip_config],
             queue="viralo.video.generate",
         )
 

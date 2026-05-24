@@ -1487,12 +1487,27 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
     job_id = self.request.id or video_id
     cfg = cfg or {}
     try:
-        if not file_path or not Path(file_path).exists():
-            raise FileNotFoundError(f"Source file not found: {file_path}")
         _update_video(tenant_id, video_id, status="processing",
                       celery_task_id=job_id, pipeline_step="upload", pipeline_pct=5)
         _publish_progress(job_id, "upload", 5, "processing", "File received, starting pipeline...")
-        run_video_pipeline(tenant_id, video_id, file_path, job_id, cfg)
+
+        # file_path may be a local tmp path (first run) or a storage key (retry)
+        if file_path and Path(file_path).exists():
+            source = file_path
+        elif file_path:
+            # Treat as storage key — download to tmp
+            _publish_progress(job_id, "upload", 8, "processing", "Re-downloading source from storage...")
+            from shared.storage.base import get_storage
+            storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+            work_dir = Path(VIDEO_TEMP_DIR) / video_id
+            work_dir.mkdir(parents=True, exist_ok=True)
+            source = str(work_dir / "source.mp4")
+            import asyncio as _asyncio
+            _asyncio.run(storage.download(file_path, source))
+        else:
+            raise FileNotFoundError("No source file available. Re-upload the video.")
+
+        run_video_pipeline(tenant_id, video_id, source, job_id, cfg)
     except Exception as exc:
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed")
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
