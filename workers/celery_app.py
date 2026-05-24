@@ -1,6 +1,7 @@
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://viralo:viralo@rabbitmq:5672//")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -12,6 +13,8 @@ celery_app = Celery(
     include=[
         "workers.tasks.video",
         "workers.tasks.agent",
+        "workers.tasks.post",
+        "workers.tasks.analytics",
     ],
 )
 
@@ -29,3 +32,14 @@ celery_app.conf.update(
         "workers.tasks.analytics.*": {"queue": "viralo.analytics.ingest"},
     },
 )
+
+celery_app.conf.beat_schedule = {
+    "process-due-posts": {
+        "task": "workers.tasks.post.process_due_posts",
+        "schedule": 60.0,  # every 60 seconds
+    },
+    "refresh-analytics": {
+        "task": "workers.tasks.analytics.refresh_analytics",
+        "schedule": crontab(minute=0, hour="*/4"),  # every 4 hours
+    },
+}
