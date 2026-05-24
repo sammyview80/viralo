@@ -259,3 +259,161 @@ export const videoApi = {
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
 };
+
+/* ─── Platform service (port 8006) ─── */
+const PLATFORM_BASE = "http://localhost:8006/api/v1";
+
+async function _platformFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
+  const res = await fetch(`${PLATFORM_BASE}${path}`, {
+    method, headers, credentials: "include",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return undefined as T;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
+    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
+    throw new ApiError(res.status, msg);
+  }
+  return data as T;
+}
+
+async function platformReq<T>(method: string, path: string, body?: unknown): Promise<T> {
+  try {
+    return await _platformFetch<T>(method, path, body);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      const newToken = await doRefresh();
+      _accessToken = newToken;
+      return _platformFetch<T>(method, path, body);
+    }
+    throw err;
+  }
+}
+
+/* ─── Platform types ─── */
+export interface SocialAccount {
+  id: string;
+  platform: string;
+  platform_username: string | null;
+  is_active: boolean;
+  token_expires_at: string | null;
+  created_at: string;
+}
+
+export interface ScheduledPost {
+  id: string;
+  clip_id: string;
+  social_account_id: string;
+  platform: string;
+  status: string; // pending|processing|posted|failed|cancelled
+  scheduled_at: string;
+  posted_at: string | null;
+  platform_post_id: string | null;
+  caption: string | null;
+  hashtags: string[];
+  retry_count: number;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface ScheduledPostCreate {
+  clip_id: string;
+  social_account_id: string;
+  platform: string;
+  scheduled_at: string; // ISO datetime
+  caption?: string;
+  hashtags?: string[];
+}
+
+export interface CalendarDay {
+  date: string;
+  posts: ScheduledPost[];
+}
+
+export interface OptimalTimeResponse {
+  platform: string;
+  suggested_times: string[];
+}
+
+export interface AnalyticsOverview {
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  total_shares: number;
+  engagement_rate: number;
+  posts_count: number;
+  period: string;
+}
+
+export interface PostAnalytics {
+  scheduled_post_id: string;
+  platform: string;
+  platform_post_id: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  engagement_rate: number;
+  virality_score: number | null;
+  fetched_at: string;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  is_read: boolean;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  items: Notification[];
+  total: number;
+}
+
+/* ─── Platform API ─── */
+export const platformApi = {
+  // Social accounts
+  connectOAuth: (platform: string, code: string, redirect_uri: string) =>
+    platformReq<{ account_id: string; platform: string; username: string }>(
+      "POST", "/oauth/connect", { platform, code, redirect_uri }
+    ),
+  listAccounts: () => platformReq<SocialAccount[]>("GET", "/social-accounts"),
+  deleteAccount: (id: string) => platformReq<void>("DELETE", `/social-accounts/${id}`),
+
+  // Scheduling
+  schedulePost: (data: ScheduledPostCreate) =>
+    platformReq<ScheduledPost>("POST", "/scheduled-posts", data),
+  listPosts: (params?: { platform?: string; status?: string; from?: string; to?: string }) => {
+    const q = new URLSearchParams(params as Record<string, string>).toString();
+    return platformReq<{ items: ScheduledPost[]; total: number; page: number; per_page: number }>(
+      "GET", `/scheduled-posts${q ? `?${q}` : ""}`
+    );
+  },
+  getPost: (id: string) => platformReq<ScheduledPost>("GET", `/scheduled-posts/${id}`),
+  updatePost: (id: string, data: Partial<Pick<ScheduledPost, "scheduled_at" | "caption" | "hashtags">>) =>
+    platformReq<ScheduledPost>("PATCH", `/scheduled-posts/${id}`, data),
+  cancelPost: (id: string) => platformReq<void>("DELETE", `/scheduled-posts/${id}`),
+  getCalendar: (month: string) =>
+    platformReq<CalendarDay[]>("GET", `/calendar?month=${month}`),
+  optimalTime: (platform: string) =>
+    platformReq<OptimalTimeResponse>("GET", `/optimal-time/${platform}`),
+
+  // Analytics
+  analyticsOverview: (period: "7d" | "30d" | "90d" = "30d") =>
+    platformReq<AnalyticsOverview>("GET", `/analytics/overview?period=${period}`),
+  analyticsPosts: (page = 1) =>
+    platformReq<{ items: PostAnalytics[]; total: number }>("GET", `/analytics/posts?page=${page}`),
+
+  // Notifications
+  listNotifications: (unread?: boolean) =>
+    platformReq<NotificationListResponse>("GET", `/notifications${unread ? "?unread=true" : ""}`),
+  markRead: (id: string) => platformReq<void>("PATCH", `/notifications/${id}/read`),
+  markAllRead: () => platformReq<void>("POST", "/notifications/read-all"),
+  deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
+};
