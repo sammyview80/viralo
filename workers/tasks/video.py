@@ -11,8 +11,10 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -36,8 +38,8 @@ VIDEO_TEMP_DIR = os.getenv("VIDEO_TEMP_DIR", "/tmp/viralo-video")
 GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"
 GROQ_LLM_MODEL = "llama-3.3-70b-versatile"
 GROQ_MAX_AUDIO_MB = 24
-VIDEO_CRF = 23
-AUDIO_BITRATE = 128_000
+VIDEO_CRF = 18          # visually lossless (default 23 is lossy)
+AUDIO_BITRATE = 192_000  # 192kbps vs 128kbps
 CAPTION_BURN_MAX_SECONDS = 120
 
 REFRAME_PRESETS = {
@@ -261,18 +263,16 @@ def _extract_audio_bytes(source_path: str, start: float = 0.0, end: float = None
 
 
 def _prepare_audio_chunks(source_path: str, duration: float) -> list[tuple[bytes, float]]:
-    full_audio = _extract_audio_bytes(source_path)
-    size_mb = len(full_audio) / (1024 * 1024)
-    if size_mb <= GROQ_MAX_AUDIO_MB:
-        return [(full_audio, 0.0)]
-    num_chunks = int(size_mb / GROQ_MAX_AUDIO_MB) + 1
+    estimated_mb = duration / 60.0 * 1.2
+    if estimated_mb <= GROQ_MAX_AUDIO_MB:
+        return [(_extract_audio_bytes(source_path), 0.0)]
+    num_chunks = int(estimated_mb / GROQ_MAX_AUDIO_MB) + 1
     chunk_dur = duration / num_chunks
     chunks = []
     for i in range(num_chunks):
         start = i * chunk_dur
         end = min((i + 1) * chunk_dur + 2.0, duration)
-        chunk = _extract_audio_bytes(source_path, start=start, end=end)
-        chunks.append((chunk, start))
+        chunks.append((_extract_audio_bytes(source_path, start=start, end=end), start))
     return chunks
 
 
@@ -776,7 +776,8 @@ def _crop_frame(img, crop_mode: str, target_w: int, target_h: int):
             left = (w - new_w) // 2
             img = img.crop((left, 0, left + new_w, h))
     if img.size != (target_w, target_h):
-        img = img.resize((target_w, target_h), resample=3)
+        from PIL import Image as _PILImage
+        img = img.resize((target_w, target_h), resample=_PILImage.LANCZOS)
     return img
 
 
@@ -911,66 +912,88 @@ def _render_clip(
 
     fps = meta.fps
     frame_idx = 0
+    audio_sample_idx = 0
 
     with av.open(output_path, "w", format="mp4") as dst:
         out_v = dst.add_stream("h264", rate=int(fps))
         out_v.width = target_width
         out_v.height = target_height
         out_v.pix_fmt = "yuv420p"
-        out_v.options = {"crf": str(VIDEO_CRF), "preset": "fast"}
+        out_v.options = {
+            "crf": str(VIDEO_CRF),
+            "preset": "slow",        # better compression at same CRF vs fast
+            "profile:v": "high",     # H.264 High profile — wider device support + better compression
+            "level": "4.2",
+            "movflags": "+faststart", # web-optimized: moov atom at front for streaming
+        }
 
-        ch_layout = "stereo" if meta.audio_channels >= 2 else "mono"
         out_a = None
         if meta.has_audio:
+            ch_layout = "stereo" if meta.audio_channels >= 2 else "mono"
             out_a = dst.add_stream("aac", rate=meta.audio_sample_rate, layout=ch_layout)
             out_a.bit_rate = AUDIO_BITRATE
 
-        # Video pass
         with av.open(source_path) as src:
             v_stream = next((s for s in src.streams if s.type == "video"), None)
-            if v_stream:
-                src.seek(int(clip.start * 1_000_000))
-                for frame in src.decode(v_stream):
-                    t = float(frame.pts * v_stream.time_base)
+            a_stream = next((s for s in src.streams if s.type == "audio"), None) if out_a else None
+            decode_streams = [s for s in [v_stream, a_stream] if s is not None]
+
+            src.seek(int(clip.start * 1_000_000))
+            video_done = False
+            audio_done = False
+
+            for packet in src.demux(*decode_streams):
+                if packet.pts is None:
+                    continue  # end-of-container flush packet — handled after loop
+
+                if video_done and (audio_done or not out_a):
+                    break
+
+                if packet.stream == v_stream:
+                    if video_done:
+                        continue
+                    t = float(packet.pts * v_stream.time_base)
+                    if t > clip.end + 0.05:
+                        video_done = True
+                        continue
                     if t < clip.start - 0.05:
                         continue
-                    if t > clip.end + 0.05:
-                        break
-                    t_in_clip = t - clip.start
-                    img = frame.to_image().convert("RGB")
-                    if crop_mode:
-                        img = _crop_frame(img, crop_mode, target_width, target_height)
-                    if caption_timeline:
-                        img = _draw_caption(img, max(t_in_clip, 0), caption_timeline, style,
-                                            target_width, target_height, font_main, font_highlight, cfg)
-                    new_frame = av.VideoFrame.from_image(img)
-                    new_frame.pts = frame_idx
-                    new_frame.time_base = Fraction(1, int(fps))
-                    frame_idx += 1
-                    for pkt in out_v.encode(new_frame):
-                        dst.mux(pkt)
-        for pkt in out_v.encode(None):
-            dst.mux(pkt)
+                    for frame in packet.decode():
+                        t_frame = float(frame.pts * v_stream.time_base) if frame.pts is not None else t
+                        t_in_clip = t_frame - clip.start
+                        img = frame.to_image().convert("RGB")
+                        if crop_mode:
+                            img = _crop_frame(img, crop_mode, target_width, target_height)
+                        if caption_timeline:
+                            img = _draw_caption(img, max(t_in_clip, 0), caption_timeline, style,
+                                                target_width, target_height, font_main, font_highlight, cfg)
+                        new_frame = av.VideoFrame.from_image(img)
+                        new_frame.pts = frame_idx
+                        new_frame.time_base = Fraction(1, int(fps))
+                        frame_idx += 1
+                        for pkt in out_v.encode(new_frame):
+                            dst.mux(pkt)
 
-        # Audio pass
-        if out_a:
-            audio_sample_idx = 0
-            with av.open(source_path) as src:
-                a_stream = next((s for s in src.streams if s.type == "audio"), None)
-                if a_stream:
-                    src.seek(int(clip.start * 1_000_000))
-                    for frame in src.decode(a_stream):
-                        t = float(frame.pts * a_stream.time_base)
-                        if t < clip.start - 0.1:
-                            continue
-                        if t > clip.end + 0.1:
-                            break
+                elif out_a and packet.stream == a_stream:
+                    if audio_done:
+                        continue
+                    t = float(packet.pts * a_stream.time_base)
+                    if t > clip.end + 0.1:
+                        audio_done = True
+                        continue
+                    if t < clip.start - 0.1:
+                        continue
+                    for frame in packet.decode():
                         frame.pts = audio_sample_idx
                         frame.dts = audio_sample_idx
                         frame.time_base = Fraction(1, meta.audio_sample_rate)
                         audio_sample_idx += frame.samples
                         for pkt in out_a.encode(frame):
                             dst.mux(pkt)
+
+        for pkt in out_v.encode(None):
+            dst.mux(pkt)
+        if out_a:
             for pkt in out_a.encode(None):
                 dst.mux(pkt)
 
@@ -988,7 +1011,7 @@ def _generate_thumbnail(source_path: str, clip: ClipResult, output_path: str) ->
         src.seek(int(midpoint * 1_000_000))
         for frame in src.decode(v_stream):
             img = frame.to_image()
-            img.save(output_path, "JPEG", quality=90)
+            img.save(output_path, "JPEG", quality=95, subsampling=0)
             break
 
 
@@ -1019,16 +1042,17 @@ def _ai_generate_clip_content(
     if not groq_key:
         return {}
 
-    # Prefer SRT-derived text (always available) over word-window snippet
-    transcript = _srt_to_plain(captions_srt) if captions_srt else transcript_snippet
-    if not transcript.strip():
-        transcript = f"[Hook: {clip.reason}]" if clip.reason else "[no transcript]"
+    # Caption SRT is the primary source — it contains exactly what's spoken in the clip
+    caption_text = _srt_to_plain(captions_srt) if captions_srt else transcript_snippet
+    if not caption_text.strip():
+        caption_text = f"[Hook: {clip.reason}]" if clip.reason else "[no transcript]"
 
     platforms_str = ", ".join(platforms) if platforms else "tiktok, reels, shorts"
     prompt = f"""You are a viral social media content strategist. Generate platform-optimized content for this video clip.
 
 Clip hook: {clip.reason or clip.title}
-Transcript: {transcript[:600]}
+Caption text (exact words spoken in this clip):
+{caption_text[:800]}
 
 Platforms to generate for: {platforms_str}
 
@@ -1076,6 +1100,77 @@ Return ONLY valid JSON — MUST include every platform listed above:
         return {}
 
 
+def _ai_generate_video_metadata(words: list[WordTimestamp], duration: float, topic_focus: str = "") -> dict:
+    """Analyze full transcript and return video-level metadata: summary, topics, keywords, sentiment, content type."""
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not groq_key or not words:
+        return {}
+
+    # Use timed transcript (M:SS stamped lines) — better sentence structure than raw word join
+    timed_transcript = _build_timed_transcript(words)
+    topic_line = f"Topic hint: {topic_focus}\n" if topic_focus else ""
+    duration_min = int(duration // 60)
+
+    prompt = f"""Analyze this video transcript and return structured metadata.
+
+{topic_line}Duration: {duration_min} minutes
+Transcript (with timestamps):
+{timed_transcript[:3000]}
+
+Return ONLY valid JSON:
+{{
+  "summary": "<2-3 sentence summary of the video content>",
+  "title_suggestion": "<SEO-optimized title, 60 chars max>",
+  "topics": ["<main topic>", "<subtopic>", ...],
+  "keywords": ["<keyword1>", "<keyword2>", ...],
+  "sentiment": "<positive|negative|neutral|mixed>",
+  "content_type": "<educational|entertainment|news|tutorial|vlog|interview|opinion|other>",
+  "target_audience": "<brief description of ideal viewer>",
+  "key_moments": [
+    {{"timestamp_sec": <number>, "description": "<what happens>"}}
+  ],
+  "language_detected": "<ISO 639-1 code, e.g. en>"
+}}"""
+
+    try:
+        from groq import Groq
+        client = Groq(api_key=groq_key)
+        resp = client.chat.completions.create(
+            model=GROQ_LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=1000,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(resp.choices[0].message.content)
+    except Exception as e:
+        logging.warning(f"_ai_generate_video_metadata failed: {e}")
+        return {}
+
+
+def _batch_ai_content(
+    clips: list[ClipResult],
+    words: list[WordTimestamp],
+    all_captions: dict[int, list],
+    platforms: list[str],
+) -> dict[int, dict]:
+    """Generate AI title/description/tags for all clips in parallel. Returns {clip_index: content}."""
+    def _gen_one(idx_clip: tuple[int, ClipResult]) -> tuple[int, dict]:
+        idx, clip = idx_clip
+        captions = all_captions.get(idx, [])
+        srt = _generate_srt(captions)
+        clip_words = [w.word for w in words if clip.start <= w.start <= clip.end]
+        snippet = " ".join(clip_words[:80])
+        content = _ai_generate_clip_content(clip, snippet, platforms, captions_srt=srt)
+        return idx, content
+
+    results: dict[int, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(len(clips), 4)) as executor:
+        for idx, content in executor.map(_gen_one, enumerate(clips)):
+            results[idx] = content
+    return results
+
+
 # ── Stage 8: Export clip + upload to Cloudinary ───────────────────────────────
 
 def _export_clip(
@@ -1088,6 +1183,7 @@ def _export_clip(
     meta: VideoMeta,
     cfg: dict,
     words: list | None = None,
+    ai_content: dict | None = None,
 ) -> str | None:
     clip_id = str(uuid.uuid4())
     clip_path = str(work_dir / f"clip_{clip_id}.mp4")
@@ -1133,33 +1229,31 @@ def _export_clip(
     except Exception:
         pass
 
-    from shared.storage.base import get_storage
-    storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
     storage_key = f"clips/{tenant_id}/{clip_id}.mp4"
-    with open(clip_path, "rb") as f:
-        storage_url = asyncio.run(storage.upload(f, storage_key, "video/mp4"))
-
-    thumb_url = None
-    if Path(thumb_path).exists():
-        thumb_key = f"clips/{tenant_id}/{clip_id}_thumb.jpg"
-        with open(thumb_path, "rb") as f:
-            thumb_url = asyncio.run(storage.upload(f, thumb_key, "image/jpeg"))
+    thumb_key = f"clips/{tenant_id}/{clip_id}_thumb.jpg"
 
     srt_content = _generate_srt(captions)
 
-    # Build transcript snippet from words in clip window (fallback if no SRT)
-    snippet = ""
-    if words:
-        clip_words = [w.word for w in words if clip.start <= w.start <= clip.end]
-        snippet = " ".join(clip_words[:80])
-
-    platforms = cfg.get("platforms", ["tiktok", "reels", "shorts"])
-    ai_content = _ai_generate_clip_content(clip, snippet, platforms, captions_srt=srt_content or "")
-    ai_title = ai_content.get("title") or clip.title
+    content = ai_content or {}
+    ai_title = content.get("title") or clip.title
     clip_meta = {
         "ai_title": ai_title,
-        "platforms": ai_content.get("platforms", {}),
+        "platforms": content.get("platforms", {}),
     }
+
+    from shared.storage.base import get_storage
+
+    async def _upload_files() -> tuple[str, str | None]:
+        _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+        with open(clip_path, "rb") as f:
+            s_url = await _storage.upload(f, storage_key, "video/mp4")
+        t_url = None
+        if Path(thumb_path).exists():
+            with open(thumb_path, "rb") as f:
+                t_url = await _storage.upload(f, thumb_key, "image/jpeg")
+        return s_url, t_url
+
+    storage_url, thumb_url = asyncio.run(_upload_files())
 
     with _get_session(tenant_id) as session:
         session.execute(
@@ -1391,6 +1485,14 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
                             {"word_count": len(words), "language": language,
                              "source": "youtube_captions" if yt_url and words else "whisper"})
 
+        # Generate AI metadata from full transcript
+        if words:
+            _publish_progress(job_id, "transcribe", 37, "processing", "Generating video metadata from transcript...")
+            vid_meta = _ai_generate_video_metadata(words, meta.duration, topic_focus)
+            if vid_meta:
+                _update_video(tenant_id, video_id, video_metadata=json.dumps(vid_meta))
+                _save_step_artifact(tenant_id, video_id, "video_metadata", vid_meta)
+
     if _check_cancelled(tenant_id, video_id):
         return
 
@@ -1438,44 +1540,73 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     _publish_progress(job_id, "captions", 60, "processing", "Generating captions...")
     style = cfg.get("caption_style", "capcut")
     words_per_line = 3 if style in CAPCUT_STYLES else 6
-    all_captions: dict[str, list[CaptionSegment]] = {}
-    for clip in clips:
+    all_captions: dict[int, list[CaptionSegment]] = {}
+    for idx, clip in enumerate(clips):
         segs = _generate_captions(words, clip, max_words=words_per_line)
-        all_captions[clip.title] = segs
+        all_captions[idx] = segs
 
     if _check_cancelled(tenant_id, video_id):
         return
 
-    # Step 5: Export clips (60→95%)
+    # Generate AI content for all clips in parallel before export
+    _publish_progress(job_id, "ai_content", 58, "processing", f"Generating AI content for {len(clips)} clips...")
+    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms)
+
+    # Step 5: Export clips in parallel (60→95%)
     if output_quality == "source":
         _publish_progress(job_id, "export", 60, "processing",
                           f"Exporting {len(clips)} clips at full source resolution — this may take a while...")
-    clip_ids = []
-    for i, clip in enumerate(clips):
+    else:
+        _publish_progress(job_id, "export", 60, "processing", f"Exporting {len(clips)} clips in parallel...")
+
+    clip_ids: list[str] = []
+    cancelled = False
+
+    def _export_one(args: tuple[int, ClipResult]) -> str | None:
+        i, clip = args
         if _check_cancelled(tenant_id, video_id):
-            _publish_progress(job_id, "cancelled", 0, "cancelled", "Job cancelled by user.")
-            return
+            return None
         pct = 60 + int((i / max(len(clips), 1)) * 35)
         _publish_progress(job_id, "export", pct, "processing",
                           f"Rendering clip {i+1}/{len(clips)}: {clip.title}")
         _update_video(tenant_id, video_id, pipeline_step="export", pipeline_pct=pct)
-        try:
-            captions = all_captions.get(clip.title, [])
-            clip_id = _export_clip(
-                tenant_id=tenant_id, video_id=video_id,
-                clip=clip, captions=captions,
-                source_path=source_path, work_dir=work_dir,
-                meta=meta, cfg=cfg, words=words,
-            )
-            if clip_id:
-                clip_ids.append(clip_id)
-        except Exception as e:
-            _publish_progress(job_id, "export", pct, "processing",
-                              f"Clip {i+1} failed: {str(e)[:120]}, continuing...")
+        captions = all_captions.get(i, [])
+        ai_content = all_ai_content.get(i, {})
+        return _export_clip(
+            tenant_id=tenant_id, video_id=video_id,
+            clip=clip, captions=captions,
+            source_path=source_path, work_dir=work_dir,
+            meta=meta, cfg=cfg, words=words,
+            ai_content=ai_content,
+        )
+
+    max_workers = min(len(clips), 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {executor.submit(_export_one, (i, clip)): (i, clip) for i, clip in enumerate(clips)}
+        for future in as_completed(future_map):
+            i, clip = future_map[future]
+            if _check_cancelled(tenant_id, video_id):
+                _publish_progress(job_id, "cancelled", 0, "cancelled", "Job cancelled by user.")
+                cancelled = True
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+            try:
+                clip_id = future.result()
+                if clip_id:
+                    clip_ids.append(clip_id)
+            except Exception as e:
+                _publish_progress(job_id, "export", 60, "processing",
+                                  f"Clip {i+1} failed: {str(e)[:120]}, continuing...")
+
+    if cancelled:
+        return
 
     _update_video(tenant_id, video_id, status="ready", pipeline_step="complete", pipeline_pct=100)
     _publish_progress(job_id, "complete", 100, "complete",
                       f"Done! {len(clip_ids)}/{len(clips)} clips ready.")
+
+    # Cleanup temp working directory
+    shutil.rmtree(work_dir, ignore_errors=True)
 
 
 # ── Celery tasks ──────────────────────────────────────────────────────────────
@@ -1508,6 +1639,10 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
             raise FileNotFoundError("No source file available. Re-upload the video.")
 
         run_video_pipeline(tenant_id, video_id, source, job_id, cfg)
+    except FileNotFoundError as exc:
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed")
+        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
+        raise  # file won't reappear — no retry
     except Exception as exc:
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed")
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])

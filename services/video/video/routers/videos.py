@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -25,6 +26,32 @@ from video.schemas import (
     YouTubeInspectResponse,
 )
 
+def _ytdlp_fetch_json(url: str, timeout: int = 30) -> dict:
+    """Run yt-dlp --dump-json, try android extractor first then plain. Raises RuntimeError on failure."""
+    base = ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", "--no-check-certificate"]
+    strategies = [
+        base + ["--extractor-args", "youtube:player_client=android", url],
+        base + [url],
+    ]
+    last_err = "yt-dlp returned no data"
+    for args in strategies:
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    return json.loads(result.stdout.strip().splitlines()[0])
+                except json.JSONDecodeError as e:
+                    last_err = f"yt-dlp JSON parse error: {e}"
+                    continue
+            last_err = result.stderr.strip()[:300] or last_err
+        except subprocess.TimeoutExpired:
+            last_err = "yt-dlp timed out"
+            continue
+        except Exception as e:
+            last_err = str(e)[:300]
+    raise RuntimeError(last_err)
+
+
 router = APIRouter(tags=["video"])
 
 
@@ -47,7 +74,6 @@ async def inspect_youtube(
     token: TokenPayload = Depends(get_current_user),
 ):
     import re
-    import subprocess
 
     url = body.url.strip()
 
@@ -62,69 +88,42 @@ async def inspect_youtube(
     video_id = match.group(1)
 
     try:
-        result = subprocess.run(
-            [
-                "yt-dlp",
-                "--no-download",
-                "--dump-json",
-                "--no-playlist",
-                "--extractor-args", "youtube:player_client=android",
-                "--no-check-certificate",
-                url,
-            ],
-            capture_output=True, text=True, timeout=30,
+        data = _ytdlp_fetch_json(url)
+    except (RuntimeError, Exception) as exc:
+        msg = str(exc)[:300]
+        return YouTubeInspectResponse(valid=False, url=url, video_id=video_id, error=msg)
+
+    duration = data.get("duration")
+    upload_raw = data.get("upload_date", "")
+    upload_date = (
+        f"{upload_raw[:4]}-{upload_raw[4:6]}-{upload_raw[6:]}"
+        if len(upload_raw) == 8 else upload_raw
+    )
+
+    # Best thumbnail: prefer maxresdefault or largest
+    thumbnails = data.get("thumbnails", [])
+    thumb_url = data.get("thumbnail")
+    if thumbnails:
+        best = max(
+            (t for t in thumbnails if t.get("url")),
+            key=lambda t: (t.get("width", 0) or 0),
+            default=None,
         )
-        if result.returncode != 0:
-            # Try without extractor args as fallback
-            result = subprocess.run(
-                ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", url],
-                capture_output=True, text=True, timeout=30,
-            )
-        if result.returncode != 0 or not result.stdout.strip():
-            return YouTubeInspectResponse(
-                valid=False, url=url, video_id=video_id,
-                error=result.stderr.strip()[:300] or "yt-dlp returned no data",
-            )
+        if best:
+            thumb_url = best["url"]
 
-        import json as _json
-        data = _json.loads(result.stdout.strip().splitlines()[0])
-
-        duration = data.get("duration")
-        upload_raw = data.get("upload_date", "")
-        upload_date = (
-            f"{upload_raw[:4]}-{upload_raw[4:6]}-{upload_raw[6:]}"
-            if len(upload_raw) == 8 else upload_raw
-        )
-
-        # Best thumbnail: prefer maxresdefault or largest
-        thumbnails = data.get("thumbnails", [])
-        thumb_url = data.get("thumbnail")
-        if thumbnails:
-            best = max(
-                (t for t in thumbnails if t.get("url")),
-                key=lambda t: (t.get("width", 0) or 0),
-                default=None,
-            )
-            if best:
-                thumb_url = best["url"]
-
-        return YouTubeInspectResponse(
-            valid=True,
-            url=url,
-            video_id=video_id,
-            title=data.get("title"),
-            channel=data.get("uploader") or data.get("channel"),
-            duration_sec=int(duration) if duration else None,
-            thumbnail_url=thumb_url,
-            view_count=data.get("view_count"),
-            upload_date=upload_date or None,
-            description=(data.get("description") or "")[:500] or None,
-        )
-
-    except subprocess.TimeoutExpired:
-        return YouTubeInspectResponse(valid=False, url=url, video_id=video_id, error="Metadata fetch timed out")
-    except Exception as exc:
-        return YouTubeInspectResponse(valid=False, url=url, video_id=video_id, error=str(exc)[:300])
+    return YouTubeInspectResponse(
+        valid=True,
+        url=url,
+        video_id=video_id,
+        title=data.get("title"),
+        channel=data.get("uploader") or data.get("channel"),
+        duration_sec=int(duration) if duration else None,
+        thumbnail_url=thumb_url,
+        view_count=data.get("view_count"),
+        upload_date=upload_date or None,
+        description=(data.get("description") or "")[:500] or None,
+    )
 
 
 @router.post("/video/upload", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -360,8 +359,6 @@ async def fetch_video_metadata(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Fetch title + thumbnail from YouTube and patch the video record."""
-    import re, subprocess, json as _json
-
     result = await db.execute(
         select(Video).where(Video.id == video_id, Video.status != "deleted")
     )
@@ -371,26 +368,12 @@ async def fetch_video_metadata(
     if video.source_type != "youtube_url" or not video.source_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a YouTube video.")
 
-    url = video.source_url.strip()
     try:
-        proc = subprocess.run(
-            ["yt-dlp", "--no-download", "--dump-json", "--no-playlist",
-             "--extractor-args", "youtube:player_client=android",
-             "--no-check-certificate", url],
-            capture_output=True, text=True, timeout=30,
-        )
-        if proc.returncode != 0 or not proc.stdout.strip():
-            proc = subprocess.run(
-                ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", url],
-                capture_output=True, text=True, timeout=30,
-            )
-        if proc.returncode != 0 or not proc.stdout.strip():
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
-                                detail=proc.stderr.strip()[:300] or "yt-dlp returned no data")
-
-        data = _json.loads(proc.stdout.strip().splitlines()[0])
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Metadata fetch timed out")
+        data = _ytdlp_fetch_json(video.source_url.strip())
+    except Exception as exc:
+        msg = str(exc)
+        http_status = status.HTTP_504_GATEWAY_TIMEOUT if "timed out" in msg else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=http_status, detail=msg[:300])
 
     title = data.get("title")
     thumbnails = data.get("thumbnails", [])
