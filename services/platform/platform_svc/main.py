@@ -6,7 +6,6 @@ from platform_svc.routers import social_accounts, scheduling, notifications, ana
 
 app = FastAPI(title="Viralo Platform Service", version="0.1.0")
 
-app.add_middleware(TenantMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,6 +13,7 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+app.add_middleware(TenantMiddleware)
 
 app.include_router(social_accounts.router, prefix="/api/v1")
 app.include_router(scheduling.router, prefix="/api/v1")
