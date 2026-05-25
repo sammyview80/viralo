@@ -1351,13 +1351,25 @@ def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
         return {"title": "", "thumbnail_url": ""}
 
 
-def _ytdlp_base_flags() -> list[str]:
-    """Return common yt-dlp flags including cookies file if configured."""
+def _ytdlp_proxies() -> list[str]:
+    """Return list of proxies from YTDLP_PROXY_LIST (comma-sep) or YTDLP_PROXY. Empty = no proxy."""
+    proxy_list = os.getenv("YTDLP_PROXY_LIST", "")
+    if proxy_list:
+        return [p.strip() for p in proxy_list.split(",") if p.strip()]
+    single = os.getenv("YTDLP_PROXY", "")
+    return [single] if single else []
+
+
+def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> list[str]:
+    """Return common yt-dlp flags. Cookies are omitted when proxy is set (IP mismatch invalidates session)."""
     flags = ["--no-check-certificate", "--retries", "3",
              "--sleep-interval", "2", "--max-sleep-interval", "5"]
-    cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
-    if cookies_file and Path(cookies_file).exists():
-        flags += ["--cookies", cookies_file]
+    if use_cookies and not proxy:
+        cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
+        if cookies_file and Path(cookies_file).exists():
+            flags += ["--cookies", cookies_file]
+    if proxy:
+        flags += ["--proxy", proxy]
     return flags
 
 
@@ -1368,6 +1380,12 @@ def _is_429(stderr: str) -> bool:
 def _download_youtube(url: str, out_path: str, quality: str = "1080p") -> None:
     import time, random
     errors = []
+    proxies = _ytdlp_proxies()
+
+    def _pick_proxy(attempt: int) -> str | None:
+        if not proxies:
+            return None
+        return proxies[attempt % len(proxies)]
 
     if quality == "source":
         fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
@@ -1378,49 +1396,60 @@ def _download_youtube(url: str, out_path: str, quality: str = "1080p") -> None:
             f"/best[height<={cap}][ext=mp4]/best[ext=mp4]/best"
         )
 
-    base = _ytdlp_base_flags()
-    ytdlp_strategies = [
-        # android client — best compat, bypasses some throttling
-        ["yt-dlp"] + base + [
-            "--js-runtimes", "node",
-            "--extractor-args", "youtube:player_client=android",
-            "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url,
-        ],
-        # mweb client — different IP treatment
-        ["yt-dlp"] + base + [
-            "--js-runtimes", "node",
-            "--extractor-args", "youtube:player_client=mweb",
-            "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
-        ],
-        # tv_embedded client — rarely rate-limited
-        ["yt-dlp"] + base + [
-            "--extractor-args", "youtube:player_client=tv_embedded",
-            "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
-        ],
-        # plain fallback with mobile UA
-        ["yt-dlp"] + base + [
-            "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4",
-            "--user-agent", "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36",
-            "-o", out_path, url,
-        ],
-    ]
+    def _build_strategies(proxy: str | None) -> list[list[str]]:
+        base = _ytdlp_base_flags(proxy)
+        return [
+            # android client — best compat, bypasses some throttling
+            ["yt-dlp"] + base + [
+                "--js-runtimes", "node",
+                "--extractor-args", "youtube:player_client=android",
+                "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url,
+            ],
+            # mweb client — different IP treatment
+            ["yt-dlp"] + base + [
+                "--js-runtimes", "node",
+                "--extractor-args", "youtube:player_client=mweb",
+                "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
+            ],
+            # tv_embedded client — rarely rate-limited
+            ["yt-dlp"] + base + [
+                "--extractor-args", "youtube:player_client=tv_embedded",
+                "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
+            ],
+            # plain fallback with mobile UA
+            ["yt-dlp"] + base + [
+                "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4",
+                "--user-agent", "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36",
+                "-o", out_path, url,
+            ],
+        ]
+
+    # Build initial strategy list using first proxy (or no proxy)
+    ytdlp_strategies = _build_strategies(_pick_proxy(0))
 
     for attempt, cmd in enumerate(ytdlp_strategies):
+        proxy_label = f" via {_pick_proxy(attempt)}" if proxies else ""
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
                 return
             stderr = result.stderr or ""
-            errors.append(f"yt-dlp strategy {attempt+1}: {stderr[:200]}")
+            errors.append(f"yt-dlp strategy {attempt+1}{proxy_label}: {stderr[:200]}")
             if _is_429(stderr):
-                # Exponential backoff on 429 before trying next strategy
                 wait = min(30, (2 ** attempt) + random.uniform(1, 3))
-                logging.warning("YouTube 429 on strategy %d, waiting %.1fs before retry", attempt + 1, wait)
+                next_proxy = _pick_proxy(attempt + 1)
+                proxy_msg = f" (rotating to proxy {next_proxy})" if next_proxy and next_proxy != _pick_proxy(attempt) else ""
+                logging.warning("YouTube 429 on strategy %d%s, waiting %.1fs%s",
+                                attempt + 1, proxy_label, wait, proxy_msg)
                 time.sleep(wait)
+                # Rebuild remaining strategies with the next proxy
+                if proxies and len(proxies) > 1:
+                    remaining = _build_strategies(_pick_proxy(attempt + 1))[attempt + 1:]
+                    ytdlp_strategies[attempt + 1:] = remaining
         except subprocess.TimeoutExpired:
-            errors.append(f"yt-dlp strategy {attempt+1}: timeout")
+            errors.append(f"yt-dlp strategy {attempt+1}{proxy_label}: timeout")
         except Exception as e:
-            errors.append(f"yt-dlp strategy {attempt+1}: {e}")
+            errors.append(f"yt-dlp strategy {attempt+1}{proxy_label}: {e}")
 
     # pytubefix as final fallback (different HTTP stack, avoids some rate-limits)
     try:

@@ -1173,6 +1173,135 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
   );
 }
 
+/* ─── Failed error card ─── */
+function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMessage: string; videoId: string; onRetried: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  type ErrorKind = { label: string; msg: string; hint: string };
+  const kind: ErrorKind = (() => {
+    if (/429|Too Many Requests/i.test(errorMessage))
+      return { label: "Rate limited", msg: "YouTube throttled this request (HTTP 429).", hint: "Wait a few minutes before retrying — YouTube limits how often a server can fetch the same video." };
+    if (/403|Forbidden/i.test(errorMessage))
+      return { label: "Access denied", msg: "YouTube refused access to this video (HTTP 403).", hint: "The video may be age-restricted, region-locked, or require sign-in. Try a different video." };
+    if (/unavailable|removed|private/i.test(errorMessage))
+      return { label: "Unavailable", msg: "This video is unavailable or private.", hint: "Check that the link is correct and the video is publicly accessible." };
+    const firstLine = errorMessage.split("\n")[0].replace(/^(ERROR|WARNING|CRITICAL):\s*/i, "");
+    const msg = firstLine.length > 160 ? firstLine.slice(0, 160) + "…" : firstLine;
+    return { label: "Processing error", msg, hint: "Expand the details below for the full error log." };
+  })();
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await videoApi.retry(videoId);
+      onRetried();
+    } catch {
+      setRetryError("Retry failed — check service logs or try again shortly.");
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto mt-10 max-w-[540px]" style={{ animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}>
+      {/* Main card */}
+      <div className="overflow-hidden rounded-[18px] border border-red-500/20 bg-[#0e1420]">
+        {/* Top accent bar */}
+        <div className="h-[3px] w-full bg-gradient-to-r from-red-500/80 via-red-400/60 to-transparent" />
+
+        <div className="p-6">
+          {/* Header row */}
+          <div className="mb-5 flex items-start gap-4">
+            {/* Icon */}
+            <div className="mt-0.5 grid h-10 w-10 flex-none place-items-center rounded-[10px] border border-red-500/25 bg-red-500/10">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            </div>
+
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[13px] font-bold text-red-300">{kind.label}</span>
+                <span className="rounded-full border border-red-400/20 bg-red-400/10 px-2 py-0.5 text-[10px] font-semibold text-red-400 uppercase tracking-wide">Failed</span>
+              </div>
+              <p className="text-[13px] font-medium text-zinc-200 leading-snug mb-2">{kind.msg}</p>
+              <p className="text-[12px] text-zinc-500 leading-relaxed">{kind.hint}</p>
+            </div>
+          </div>
+
+          {/* Retry error inline */}
+          {retryError && (
+            <div className="mb-4 flex items-center gap-2 rounded-[8px] border border-red-500/20 bg-red-500/[.06] px-3 py-2">
+              <svg className="h-3.5 w-3.5 flex-none text-red-400" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 1a7 7 0 100 14A7 7 0 008 1zM7.25 4.75a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 7a1 1 0 110-2 1 1 0 010 2z"/>
+              </svg>
+              <span className="text-[11.5px] text-red-400">{retryError}</span>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleRetry}
+              disabled={retrying}
+              className="flex cursor-pointer items-center gap-2 rounded-[9px] bg-[#ff3d6a] px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-[0_2px_16px_rgba(255,61,106,.3)] transition-all hover:bg-[#ff3d6a]/85 hover:shadow-[0_4px_20px_rgba(255,61,106,.4)] active:scale-[.97] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {retrying
+                ? <>
+                    <span className="block h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    Retrying…
+                  </>
+                : <>
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M13.5 2.5A6.5 6.5 0 012.5 8M2.5 13.5A6.5 6.5 0 0113.5 8"/>
+                      <polyline points="2.5,10.5 2.5,13.5 5.5,13.5"/>
+                      <polyline points="13.5,2.5 13.5,5.5 10.5,5.5"/>
+                    </svg>
+                    Retry processing
+                  </>
+              }
+            </button>
+
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-white/[.08] bg-white/[.03] px-3.5 py-2.5 text-[12px] text-zinc-400 transition hover:border-white/[.12] hover:bg-white/[.06] hover:text-zinc-200"
+            >
+              <svg className={cn("h-3.5 w-3.5 transition-transform duration-150", expanded && "rotate-180")} viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 10.94L2.53 5.47a.75.75 0 011.06-1.06L8 8.88l4.41-4.47a.75.75 0 111.06 1.06L8 10.94z"/>
+              </svg>
+              {expanded ? "Hide details" : "Show details"}
+            </button>
+          </div>
+
+          {/* Expandable log */}
+          {expanded && (
+            <div className="mt-4 overflow-hidden rounded-[10px] border border-white/[.07] bg-black/40">
+              <div className="flex items-center gap-2 border-b border-white/[.06] px-3 py-2">
+                <span className="h-2 w-2 rounded-full bg-red-400/70" />
+                <span className="h-2 w-2 rounded-full bg-yellow-400/40" />
+                <span className="h-2 w-2 rounded-full bg-white/10" />
+                <span className="ml-2 text-[10.5px] font-mono text-zinc-600">error.log</span>
+              </div>
+              <pre className="max-h-[200px] overflow-auto p-4 text-[10.5px] font-mono leading-relaxed text-zinc-500 whitespace-pre-wrap">
+                {errorMessage}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Soft suggestion below card */}
+      <p className="mt-3 text-center text-[11.5px] text-zinc-600">
+        Persistent failures? Check the{" "}
+        <span className="text-zinc-400">yt-cookies.txt</span> file or try a different video source.
+      </p>
+    </div>
+  );
+}
+
 /* ─── Results view ─── */
 function ResultsView({
   video,
@@ -1262,7 +1391,9 @@ function ResultsView({
               />
             )}
           />
-        : <div className="py-16 text-center text-zinc-500">No clips generated yet.</div>}
+        : video.status === "failed" && video.error_message
+          ? <FailedErrorCard errorMessage={video.error_message} videoId={video.id} onRetried={() => onBack()} />
+          : <div className="py-16 text-center text-zinc-500">No clips generated yet.</div>}
 
       {bulkModal && (
         <BulkPublishModal

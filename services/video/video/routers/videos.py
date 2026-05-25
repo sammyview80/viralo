@@ -30,25 +30,53 @@ from video.schemas import (
     YouTubeInspectResponse,
 )
 
+def _ytdlp_proxies() -> list[str]:
+    import os as _os
+    proxy_list = _os.getenv("YTDLP_PROXY_LIST", "")
+    if proxy_list:
+        return [p.strip() for p in proxy_list.split(",") if p.strip()]
+    single = _os.getenv("YTDLP_PROXY", "")
+    return [single] if single else []
+
+
 def _ytdlp_fetch_json(url: str, timeout: int = 30) -> dict:
     """Run yt-dlp --dump-json for metadata. Raises RuntimeError on failure or 429."""
     import os as _os
-    base = ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", "--no-check-certificate"]
     cookies_file = _os.getenv("YTDLP_COOKIES_FILE", "")
-    if cookies_file and Path(cookies_file).exists():
-        base += ["--cookies", cookies_file]
+    proxies = _ytdlp_proxies()
 
-    strategies = [
-        base + ["--extractor-args", "youtube:player_client=android", url],
-        base + ["--extractor-args", "youtube:player_client=tv_embedded", url],
-        base + [url],
-    ]
+    def _base(proxy: str | None) -> list[str]:
+        b = ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", "--no-check-certificate"]
+        # Cookies omitted when proxy set — IP mismatch causes YouTube to invalidate the session
+        if not proxy and cookies_file and Path(cookies_file).exists():
+            b += ["--cookies", cookies_file]
+        if proxy:
+            b += ["--proxy", proxy]
+        return b
+
+    def _strategies(proxy: str | None) -> list[list[str]]:
+        b = _base(proxy)
+        return [
+            b + ["--extractor-args", "youtube:player_client=android", url],
+            b + ["--extractor-args", "youtube:player_client=tv_embedded", url],
+            b + [url],
+        ]
+
+    all_strategies: list[tuple[list[str], str | None]] = []
+    for i, strat in enumerate(_strategies(proxies[0] if proxies else None)):
+        all_strategies.append((strat, proxies[i % len(proxies)] if proxies else None))
+
     last_err = "yt-dlp returned no data"
-    for args in strategies:
+    for i, (args, proxy) in enumerate(all_strategies):
         try:
             result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
             stderr = result.stderr or ""
             if "429" in stderr or "Too Many Requests" in stderr:
+                # Rotate proxy for remaining strategies on 429
+                if proxies and len(proxies) > 1:
+                    next_proxy = proxies[(i + 1) % len(proxies)]
+                    remaining = _strategies(next_proxy)[i + 1:]
+                    all_strategies[i + 1:] = [(s, next_proxy) for s in remaining]
                 raise RuntimeError(f"YouTube rate-limited (429): {stderr[:200]}")
             if result.returncode == 0 and result.stdout.strip():
                 try:

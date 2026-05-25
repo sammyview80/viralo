@@ -352,7 +352,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterGroup({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
       <div className="text-[10px] font-semibold uppercase tracking-[.13em] text-zinc-600">{label}</div>
@@ -474,7 +474,7 @@ export function ClipsPage() {
       setLoading(true);
       try {
         const [clipsResp, postsResp] = await Promise.all([
-          videoApi.listClips(page, perPage),
+          videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined),
           platformApi.listPosts({ per_page: 100 }),
         ]);
         const allClips = Array.isArray(clipsResp.items) ? clipsResp.items : [];
@@ -490,7 +490,7 @@ export function ClipsPage() {
       }
     }
     load();
-  }, [page]);
+  }, [page, minViralityScore]);
 
   // Ref-based SSE subscriptions — keyed by video_id so we never double-subscribe or loop
   const sseSourcesRef = useRef<Map<string, EventSource>>(new Map());
@@ -607,8 +607,8 @@ export function ClipsPage() {
   const drawerPost = drawer
     ? (postsByClipId.get(drawer.id) ?? [])[0] ?? null
     : null;
-  const activeFilterCount = [platforms.size, statuses.size, durations.size, scores.size, published.size, search !== "" ? 1 : 0].reduce((a, b) => a + b, 0);
-  function clearFilters() { setPlatforms(new Set()); setStatuses(new Set()); setDurations(new Set()); setScores(new Set()); setPublished(new Set()); setSearch(""); }
+  const activeFilterCount = [platforms.size, statuses.size, durations.size, scores.size, published.size, search !== "" ? 1 : 0, minViralityScore > 0 ? 1 : 0].reduce((a, b) => a + b, 0);
+  function clearFilters() { setPlatforms(new Set()); setStatuses(new Set()); setDurations(new Set()); setScores(new Set()); setPublished(new Set()); setSearch(""); setMinViralityScore(0); setPage(1); }
 
   return (
     <Shell active="clips">
@@ -660,8 +660,18 @@ export function ClipsPage() {
               <FilterGroup label="Platform">{PLATFORM_OPTIONS.map((f) => <Chip key={f.id} active={platforms.has(f.id)} onClick={() => setPlatforms((p) => toggle(p, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Status">{STATUS_OPTIONS.map((f) => <Chip key={f.id} active={statuses.has(f.id)} onClick={() => setStatuses((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Duration">{DURATION_OPTIONS.map((f) => <Chip key={f.id} active={durations.has(f.id)} onClick={() => setDurations((d) => toggle(d, f.id))}>{f.label}</Chip>)}</FilterGroup>
-              <FilterGroup label="Score">{SCORE_OPTIONS.map((f) => <Chip key={f.id} active={scores.has(f.id)} onClick={() => setScores((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Published">{PUBLISHED_OPTIONS.map((f) => <Chip key={f.id} active={published.has(f.id)} onClick={() => setPublished((p) => toggle(p, f.id))}>{f.label}</Chip>)}{activeFilterCount > 0 && <button onClick={clearFilters} className="text-xs font-semibold text-zinc-500 hover:text-rose-300">Clear all</button>}</FilterGroup>
+              <FilterGroup label={<span className="flex items-center justify-between w-full">Min Virality Score <span className={cn("font-semibold", minViralityScore > 0 ? "text-[#ff3d6a]" : "text-zinc-500")}>{minViralityScore > 0 ? `≥${minViralityScore}/10` : "Any"}</span></span>}>
+                <div className="flex w-full flex-col gap-1.5 pt-1">
+                  <input type="range" min={0} max={10} step={1} value={minViralityScore}
+                    onChange={(e) => { setMinViralityScore(Number(e.target.value)); setPage(1); }}
+                    className="h-[3px] w-full cursor-pointer appearance-none rounded-full bg-white/[.08] accent-[#ff3d6a]"
+                  />
+                  <div className="flex justify-between text-[10px] text-zinc-600">
+                    <span>Any</span><span>Balanced</span><span>Viral only</span>
+                  </div>
+                </div>
+              </FilterGroup>
             </div>
           </div>
         )}

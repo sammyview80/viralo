@@ -105,6 +105,8 @@ services:
       - "8003:8003"
     environment:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
@@ -184,6 +186,8 @@ services:
     command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=4 --loglevel=info
     environment:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
