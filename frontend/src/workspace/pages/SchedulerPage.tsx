@@ -58,6 +58,7 @@ function PostPopover({ post, onClose, onCancelled }: { post: ScheduledPost; onCl
   const scheduledLocal = fmtLocal(post.scheduled_at);
   const postedLocal = post.posted_at ? fmtLocal(post.posted_at) : null;
   const [cancelling, setCancelling] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const isPosted = post.status === "posted";
   const isFailed = post.status === "failed";
 
@@ -125,22 +126,43 @@ function PostPopover({ post, onClose, onCancelled }: { post: ScheduledPost; onCl
         )}
 
         {(post.status === "scheduled" || post.status === "pending" || post.status === "failed") && onCancelled && (
-          <button
-            onClick={async () => {
-              setCancelling(true);
-              try {
-                await platformApi.cancelPost(post.id);
-                onCancelled(post.id);
-                onClose();
-              } catch {
-                setCancelling(false);
-              }
-            }}
-            disabled={cancelling}
-            className="mt-3 w-full rounded-[9px] border border-red-500/20 bg-red-500/5 py-2 text-[12.5px] font-semibold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
-          >
-            {cancelling ? "Cancelling…" : "Cancel scheduled post"}
-          </button>
+          confirmCancel ? (
+            <div className="mt-3 space-y-2">
+              <p className="text-center text-[12px] text-zinc-400">Cancel this scheduled post?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmCancel(false)}
+                  className="flex-1 rounded-[9px] border border-white/[.08] bg-white/[.03] py-2 text-[12.5px] font-semibold text-zinc-300 transition hover:text-white"
+                >
+                  Keep it
+                </button>
+                <button
+                  onClick={async () => {
+                    setCancelling(true);
+                    try {
+                      await platformApi.cancelPost(post.id);
+                      onCancelled(post.id);
+                      onClose();
+                    } catch {
+                      setCancelling(false);
+                      setConfirmCancel(false);
+                    }
+                  }}
+                  disabled={cancelling}
+                  className="flex-1 rounded-[9px] bg-red-500/80 py-2 text-[12.5px] font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+                >
+                  {cancelling ? "Cancelling…" : "Yes, cancel"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmCancel(true)}
+              className="mt-3 w-full rounded-[9px] border border-red-500/20 bg-red-500/5 py-2 text-[12.5px] font-semibold text-red-400 transition hover:bg-red-500/10"
+            >
+              Cancel scheduled post
+            </button>
+          )
         )}
       </div>
     </div>
@@ -303,6 +325,7 @@ function PostsListView({
   loading: boolean;
 }) {
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const filtered = posts.filter((p) => {
     const mp = platformFilter === "all" || p.platform === platformFilter;
     const ms = statusFilter === "all" || p.status === statusFilter;
@@ -354,22 +377,40 @@ function PostsListView({
             {isPosted && <span className="shrink-0 text-emerald-400">✓</span>}
             {isFailed && <span className="shrink-0 text-red-400">✕</span>}
             {(post.status === "scheduled" || post.status === "pending") && (
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  setCancelling(post.id);
-                  try {
-                    await platformApi.cancelPost(post.id);
-                    onCancelled(post.id);
-                  } finally {
-                    setCancelling(null);
-                  }
-                }}
-                disabled={cancelling === post.id}
-                className="shrink-0 rounded-[7px] border border-red-500/20 bg-red-500/5 px-2.5 py-1 text-[11px] font-semibold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {cancelling === post.id ? "…" : "Cancel"}
-              </button>
+              confirmingId === post.id ? (
+                <div className="flex shrink-0 gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => setConfirmingId(null)}
+                    className="rounded-[7px] border border-white/[.08] bg-white/[.03] px-2.5 py-1 text-[11px] font-semibold text-zinc-400 hover:text-white"
+                  >
+                    Keep
+                  </button>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setCancelling(post.id);
+                      setConfirmingId(null);
+                      try {
+                        await platformApi.cancelPost(post.id);
+                        onCancelled(post.id);
+                      } finally {
+                        setCancelling(null);
+                      }
+                    }}
+                    disabled={cancelling === post.id}
+                    className="rounded-[7px] bg-red-500/80 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                  >
+                    {cancelling === post.id ? "…" : "Confirm"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmingId(post.id); }}
+                  className="shrink-0 rounded-[7px] border border-red-500/20 bg-red-500/5 px-2.5 py-1 text-[11px] font-semibold text-red-400 transition hover:bg-red-500/10"
+                >
+                  Cancel
+                </button>
+              )
             )}
           </button>
         );
