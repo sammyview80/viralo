@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Shell } from "../Shell";
+import { navigate } from "@/lib/router";
+import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
 import { videoApi, platformApi, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount } from "@/lib/api";
 
 /* ─── Types ─── */
@@ -851,150 +853,55 @@ function ClipCard({ clip, idx, selected = false, onToggleSelect }: {
   selected?: boolean;
   onToggleSelect?: () => void;
 }) {
-  const [playing,        setPlaying]        = useState(false);
   const [showEditor,     setShowEditor]     = useState(false);
   const [showDl,         setShowDl]         = useState(false);
-  const [showTranscript, setShowTranscript] = useState(false);
   const [showPublish,    setShowPublish]    = useState(false);
   const [regenerating,   setRegenerating]   = useState(false);
   const [localClip,      setLocalClip]      = useState(clip);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const durMs   = localClip.duration_ms ?? ((localClip.end_ms ?? 0) - (localClip.start_ms ?? 0));
-  const durSec  = durMs / 1000;
+  const durMs = localClip.duration_ms ?? ((localClip.end_ms ?? 0) - (localClip.start_ms ?? 0));
   const startSec = (localClip.start_ms ?? 0) / 1000;
-  const endSec   = (localClip.end_ms ?? durMs) / 1000;
-  const grad     = gradFromId(localClip.id);
-  const plats    = localClip.platform ? [localClip.platform] : [];
-  const hasVideo = Boolean(localClip.storage_url);
-
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) { videoRef.current.play(); setPlaying(true); }
-    else { videoRef.current.pause(); setPlaying(false); }
-  };
+  const endSec = (localClip.end_ms ?? durMs) / 1000;
 
   const handleRegen = () => {
     setRegenerating(true);
     setTimeout(() => setRegenerating(false), 2200);
   };
 
+  const actions: Array<{
+    id: ClipCardAction;
+    label?: string;
+    icon?: string;
+    primary?: boolean;
+    disabled?: boolean;
+    onClick?: (clip: ClipApiResponse) => void;
+  }> = [
+    { id: "publish", label: "Publish", icon: "↗", primary: true, onClick: () => setShowPublish(true) },
+    { id: "trim", label: "Trim", icon: "✂", onClick: () => setShowEditor(true) },
+    { id: "edit", label: "Edit", icon: "✎", onClick: () => setShowEditor(true) },
+    ...(localClip.caption_srt ? [{ id: "transcript" as ClipCardAction, label: "Transcript", icon: "☷" }] : []),
+    { id: "regenerate", label: regenerating ? "Regenerating" : "Regenerate", icon: "✦", disabled: regenerating, onClick: handleRegen },
+    { id: "download", label: "Download", icon: "↓", onClick: () => setShowDl(true) },
+  ];
+
   return (
     <>
-      <div className={cn("overflow-hidden rounded-[13px] border bg-[#0e1420] transition hover:border-white/[.12]", selected ? "border-[#ff3d6a]/50 shadow-[0_0_0_1px_rgba(255,61,106,.15)]" : "border-white/[.07]")}
-        style={{ animation: `fadeUp .3s ${idx * 60}ms cubic-bezier(.22,.8,.4,1) both` }}>
-
-        {/* Thumbnail / video */}
-        <div
-          className={cn("relative aspect-[9/12] cursor-pointer overflow-hidden",
-            !hasVideo && !localClip.thumbnail_url ? `bg-gradient-to-br ${grad}` : "bg-black")}
-          onClick={hasVideo ? togglePlay : undefined}
-        >
-          {hasVideo ? (
-            <video ref={videoRef} src={localClip.storage_url!}
-              className="absolute inset-0 h-full w-full object-cover"
-              playsInline preload="metadata"
-              onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
-          ) : localClip.thumbnail_url ? (
-            <img src={localClip.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          ) : null}
-
-          {!playing && <div className="absolute inset-0 bg-black/20" />}
-          {regenerating && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-              <span className="block h-10 w-10 rounded-full border-[3px] border-white/20 border-t-white animate-spin" />
-            </div>
-          )}
-
-          {onToggleSelect && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-              className={cn(
-                "absolute left-2 top-2 z-10 grid h-5 w-5 place-items-center rounded-[5px] border-2 transition",
-                selected
-                  ? "border-[#ff3d6a] bg-[#ff3d6a] text-white"
-                  : "border-white/40 bg-black/40 text-transparent hover:border-white/70"
-              )}
-            >
-              {selected && <span className="text-[10px] font-bold leading-none">✓</span>}
-            </button>
-          )}
-          {plats.length > 0 && (
-            <div className="absolute left-2 top-2 flex gap-1">{plats.map((p) => <PlatPill key={p} p={p} />)}</div>
-          )}
-          {localClip.score != null && (
-            <div className="absolute right-2 top-2"><VirChip score={localClip.score} /></div>
-          )}
-          {hasVideo && !playing && !regenerating && (
-            <div className="absolute inset-0 grid place-items-center">
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-black/50 text-white backdrop-blur-sm">▶</div>
-            </div>
-          )}
-          {durSec > 0 && (
-            <div className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
-              {fmtSec(durSec)}
-            </div>
-          )}
-          {localClip.start_ms != null && localClip.end_ms != null && !playing && (
-            <div className="absolute left-2 bottom-2 text-[10px] font-mono text-white/70">
-              {fmtSec(startSec)} → {fmtSec(endSec)}
-            </div>
-          )}
-        </div>
-
-        {/* Body */}
-        <div className="p-3.5">
-          <div className="mb-1.5 text-[13px] font-semibold leading-snug">{localClip.title ?? "Clip"}</div>
-          <div className="mb-3 flex items-center gap-1.5 text-[11px] text-zinc-500">
-            {plats.length > 0 && <><span className="flex gap-1">{plats.map((p) => <PlatPill key={p} p={p} />)}</span><span>·</span></>}
-            {durSec > 0 && <span>{fmtSec(durSec)} clip</span>}
+      <div className="relative">
+        <UniversalClipCard
+          clip={localClip}
+          delay={idx * 60}
+          selected={selected}
+          selectable={Boolean(onToggleSelect)}
+          onSelect={() => onToggleSelect?.()}
+          actions={actions}
+          density="compact"
+        />
+        {regenerating && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[16px] bg-black/45 backdrop-blur-[1px]">
+            <span className="block h-10 w-10 rounded-full border-[3px] border-white/20 border-t-white animate-spin" />
           </div>
-
-          {/* Transcript */}
-          {showTranscript && localClip.caption_srt && (
-            <div className="mb-3 max-h-24 overflow-y-auto rounded-[9px] border border-white/[.07] bg-white/[.03] px-3 py-2.5 font-mono text-[11px] leading-[1.6] text-zinc-400">
-              {localClip.caption_srt}
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-1.5">
-            {hasVideo && (
-              <button onClick={togglePlay}
-                className="flex items-center gap-1 rounded-[7px] border border-white/[.08] bg-white/[.03] px-2.5 py-1.5 text-[11.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white">
-                {playing ? "⏸ Pause" : "▶ Preview"}
-              </button>
-            )}
-            <button onClick={() => setShowEditor(true)}
-              className="flex items-center gap-1 rounded-[7px] border border-white/[.08] bg-white/[.03] px-2.5 py-1.5 text-[11.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white">
-              ✂ Edit
-            </button>
-            {localClip.caption_srt && (
-              <button onClick={() => setShowTranscript((p) => !p)}
-                className={cn("flex items-center gap-1 rounded-[7px] border px-2.5 py-1.5 text-[11.5px] font-medium transition",
-                  showTranscript ? "border-[#ff3d6a]/30 bg-[#ff3d6a]/10 text-[#ff3d6a]" : "border-white/[.08] bg-white/[.03] text-zinc-300 hover:bg-white/[.07] hover:text-white")}>
-                👁 {showTranscript ? "Hide" : "Transcript"}
-              </button>
-            )}
-            <button onClick={handleRegen} disabled={regenerating}
-              className="flex items-center gap-1 rounded-[7px] border border-white/[.08] bg-white/[.03] px-2.5 py-1.5 text-[11.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white disabled:opacity-50">
-              ✦ {regenerating ? "…" : "Regen"}
-            </button>
-            <div className="ml-auto flex gap-1.5">
-              <button
-                onClick={() => setShowPublish(true)}
-                className="flex items-center gap-1 rounded-[7px] bg-[#ff3d6a] px-2.5 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.25)] transition hover:shadow-[0_4px_16px_rgba(255,61,106,.4)]">
-                ↗ Publish
-              </button>
-              <div className="relative">
-                <button onClick={(e) => { e.stopPropagation(); setShowDl((p) => !p); }}
-                  className="flex items-center rounded-[7px] border border-white/[.08] bg-white/[.03] px-2 py-1.5 text-[11.5px] font-medium text-zinc-400 transition hover:text-white">
-                  ↓
-                </button>
-                {showDl && <DownloadMenu clip={localClip} onClose={() => setShowDl(false)} />}
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
+        {showDl && <DownloadMenu clip={localClip} onClose={() => setShowDl(false)} />}
       </div>
 
       {showEditor && (
@@ -1005,7 +912,7 @@ function ClipCard({ clip, idx, selected = false, onToggleSelect }: {
           onSave={(c) => setLocalClip((prev) => ({
             ...prev,
             start_ms: c.startSec * 1000,
-            end_ms:   c.endSec   * 1000,
+            end_ms: c.endSec * 1000,
             duration_ms: (c.endSec - c.startSec) * 1000,
           }))}
         />
@@ -1072,6 +979,12 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
   const updateGroup = (gid: string, patch: Partial<typeof groups[0]>) =>
     setGroups((prev) => prev.map((g) => g.id === gid ? { ...g, ...patch } : g));
 
+  const BULK_KEY_MAP: Record<string, string> = {
+    instagram: "reels", reels: "reels", tiktok: "tiktok", tt: "tiktok",
+    shorts: "shorts", youtube: "youtube", yt: "youtube",
+    twitter: "twitter", tw: "twitter", facebook: "facebook",
+  };
+
   const handleSubmit = async () => {
     setSubmitting(true);
     setError(null);
@@ -1079,12 +992,19 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
       for (const g of groups) {
         const account = accounts.find((a) => a.id === g.accountId);
         if (!account || g.clipIds.length === 0) continue;
+        const platformKey = BULK_KEY_MAP[account.platform.toLowerCase()] ?? account.platform.toLowerCase();
         for (const clipId of g.clipIds) {
+          const clip = clips.find((c) => c.id === clipId);
+          const content = clip?.clip_metadata?.platforms?.[platformKey];
+          const caption = content?.description ?? clip?.clip_metadata?.ai_title ?? clip?.title ?? undefined;
+          const hashtags = content?.tags ?? undefined;
           await platformApi.schedulePost({
             clip_id: clipId,
             social_account_id: g.accountId,
             platform: account.platform,
             scheduled_at: new Date(g.scheduledAt).toISOString(),
+            caption,
+            hashtags,
           });
         }
       }
@@ -1109,83 +1029,96 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
 
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-white/[.07] px-5 py-4 shrink-0">
-          <div className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a]">↗</div>
+          <div className="grid h-10 w-10 place-items-center rounded-[12px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a] text-lg font-black">↗</div>
           <div>
-            <h3 className="font-display text-[15px] font-bold">Bulk Schedule</h3>
+            <h3 className="font-display text-[16px] font-bold">Bulk Schedule</h3>
             <p className="text-[11.5px] text-zinc-500">Assign clips to time slots across accounts</p>
           </div>
-          <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-white/[.08] text-zinc-500 hover:text-white">✕</button>
+          <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-white/[.08] text-zinc-500 hover:text-white transition">✕</button>
         </div>
 
         {/* Body */}
         <div className="overflow-y-auto p-5 space-y-4">
           {success ? (
-            <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-green-500/10 text-2xl">✓</div>
-              <p className="font-semibold text-green-400">Scheduled!</p>
-              <p className="text-xs text-zinc-500">{totalScheduled} clips queued for publishing.</p>
+            <div className="flex flex-col items-center gap-4 py-10 text-center">
+              <div className="grid h-14 w-14 place-items-center rounded-full bg-green-500/10 text-3xl">✓</div>
+              <p className="font-display text-lg font-bold text-white">Scheduled!</p>
+              <p className="text-sm text-zinc-500">{totalScheduled} clip{totalScheduled !== 1 ? "s" : ""} queued for publishing.</p>
             </div>
           ) : loadingAccounts ? (
-            <div className="space-y-3">{[1,2].map((i) => <div key={i} className="h-24 animate-pulse rounded-[10px] bg-white/[.04]" />)}</div>
+            <div className="space-y-3">{[1,2].map((i) => <div key={i} className="h-28 animate-pulse rounded-[12px] bg-white/[.04]" />)}</div>
           ) : accounts.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 px-4 py-6 text-center">
+            <div className="flex flex-col items-center gap-3 rounded-[12px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 px-4 py-8 text-center">
               <div className="grid h-10 w-10 place-items-center rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-lg">⚡</div>
               <p className="text-sm font-semibold text-white">No social accounts connected</p>
-              <a href="/integrations" className="rounded-[9px] bg-[#ff3d6a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#ff3d6a]/85">Connect social media →</a>
+              <a href="/integrations" className="rounded-[9px] bg-[#ff3d6a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#ff3d6a]/85 transition">Connect social media →</a>
             </div>
           ) : (
             <>
-              {groups.map((g, gi) => (
-                <div key={g.id} className="rounded-[12px] border border-white/[.07] bg-white/[.02] p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11.5px] font-bold text-zinc-400">Slot {gi + 1}</span>
-                    {groups.length > 1 && (
-                      <button onClick={() => removeGroup(g.id)} className="ml-auto text-[11px] text-zinc-600 hover:text-red-400">Remove</button>
-                    )}
-                  </div>
+              {groups.map((g, gi) => {
+                const slotAccount = accounts.find((a) => a.id === g.accountId);
+                const slotPlatform = slotAccount?.platform?.toLowerCase() ?? "";
+                const slotKey = ({ instagram:"reels", reels:"reels", tiktok:"tiktok", tt:"tiktok", shorts:"shorts", youtube:"youtube", yt:"youtube", twitter:"twitter", tw:"twitter", facebook:"facebook" } as Record<string,string>)[slotPlatform] ?? slotPlatform;
+                const slotCfg = ({ youtube:{color:"#FF0000",icon:"▶",label:"YouTube"}, shorts:{color:"#FF0000",icon:"▶",label:"Shorts"}, tiktok:{color:"#69C9D0",icon:"♪",label:"TikTok"}, reels:{color:"#E1306C",icon:"◈",label:"Reels"}, instagram:{color:"#E1306C",icon:"◈",label:"Instagram"}, twitter:{color:"#1DA1F2",icon:"𝕏",label:"Twitter"}, facebook:{color:"#1877F2",icon:"f",label:"Facebook"} } as Record<string,{color:string;icon:string;label:string}>)[slotKey] ?? {color:"#ff3d6a",icon:"↗",label:"Platform"};
 
-                  {/* Account + time */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-zinc-600">Account</label>
-                      <select value={g.accountId} onChange={(e) => updateGroup(g.id, { accountId: e.target.value })}
-                        className="w-full rounded-[8px] border border-white/[.08] bg-[#111827] px-2.5 py-1.5 text-[12px] text-white focus:outline-none">
-                        {accounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.platform.charAt(0).toUpperCase() + a.platform.slice(1)} — @{a.platform_username ?? "?"}
-                          </option>
-                        ))}
-                      </select>
+                return (
+                  <div key={g.id} className="overflow-hidden rounded-[14px] border bg-[#0a0f1a]" style={{ borderColor: `${slotCfg.color}40` }}>
+                    {/* Slot header strip */}
+                    <div className="flex items-center gap-2.5 px-4 py-2.5" style={{ background: `${slotCfg.color}12`, borderBottom: `1px solid ${slotCfg.color}25` }}>
+                      <div className="grid h-6 w-6 place-items-center rounded-full text-[11px] font-black text-white" style={{ background: slotCfg.color }}>{slotCfg.icon}</div>
+                      <span className="text-[12px] font-bold" style={{ color: slotCfg.color }}>{slotCfg.label}</span>
+                      <span className="text-[11px] font-semibold text-zinc-500">· Slot {gi + 1}</span>
+                      {groups.length > 1 && (
+                        <button onClick={() => removeGroup(g.id)} className="ml-auto text-[11px] text-zinc-600 hover:text-red-400 transition">Remove</button>
+                      )}
                     </div>
-                    <div>
-                      <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-zinc-600">Scheduled at</label>
-                      <input type="datetime-local" value={g.scheduledAt}
-                        onChange={(e) => updateGroup(g.id, { scheduledAt: e.target.value })}
-                        className="w-full rounded-[8px] border border-white/[.08] bg-[#111827] px-2.5 py-1.5 text-[12px] text-white focus:outline-none [color-scheme:dark]" />
-                    </div>
-                  </div>
 
-                  {/* Clip chips */}
-                  <div>
-                    <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-zinc-600">Clips ({g.clipIds.length})</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {clips.map((c) => (
-                        <button key={c.id} onClick={() => toggleClipInGroup(g.id, c.id)}
-                          className={cn("rounded-[7px] border px-2.5 py-1 text-[11px] font-medium transition",
-                            g.clipIds.includes(c.id)
-                              ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-rose-200"
-                              : "border-white/[.07] bg-white/[.03] text-zinc-500 hover:text-zinc-300"
-                          )}>
-                          {c.title ?? `Clip ${clips.indexOf(c) + 1}`}
-                        </button>
-                      ))}
+                    <div className="p-4 space-y-3">
+                      {/* Account + time */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-zinc-500">Account</label>
+                          <select value={g.accountId} onChange={(e) => updateGroup(g.id, { accountId: e.target.value })}
+                            className="w-full rounded-[9px] border bg-[#111827] px-2.5 py-2 text-[12px] text-white focus:outline-none transition"
+                            style={{ borderColor: `${slotCfg.color}40` }}>
+                            {accounts.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.platform.charAt(0).toUpperCase() + a.platform.slice(1)} — @{a.platform_username ?? "?"}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-zinc-500">Scheduled at</label>
+                          <input type="datetime-local" value={g.scheduledAt}
+                            onChange={(e) => updateGroup(g.id, { scheduledAt: e.target.value })}
+                            className="w-full rounded-[9px] border border-white/[.08] bg-[#111827] px-2.5 py-2 text-[12px] text-white focus:outline-none [color-scheme:dark]" />
+                        </div>
+                      </div>
+
+                      {/* Clip chips */}
+                      <div>
+                        <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-zinc-500">Clips ({g.clipIds.length})</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {clips.map((c) => (
+                            <button key={c.id} onClick={() => toggleClipInGroup(g.id, c.id)}
+                              className="rounded-[8px] border px-2.5 py-1.5 text-[11px] font-semibold transition"
+                              style={g.clipIds.includes(c.id)
+                                ? { borderColor: `${slotCfg.color}50`, background: `${slotCfg.color}15`, color: slotCfg.color }
+                                : { borderColor: "rgba(255,255,255,.07)", background: "rgba(255,255,255,.03)", color: "#71717a" }
+                              }>
+                              {(c as any).clip_metadata?.ai_title ?? c.title ?? `Clip ${clips.indexOf(c) + 1}`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               <button onClick={addGroup}
-                className="w-full rounded-[10px] border border-dashed border-white/[.1] py-2.5 text-[12px] font-semibold text-zinc-500 transition hover:border-white/20 hover:text-zinc-300">
+                className="w-full rounded-[12px] border border-dashed border-white/[.1] py-3 text-[12px] font-semibold text-zinc-500 transition hover:border-white/20 hover:text-zinc-300">
                 + Add time slot
               </button>
 
@@ -1196,12 +1129,12 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
 
         {/* Footer */}
         {!success && accounts.length > 0 && (
-          <div className="flex gap-2.5 border-t border-white/[.07] px-5 py-4 shrink-0">
-            <button onClick={onClose} className="rounded-[9px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-300 hover:text-white">
+          <div className="flex gap-3 border-t border-white/[.07] px-5 py-4 shrink-0">
+            <button onClick={onClose} className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-5 py-2.5 text-[13px] font-semibold text-zinc-300 hover:text-white transition">
               Cancel
             </button>
             <button onClick={handleSubmit} disabled={submitting || totalScheduled === 0}
-              className="ml-auto flex items-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50">
+              className="ml-auto flex items-center gap-2 rounded-[10px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50 transition hover:bg-[#ff3d6a]/85">
               {submitting ? "Scheduling…" : `↗ Schedule ${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""}`}
             </button>
           </div>
@@ -1237,7 +1170,7 @@ function ResultsView({
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <button onClick={onBack}
           className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white">
-          ‹ New upload
+          ‹ Projects
         </button>
         <div className={cn("h-7 w-10 flex-none rounded-[6px] bg-gradient-to-br", grad)} />
         <h2 className="font-display text-[18px] font-bold">{video.title ?? "Untitled"}</h2>
@@ -1504,256 +1437,148 @@ export function UploadPage() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
-      <div className="flex h-[calc(100vh-116px)] overflow-hidden rounded-[13px] border border-white/[.07] bg-[#0e1420]">
-        {/* ─── Left: History ─── */}
-        <div className="flex w-[264px] flex-none flex-col border-r border-white/[.07]">
-          <div className="flex-none border-b border-white/[.07] px-4 py-4">
-            <h3 className="font-display text-[14px] font-bold">Project History</h3>
-            <p className="mt-0.5 text-[11.5px] text-zinc-500">{historyLoading ? "Loading…" : `${history.length} projects`}</p>
+
+      <div className="min-h-[calc(100vh-116px)] rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/[.07] px-7 py-6">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.14em] text-zinc-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#ff3d6a]" /> Uploader
+            </div>
+            <h2 className="font-display text-[24px] font-bold tracking-[-0.02em]">
+              {view === "upload" ? "New upload"
+              : view === "processing" ? "Processing…"
+              : "Generated Clips"}
+            </h2>
+            <p className="mt-1 text-[13px] text-zinc-500">
+              {view === "upload" ? "Upload a file or paste a YouTube link. Existing upload behavior is unchanged."
+              : view === "processing" ? "AI is analyzing your video and generating clips."
+              : "Preview, edit, download or publish your clips below."}
+            </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {historyLoading && (
-              <div className="flex items-center justify-center py-8 text-zinc-600 text-[12px]">
-                <span className="mr-2 block h-3 w-3 rounded-full border-2 border-[#ff3d6a] border-t-transparent animate-spin" />Loading…
-              </div>
+          <div className="flex flex-wrap gap-2">
+            {view !== "results" && (
+              <button
+                onClick={() => navigate("/projects")}
+                className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-300 transition hover:bg-white/[.06] hover:text-white"
+              >
+                Projects
+              </button>
             )}
-            {!historyLoading && history.length === 0 && (
-              <div className="py-8 text-center text-[12px] text-zinc-600">No uploads yet</div>
+            {view !== "upload" && (
+              <button
+                onClick={() => { setView("upload"); setActiveVideo(null); setClips([]); setUploadError(""); }}
+                className="rounded-[10px] bg-[#ff3d6a] px-4 py-2 text-[13px] font-bold text-white shadow-[0_8px_24px_rgba(255,61,106,.28)] transition hover:bg-[#ff3d6a]/90"
+              >
+                + New upload
+              </button>
             )}
-            {history.map((vid) => {
-              const grad = gradFromId(vid.id);
-              const isProc = vid.status === "pending" || vid.status === "processing";
-              const isDeleting = deletingId === vid.id;
-              return (
-                <div
-                  key={vid.id}
-                  onClick={() => !isDeleting && loadVideo(vid)}
-                  className={cn(
-                    "group flex items-center gap-3 border-b border-white/[.05] px-4 py-3 transition cursor-pointer hover:bg-white/[.03]",
-                    activeVideo?.id === vid.id ? "bg-white/[.04]" : "",
-                    isDeleting ? "opacity-50 pointer-events-none" : ""
-                  )}
-                >
-                  <div className={cn("relative grid h-9 w-12 flex-none place-items-center overflow-hidden rounded-[7px] bg-gradient-to-br", grad)}>
-                    {vid.thumbnail_url
-                      ? <img src={vid.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
-                      : isProc
-                        ? <span className="block h-3 w-3 rounded-full border-2 border-white/60 border-t-transparent animate-spin" />
-                        : <span className="text-[10px] text-white">▶</span>}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12.5px] font-semibold">{vid.title ?? "Untitled"}</div>
-                    <div className="mt-0.5 flex gap-1 text-[11px] text-zinc-500">
-                      <span>{vid.source_type === "youtube" || vid.source_type === "youtube_url" ? "YouTube" : "File"}</span>
-                      <span>·</span>
-                      {isTerminalStatus(vid) && vid.status !== "failed"
-                        ? <span className="font-semibold text-emerald-400">Ready</span>
-                        : vid.status === "failed"
-                          ? <span className="font-semibold text-red-400">Failed</span>
-                          : <span className="font-semibold text-yellow-400">Processing…</span>}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => handleDelete(e, vid)}
-                    className="ml-auto flex-none opacity-0 group-hover:opacity-100 grid h-6 w-6 place-items-center rounded-[5px] text-zinc-600 transition hover:bg-red-400/10 hover:text-red-400"
-                    title="Delete"
-                  >
-                    {isDeleting
-                      ? <span className="block h-3 w-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" />
-                      : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex-none border-t border-white/[.07] p-3">
-            <button
-              onClick={() => { setView("upload"); setActiveVideo(null); setClips([]); setUploadError(""); }}
-              className="flex w-full items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] py-2 text-[12.5px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.25)] transition hover:shadow-[0_4px_18px_rgba(255,61,106,.4)]"
-            >
-              + New upload
-            </button>
           </div>
         </div>
 
-        {/* ─── Right: Main ─── */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex-none border-b border-white/[.07] px-7 py-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="font-display text-[22px] font-bold tracking-[-0.01em]">
-                  {view === "upload" ? "Upload & Clip"
-                  : view === "processing" ? "Processing…"
-                  : "Generated Clips"}
-                </h2>
-                <p className="mt-1 text-[13px] text-zinc-500">
-                  {view === "upload"      ? "Upload a video or paste a YouTube URL — AI clips the best moments automatically"
-                  : view === "processing" ? "AI is analyzing your video and generating clips"
-                  : "Preview, edit, download or publish your clips below"}
-                </p>
-              </div>
-            </div>
+        <div className="px-7 py-6">
+          {/* Clean upload */}
+          {view === "upload" && (
+            <div className="mx-auto max-w-4xl">
+              <div className="overflow-hidden rounded-[20px] border border-white/[.08] bg-white/[.025]">
+                <div className="border-b border-white/[.07] p-4">
+                  <div className="flex w-fit gap-1 rounded-[10px] border border-white/[.07] bg-black/20 p-1">
+                    {(["file", "yt"] as Source[]).map((s) => (
+                      <button key={s} onClick={() => { setSource(s); setUploadError(""); }}
+                        className={cn("rounded-[8px] px-4 py-2 text-[13px] font-bold transition",
+                          source === s ? "bg-white/[.09] text-white" : "text-zinc-500 hover:text-zinc-300"
+                        )}>
+                        {s === "file" ? "Upload file" : "YouTube URL"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            {view === "upload" && (
-              <div className="mt-4 flex gap-1 rounded-[9px] border border-white/[.07] bg-white/[.03] p-1 w-fit">
-                {(["file", "yt"] as Source[]).map((s) => (
-                  <button key={s} onClick={() => { setSource(s); setUploadError(""); }}
-                    className={cn("rounded-[7px] px-4 py-1.5 text-[12.5px] font-semibold transition",
-                      source === s ? "bg-white/[.08] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
-                    )}>
-                    {s === "file" ? "🎬 Upload File" : "🌐 YouTube URL"}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-7 py-6">
-            {/* Upload — file */}
-            {view === "upload" && source === "file" && (
-              <div>
-                <div
-                  onClick={() => !uploading && fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                  onDragLeave={() => setDrag(false)}
-                  onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
-                  className={cn(
-                    "grid min-h-[300px] cursor-pointer place-items-center rounded-[18px] border border-dashed p-10 text-center transition",
-                    uploading ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.02] cursor-default"
-                    : drag    ? "border-[#ff3d6a]/60 bg-[#ff3d6a]/[.04]"
-                    : "border-white/15 bg-white/[.02] hover:border-white/25 hover:bg-white/[.03]"
-                  )}
-                >
-                  <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
-                  <div>
-                    {uploading
-                      ? <>
-                          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center">
-                            <span className="block h-10 w-10 rounded-full border-[3px] border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
-                          </div>
+                <div className="p-5">
+                  {source === "file" && (
+                    <div
+                      onClick={() => !uploading && fileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+                      onDragLeave={() => setDrag(false)}
+                      onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
+                      className={cn(
+                        "grid min-h-[260px] cursor-pointer place-items-center rounded-[16px] border border-dashed p-8 text-center transition",
+                        uploading ? "cursor-default border-[#ff3d6a]/40 bg-[#ff3d6a]/[.03]"
+                        : drag ? "border-[#ff3d6a]/60 bg-[#ff3d6a]/[.05]"
+                        : "border-white/15 bg-black/10 hover:border-white/25 hover:bg-white/[.025]"
+                      )}
+                    >
+                      <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
+                      {uploading ? (
+                        <div>
+                          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center"><span className="block h-10 w-10 rounded-full border-[3px] border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" /></div>
                           <h3 className="font-display text-xl font-bold">Uploading…</h3>
                           <p className="mt-2 text-[13px] text-zinc-500">Transferring your video to Viralo</p>
-                        </>
-                      : <>
-                          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-2xl">🎬</div>
-                          <h3 className="font-display text-2xl font-bold">{drag ? "Drop to upload" : "Drop your video here"}</h3>
-                          <p className="mt-2 text-[13px] text-zinc-500">MP4, MOV, WebM, MKV · up to 4 GB</p>
-                          <p className="mt-1 text-[12.5px] text-zinc-600">AI will transcribe, score, and clip the best moments automatically.</p>
-                          <div className="mt-5 flex flex-wrap justify-center gap-2">
-                            {["MP4","MOV","WebM","MKV","AVI"].map((f) => (
-                              <span key={f} className="rounded-[6px] border border-white/[.08] bg-white/[.04] px-2.5 py-1 text-[11px] font-mono font-semibold text-zinc-400">{f}</span>
-                            ))}
-                          </div>
-                          <button className="mt-5 rounded-[9px] border border-white/[.10] bg-white/[.05] px-5 py-2 text-[13px] font-semibold text-zinc-300 transition hover:bg-white/[.09] hover:text-white">
-                            Browse files
-                          </button>
-                        </>}
-                  </div>
-                </div>
-
-                {uploadError && (
-                  <div className="mt-3 rounded-[9px] border border-red-400/20 bg-red-400/[.07] px-4 py-2.5 text-[12.5px] font-medium text-red-400">
-                    {uploadError}
-                  </div>
-                )}
-
-                <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
-
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
-                  {[
-                    { emoji:"📝", title:"Auto transcription",   sub:"Full speech-to-text in 60+ languages" },
-                    { emoji:"✂",  title:"Smart clip selection", sub:"AI picks top moments by virality score" },
-                    { emoji:"📤", title:"One-click publish",    sub:"Post to TikTok, Reels, Shorts + more" },
-                  ].map((f) => (
-                    <div key={f.title} className="rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-                      <div className="mb-2.5 text-2xl">{f.emoji}</div>
-                      <div className="text-[13.5px] font-semibold">{f.title}</div>
-                      <div className="mt-1 text-[12.5px] leading-[1.55] text-zinc-500">{f.sub}</div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-xl">↥</div>
+                          <h3 className="font-display text-2xl font-bold">{drag ? "Drop to upload" : "Drop video here"}</h3>
+                          <p className="mt-2 text-[13px] text-zinc-500">MP4, MOV, WebM, MKV, AVI · up to 4 GB</p>
+                          <button className="mt-5 rounded-[10px] bg-white/[.07] px-5 py-2 text-[13px] font-bold text-zinc-200 transition hover:bg-white/[.10]">Browse files</button>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  )}
 
-            {/* Upload — YouTube */}
-            {view === "upload" && source === "yt" && (
-              <div>
-                <div className="rounded-[16px] border border-white/[.08] bg-white/[.025] p-6">
-                  <h3 className="font-display text-[16px] font-bold">YouTube URL</h3>
-                  <p className="mt-1 text-[13px] text-zinc-500">Paste any YouTube link — we'll download, transcribe, and clip the best moments.</p>
-                  <div className="mt-5 flex gap-2">
-                    <input
-                      value={urlVal}
-                      onChange={(e) => setUrlVal(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && urlReady && !uploading && handleUrlFetch()}
-                      placeholder="https://youtube.com/watch?v=…"
-                      className="flex-1 rounded-[9px] border border-white/[.08] bg-white/[.04] px-4 py-2.5 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
-                    />
-                    <button
-                      disabled={!urlReady || uploading}
-                      onClick={handleUrlFetch}
-                      className="rounded-[9px] border border-white/[.08] bg-white/[.05] px-4 py-2.5 text-[13px] font-semibold text-zinc-300 transition hover:bg-white/[.09] disabled:opacity-40"
-                    >
-                      {uploading ? <span className="block h-4 w-4 rounded-full border-2 border-zinc-400 border-t-transparent animate-spin" /> : "🔍"}
-                    </button>
-                  </div>
-
-                  {urlReady && !uploading && (
-                    <div className="mt-4 flex items-center gap-4 rounded-[11px] border border-white/[.08] bg-white/[.03] p-3.5" style={{ animation: "fadeUp .2s ease" }}>
-                      <div className="relative grid h-14 w-[88px] flex-none place-items-center overflow-hidden rounded-[9px] bg-gradient-to-br from-red-600 to-[#FF7A3D]">
-                        <span className="relative z-[1] text-xl text-white">▶</span>
+                  {source === "yt" && (
+                    <div className="rounded-[16px] border border-white/[.07] bg-black/10 p-5">
+                      <h3 className="font-display text-[16px] font-bold">Paste YouTube URL</h3>
+                      <p className="mt-1 text-[13px] text-zinc-500">Import a public YouTube video and generate clips from it.</p>
+                      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={urlVal}
+                          onChange={(e) => setUrlVal(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && urlReady && !uploading && handleUrlFetch()}
+                          placeholder="https://youtube.com/watch?v=…"
+                          className="min-w-0 flex-1 rounded-[10px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
+                        />
+                        <button
+                          disabled={!urlReady || uploading}
+                          onClick={handleUrlFetch}
+                          className="rounded-[10px] bg-[#ff3d6a] px-5 py-3 text-[13px] font-bold text-white transition hover:bg-[#ff3d6a]/90 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {uploading ? <span className="block h-4 w-4 rounded-full border-2 border-white/70 border-t-transparent animate-spin" /> : "Import"}
+                        </button>
                       </div>
-                      <div className="flex-1">
-                        <div className="text-[13.5px] font-semibold">YouTube video detected</div>
-                        <div className="mt-0.5 text-[12px] text-zinc-500">Ready to import and clip</div>
-                      </div>
-                      <button onClick={handleUrlFetch}
-                        className="flex items-center gap-1.5 rounded-[8px] bg-[#ff3d6a] px-3.5 py-2 text-[12.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.3)]">
-                        ✦ Clip it
-                      </button>
+                      {urlReady && !uploading && (
+                        <div className="mt-4 rounded-[12px] border border-emerald-300/15 bg-emerald-400/10 px-4 py-3 text-[12.5px] font-semibold text-emerald-300">
+                          YouTube video detected. Ready to import and clip.
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {uploadError && (
-                    <div className="mt-3 rounded-[9px] border border-red-400/20 bg-red-400/[.07] px-4 py-2.5 text-[12.5px] font-medium text-red-400">
+                    <div className="mt-4 rounded-[10px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
                       {uploadError}
                     </div>
                   )}
-                </div>
 
-                <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
-
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {[
-                    { emoji:"🌐", title:"Any YouTube video",   sub:"Paste any public URL — channels, playlists, individual videos" },
-                    { emoji:"✂",  title:"Auto-clip to Shorts", sub:"3–7 viral clips extracted, formatted for every platform" },
-                  ].map((f) => (
-                    <div key={f.title} className="rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-                      <div className="mb-2.5 text-2xl">{f.emoji}</div>
-                      <div className="text-[13.5px] font-semibold">{f.title}</div>
-                      <div className="mt-1 text-[12.5px] leading-[1.55] text-zinc-500">{f.sub}</div>
-                    </div>
-                  ))}
+                  <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Processing */}
-            {view === "processing" && activeVideo && (
-              <ProcessingView video={activeVideo} onDone={handleDone} />
-            )}
+          {/* Processing */}
+          {view === "processing" && activeVideo && (
+            <ProcessingView video={activeVideo} onDone={handleDone} />
+          )}
 
-            {/* Results */}
-            {view === "results" && activeVideo && (
-              <ResultsView
-                video={activeVideo}
-                clips={clips}
-                onBack={() => { setView("upload"); setActiveVideo(null); setClips([]); setUploadError(""); }}
-              />
-            )}
-          </div>
+          {/* Results */}
+          {view === "results" && activeVideo && (
+            <ResultsView
+              video={activeVideo}
+              clips={clips}
+              onBack={() => navigate("/projects")}
+            />
+          )}
         </div>
       </div>
 
