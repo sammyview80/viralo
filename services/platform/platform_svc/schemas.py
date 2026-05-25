@@ -24,6 +24,7 @@ class OAuthConnectRequest(BaseModel):
     platform: str
     code: str
     redirect_uri: str
+    code_verifier: str | None = None
 
 
 class OAuthConnectResponse(BaseModel):

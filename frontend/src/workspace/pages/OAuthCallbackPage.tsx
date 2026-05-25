@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { platformApi } from "@/lib/api";
 
-const REDIRECT = `${window.location.origin}/oauth/callback`;
+const REDIRECT = import.meta.env.VITE_OAUTH_REDIRECT
+  || `${window.location.origin}/oauth/callback`;
 
 function detectPlatform(params: URLSearchParams): string | null {
   const state = params.get("state");
@@ -35,8 +36,14 @@ export function OAuthCallbackPage() {
 
     setPlatform(plat);
 
+    const extra: Record<string, string> = {};
+    if (plat === "tiktok") {
+      const cv = sessionStorage.getItem("tiktok_cv");
+      if (cv) { extra.code_verifier = cv; sessionStorage.removeItem("tiktok_cv"); }
+    }
+
     platformApi
-      .connectOAuth(plat, code, REDIRECT)
+      .connectOAuth(plat, code, REDIRECT, extra)
       .then(() => {
         setStatus("success");
         setMessage(`${plat.charAt(0).toUpperCase() + plat.slice(1)} connected!`);

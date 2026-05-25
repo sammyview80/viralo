@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from functools import partial
 from typing import Any
 
-import requests
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +33,7 @@ PLATFORM_TOKEN_URLS = {
 }
 
 
-def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any]:
+def _exchange_code(platform: str, code: str, redirect_uri: str, code_verifier: str | None = None) -> dict[str, Any]:
     """
     Exchange an OAuth authorization code for tokens.
     Returns a dict with at minimum: access_token, and optionally refresh_token,
@@ -42,7 +42,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
     platform = platform.lower()
 
     if platform == "youtube":
-        resp = requests.post(
+        resp = httpx.post(
             "https://oauth2.googleapis.com/token",
             data={
                 "code": code,
@@ -57,7 +57,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         token_data = resp.json()
 
         # Fetch user info
-        user_resp = requests.get(
+        user_resp = httpx.get(
             "https://www.googleapis.com/youtube/v3/channels",
             params={"part": "snippet", "mine": "true"},
             headers={"Authorization": f"Bearer {token_data['access_token']}"},
@@ -79,58 +79,92 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         }
 
     elif platform == "instagram":
-        # Step 1: short-lived token
-        resp = requests.post(
-            "https://api.instagram.com/oauth/access_token",
-            data={
+        # Step 1: exchange code for user token via Facebook Graph API
+        resp = httpx.get(
+            "https://graph.facebook.com/oauth/access_token",
+            params={
                 "client_id": os.environ["INSTAGRAM_CLIENT_ID"],
                 "client_secret": os.environ["INSTAGRAM_CLIENT_SECRET"],
-                "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
                 "code": code,
             },
             timeout=15,
         )
         resp.raise_for_status()
-        short_data = resp.json()
-        short_token = short_data["access_token"]
-        user_id = str(short_data["user_id"])
+        user_token = resp.json()["access_token"]
 
-        # Step 2: exchange for long-lived token
-        ll_resp = requests.get(
-            "https://graph.instagram.com/access_token",
+        # Step 2: long-lived user token
+        ll_resp = httpx.get(
+            "https://graph.facebook.com/oauth/access_token",
             params={
-                "grant_type": "ig_exchange_token",
+                "grant_type": "fb_exchange_token",
+                "client_id": os.environ["INSTAGRAM_CLIENT_ID"],
                 "client_secret": os.environ["INSTAGRAM_CLIENT_SECRET"],
-                "access_token": short_token,
+                "fb_exchange_token": user_token,
             },
-            timeout=10,
+            timeout=15,
         )
         ll_resp.raise_for_status()
-        ll_data = ll_resp.json()
-        long_token = ll_data.get("access_token", short_token)
-        expires_in = ll_data.get("expires_in")
+        long_user_token = ll_resp.json().get("access_token", user_token)
 
-        # Fetch username
-        me_resp = requests.get(
-            "https://graph.instagram.com/me",
-            params={"fields": "id,username", "access_token": long_token},
+        # Step 3: get Facebook Pages
+        me_resp = httpx.get(
+            "https://graph.facebook.com/me",
+            params={"fields": "id,name", "access_token": long_user_token},
             timeout=10,
         )
         me_resp.raise_for_status()
-        me = me_resp.json()
+        fb_user_id = me_resp.json().get("id", "")
+
+        pages_resp = httpx.get(
+            f"https://graph.facebook.com/{fb_user_id}/accounts",
+            params={"access_token": long_user_token},
+            timeout=10,
+        )
+        pages_resp.raise_for_status()
+        pages = pages_resp.json().get("data", [])
+
+        # Step 4: find Instagram Business account linked to each Page
+        ig_user_id = None
+        ig_username = None
+        page_token = long_user_token
+
+        for page in pages:
+            pt = page["access_token"]
+            pid = page["id"]
+            ig_resp = httpx.get(
+                f"https://graph.facebook.com/{pid}",
+                params={"fields": "instagram_business_account", "access_token": pt},
+                timeout=10,
+            )
+            ig_data = ig_resp.json().get("instagram_business_account")
+            if ig_data:
+                ig_user_id = ig_data["id"]
+                page_token = pt
+                # fetch IG username
+                un_resp = httpx.get(
+                    f"https://graph.facebook.com/{ig_user_id}",
+                    params={"fields": "username,name", "access_token": pt},
+                    timeout=10,
+                )
+                un_data = un_resp.json()
+                ig_username = un_data.get("username") or un_data.get("name")
+                break
+
+        if not ig_user_id:
+            raise ValueError("No Instagram Business account linked to your Facebook Pages. Convert your Instagram to a Business/Creator account and link it to a Facebook Page.")
 
         return {
-            "access_token": long_token,
-            "refresh_token": None,
-            "expires_in": expires_in,
+            "access_token": page_token,
+            "refresh_token": long_user_token,
+            "expires_in": None,
             "scope": None,
-            "platform_user_id": me.get("id", user_id),
-            "platform_username": me.get("username"),
+            "platform_user_id": ig_user_id,
+            "platform_username": ig_username,
         }
 
     elif platform == "tiktok":
-        resp = requests.post(
+        resp = httpx.post(
             "https://open.tiktokapis.com/v2/oauth/token/",
             data={
                 "client_key": os.environ["TIKTOK_CLIENT_KEY"],
@@ -138,6 +172,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
                 "code": code,
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
+                **({"code_verifier": code_verifier} if code_verifier else {}),
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=15,
@@ -147,7 +182,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         access_token = token_data["access_token"]
 
         # Fetch user info
-        user_resp = requests.get(
+        user_resp = httpx.get(
             "https://open.tiktokapis.com/v2/user/info/",
             params={"fields": "open_id,display_name"},
             headers={"Authorization": f"Bearer {access_token}"},
@@ -172,7 +207,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         api_secret = os.environ["TWITTER_API_SECRET"]
         credentials = b64.b64encode(f"{api_key}:{api_secret}".encode()).decode()
 
-        resp = requests.post(
+        resp = httpx.post(
             "https://api.twitter.com/2/oauth2/token",
             data={
                 "code": code,
@@ -191,7 +226,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         access_token = token_data["access_token"]
 
         # Fetch user info
-        user_resp = requests.get(
+        user_resp = httpx.get(
             "https://api.twitter.com/2/users/me",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
@@ -209,7 +244,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         }
 
     elif platform == "linkedin":
-        resp = requests.post(
+        resp = httpx.post(
             "https://www.linkedin.com/oauth/v2/accessToken",
             data={
                 "grant_type": "authorization_code",
@@ -226,7 +261,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         access_token = token_data["access_token"]
 
         # Fetch user info via OpenID Connect userinfo
-        user_resp = requests.get(
+        user_resp = httpx.get(
             "https://api.linkedin.com/v2/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
@@ -244,7 +279,8 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         }
 
     elif platform == "facebook":
-        resp = requests.get(
+        # Step 1: exchange code for user access token
+        resp = httpx.get(
             "https://graph.facebook.com/oauth/access_token",
             params={
                 "client_id": os.environ["FACEBOOK_APP_ID"],
@@ -256,25 +292,67 @@ def _exchange_code(platform: str, code: str, redirect_uri: str) -> dict[str, Any
         )
         resp.raise_for_status()
         token_data = resp.json()
-        access_token = token_data["access_token"]
+        user_token = token_data["access_token"]
 
-        # Fetch user info
-        me_resp = requests.get(
+        # Step 2: exchange for long-lived user token
+        ll_resp = httpx.get(
+            "https://graph.facebook.com/oauth/access_token",
+            params={
+                "grant_type": "fb_exchange_token",
+                "client_id": os.environ["FACEBOOK_APP_ID"],
+                "client_secret": os.environ["FACEBOOK_APP_SECRET"],
+                "fb_exchange_token": user_token,
+            },
+            timeout=15,
+        )
+        ll_resp.raise_for_status()
+        ll_data = ll_resp.json()
+        long_user_token = ll_data.get("access_token", user_token)
+
+        # Step 3: fetch user info
+        me_resp = httpx.get(
             "https://graph.facebook.com/me",
-            params={"fields": "id,name", "access_token": access_token},
+            params={"fields": "id,name", "access_token": long_user_token},
             timeout=10,
         )
         me_resp.raise_for_status()
         me = me_resp.json()
+        user_id = me.get("id", "")
+        user_name = me.get("name")
 
-        return {
-            "access_token": access_token,
-            "refresh_token": None,
-            "expires_in": token_data.get("expires_in"),
-            "scope": None,
-            "platform_user_id": me.get("id", ""),
-            "platform_username": me.get("name"),
-        }
+        # Step 4: fetch managed Pages and get never-expiring Page token
+        pages_resp = httpx.get(
+            f"https://graph.facebook.com/{user_id}/accounts",
+            params={"access_token": long_user_token},
+            timeout=10,
+        )
+        pages_resp.raise_for_status()
+        pages = pages_resp.json().get("data", [])
+
+        if pages:
+            # Use first page — store page token (never expires) + page info
+            page = pages[0]
+            page_token = page["access_token"]
+            page_id = page["id"]
+            page_name = page.get("name", user_name)
+            return {
+                "access_token": page_token,
+                "refresh_token": long_user_token,  # keep user token as refresh for re-fetching page token
+                "expires_in": None,  # page tokens never expire
+                "scope": None,
+                "platform_user_id": page_id,
+                "platform_username": page_name,
+            }
+        else:
+            # No pages — store user token (can still post to personal profile in some cases)
+            return {
+                "access_token": long_user_token,
+                "refresh_token": None,
+                "expires_in": ll_data.get("expires_in"),
+                "scope": None,
+                "platform_user_id": user_id,
+                "platform_username": user_name,
+            }
 
     else:
         raise ValueError(f"Unsupported platform: {platform}")
@@ -302,9 +380,9 @@ async def oauth_connect(
     try:
         token_info = await loop.run_in_executor(
             None,
-            partial(_exchange_code, platform, body.code, body.redirect_uri),
+            partial(_exchange_code, platform, body.code, body.redirect_uri, body.code_verifier),
         )
-    except requests.HTTPError as exc:
+    except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"OAuth token exchange failed: {exc.response.text[:300]}",
@@ -326,11 +404,12 @@ async def oauth_connect(
     platform_user_id = str(token_info.get("platform_user_id") or "")
     platform_username = token_info.get("platform_username")
 
-    # Upsert: deactivate existing account for same platform+user and create new one
+    # Upsert: update existing account for same tenant+platform+user
     existing = await db.execute(
         select(SocialAccount).where(
             SocialAccount.platform == platform,
             SocialAccount.platform_user_id == platform_user_id,
+            SocialAccount.tenant_id == uuid.UUID(token.tenant_id),
         )
     )
     existing_account = existing.scalar_one_or_none()

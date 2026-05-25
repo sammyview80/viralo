@@ -379,9 +379,9 @@ export interface NotificationListResponse {
 /* ─── Platform API ─── */
 export const platformApi = {
   // Social accounts
-  connectOAuth: (platform: string, code: string, redirect_uri: string) =>
+  connectOAuth: (platform: string, code: string, redirect_uri: string, extra?: Record<string, string>) =>
     platformReq<{ account_id: string; platform: string; username: string }>(
-      "POST", "/oauth/connect", { platform, code, redirect_uri }
+      "POST", "/oauth/connect", { platform, code, redirect_uri, ...extra }
     ),
   listAccounts: () => platformReq<SocialAccount[]>("GET", "/social-accounts"),
   deleteAccount: (id: string) => platformReq<void>("DELETE", `/social-accounts/${id}`),

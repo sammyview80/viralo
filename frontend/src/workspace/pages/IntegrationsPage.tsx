@@ -14,9 +14,8 @@ const TWITTER_KEY       = import.meta.env.VITE_TWITTER_KEY ?? "";
 const LI_CLIENT_ID      = import.meta.env.VITE_LI_CLIENT_ID ?? "";
 const FB_APP_ID         = import.meta.env.VITE_FB_APP_ID ?? "";
 
-const REDIRECT = typeof window !== "undefined"
-  ? `${window.location.origin}/oauth/callback`
-  : "";
+const REDIRECT = import.meta.env.VITE_OAUTH_REDIRECT
+  || (typeof window !== "undefined" ? `${window.location.origin}/oauth/callback` : "");
 
 /* ─── platform config ─── */
 const PLATFORMS = [
@@ -26,7 +25,7 @@ const PLATFORMS = [
     icon: "▶",
     color: "text-red-400",
     quota: "~6 uploads/day",
-    oauth_url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${YOUTUBE_CLIENT_ID}&redirect_uri=${REDIRECT}&response_type=code&scope=https://www.googleapis.com/auth/youtube.upload&access_type=offline&state=youtube`,
+    oauth_url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${YOUTUBE_CLIENT_ID}&redirect_uri=${REDIRECT}&response_type=code&scope=https://www.googleapis.com/auth/youtube.upload+https://www.googleapis.com/auth/youtube.readonly&access_type=offline&state=youtube&prompt=consent`,
   },
   {
     id: "instagram",
@@ -34,7 +33,7 @@ const PLATFORMS = [
     icon: "📸",
     color: "text-purple-400",
     quota: "25 posts/day",
-    oauth_url: `https://api.instagram.com/oauth/authorize?client_id=${IG_CLIENT_ID}&redirect_uri=${REDIRECT}&scope=instagram_content_publish&response_type=code&state=instagram`,
+    oauth_url: `https://api.instagram.com/oauth/authorize?client_id=${IG_CLIENT_ID}&redirect_uri=${REDIRECT}&scope=instagram_business_basic,instagram_content_publish&response_type=code&state=instagram`,
   },
   {
     id: "tiktok",
@@ -42,7 +41,7 @@ const PLATFORMS = [
     icon: "♪",
     color: "text-rose-400",
     quota: "25 videos/day",
-    oauth_url: `https://www.tiktok.com/v2/auth/authorize/?client_key=${TIKTOK_KEY}&scope=video.publish&response_type=code&redirect_uri=${REDIRECT}&state=tiktok`,
+    oauth_url: `https://www.tiktok.com/v2/auth/authorize?client_key=${TIKTOK_KEY}&scope=user.info.basic,video.publish&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&state=tiktok`,
   },
   {
     id: "twitter",
@@ -66,7 +65,7 @@ const PLATFORMS = [
     icon: "f",
     color: "text-indigo-400",
     quota: "200 calls/hr",
-    oauth_url: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${REDIRECT}&scope=pages_manage_posts,pages_read_engagement&state=facebook`,
+    oauth_url: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${REDIRECT}&scope=public_profile&state=facebook&response_type=code`,
   },
 ];
 
