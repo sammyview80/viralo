@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Shell } from "../Shell";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/lib/router";
@@ -127,29 +128,44 @@ function ProjectThumb({ video, className = "" }: { video: VideoResponse; classNa
 
 function RowMenu({ onShowDetails, onDelete }: { onShowDetails: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  function handleOpen(e: React.MouseEvent) {
+    e.stopPropagation();
+    const r = btnRef.current!.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    setOpen((v) => !v);
+  }
+
   return (
-    <div ref={ref} className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+    <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={handleOpen}
         className="grid h-8 w-8 place-items-center rounded-[8px] text-zinc-600 transition hover:bg-white/[.06] hover:text-zinc-300"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>
         </svg>
       </button>
-      {open && (
-        <div className="absolute right-0 top-9 z-[999] min-w-[160px] overflow-hidden rounded-[12px] border border-white/[.08] bg-[#111724] py-1 shadow-[0_16px_48px_rgba(0,0,0,.5)]">
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 9999 }}
+          className="min-w-[160px] overflow-hidden rounded-[12px] border border-white/[.08] bg-[#111724] py-1 shadow-[0_16px_48px_rgba(0,0,0,.5)]"
+        >
           <button
             onClick={() => { setOpen(false); onShowDetails(); }}
             className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-zinc-300 transition hover:bg-white/[.05] hover:text-white"
@@ -165,7 +181,8 @@ function RowMenu({ onShowDetails, onDelete }: { onShowDetails: () => void; onDel
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
             Delete
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -257,15 +274,13 @@ export function ProjectsPage() {
     <Shell active="projects">
       {deleteTarget && <DeleteModal video={deleteTarget} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
 
-      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0b1018] shadow-[0_18px_80px_rgba(0,0,0,.28)]">
+      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
         {/* Header */}
         <div className="border-b border-white/[.06] bg-[#090e16]/95 px-5 py-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="mr-2 min-w-[150px]">
               <div className="flex items-center gap-2">
-                <h1 className="font-display text-[20px] font-bold tracking-[-.02em] text-white">
-                  Projects
-                </h1>
+                <h1 className="font-display text-[20px] font-bold tracking-[-.02em] text-white">Projects</h1>
                 <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">
                   {loading ? "…" : `${filtered.length}${filtered.length !== history.length ? `/${history.length}` : ""}`}
                 </span>
@@ -293,7 +308,7 @@ export function ProjectsPage() {
             </select>
 
             <button onClick={loadHistory} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 transition hover:text-zinc-200">Refresh</button>
-            <button onClick={() => navigate("/upload")} className="ml-auto h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f]">+ New upload</button>
+            <button onClick={() => navigate("/studio")} className="ml-auto h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f]">+ New upload</button>
           </div>
         </div>
 
@@ -306,7 +321,7 @@ export function ProjectsPage() {
             <div className="min-w-0 p-4 xl:p-5">
               {/* Stats */}
               <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                <div className="flex items-center gap-4 rounded-[16px] border border-emerald-400/10 bg-emerald-400/[.04] px-4 py-3.5">
+                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-emerald-400/10 text-emerald-300">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                   </div>
@@ -318,7 +333,7 @@ export function ProjectsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-amber-400/10 bg-amber-400/[.04] px-4 py-3.5">
+                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-amber-400/10 text-amber-200">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   </div>
@@ -330,7 +345,7 @@ export function ProjectsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-red-400/10 bg-red-400/[.04] px-4 py-3.5">
+                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-red-400/10 text-red-300">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                   </div>
@@ -353,7 +368,7 @@ export function ProjectsPage() {
                   <div className="grid h-14 w-14 place-items-center rounded-[18px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-2xl text-[#ff7a9a]">↥</div>
                   <h3 className="mt-4 font-display text-xl font-bold text-white">{history.length === 0 ? "No projects yet" : "No projects match"}</h3>
                   <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">{history.length === 0 ? "Upload a video or import from YouTube to create your first clipping project." : "Try a different search term or clear the search field."}</p>
-                  <button onClick={() => navigate("/upload")} className="mt-5 rounded-[12px] bg-[#ff3d6a] px-5 py-2.5 text-sm font-bold text-white">Start upload</button>
+                  <button onClick={() => navigate("/studio")} className="mt-5 rounded-[12px] bg-[#ff3d6a] px-5 py-2.5 text-sm font-bold text-white">Start upload</button>
                 </div>
               ) : viewMode === "grid" ? (
                 <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
@@ -363,7 +378,7 @@ export function ProjectsPage() {
                     const pct = progressFor(video);
                     return (
                       <div key={video.id} className={cn(
-                        "group overflow-hidden rounded-[20px] border bg-[#0d131f]",
+                        "group overflow-hidden rounded-[20px] border bg-[#111827]",
                         active ? "border-[#ff3d6a]/55 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-white/[.07]",
                         isDeleting ? "pointer-events-none opacity-50" : ""
                       )}>
@@ -451,7 +466,7 @@ export function ProjectsPage() {
 
             {/* Details sidebar */}
             {selected && (
-              <aside className="hidden border-l border-white/[.07] bg-[#0b101a] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
+              <aside className="hidden border-l border-white/[.07] bg-[#0e1420] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
                 <div className="p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <span className="text-xs font-semibold text-zinc-500">Project details</span>
@@ -549,7 +564,7 @@ export function ProjectsPage() {
                   )}
 
                   {/* Actions */}
-                  <div className="sticky bottom-0 -mx-5 mt-5 border-t border-white/[.07] bg-[#0b101a]/95 p-5 backdrop-blur">
+                  <div className="sticky bottom-0 -mx-5 mt-5 border-t border-white/[.07] bg-[#0e1420]/95 p-5 backdrop-blur">
                     <button onClick={() => navigate(`/projects/${selected.id}`)} className="h-12 w-full rounded-[12px] bg-[#ff3d6a] text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.22)] transition hover:bg-[#e8304f]">Show clips</button>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <button onClick={() => navigate(`/projects/${selected.id}`)} className="h-11 rounded-[12px] border border-white/[.08] bg-white/[.025] text-sm font-bold text-zinc-300 transition hover:bg-white/[.05] hover:text-white">Edit project</button>

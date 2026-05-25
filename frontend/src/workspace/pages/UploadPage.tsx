@@ -10,7 +10,7 @@ type Source = "file" | "yt";
 type View = "upload" | "processing" | "results";
 
 /* ─── Clip config panel ─── */
-const PLATFORM_OPTIONS = [
+export const PLATFORM_OPTIONS = [
   { id:"tiktok",    label:"TikTok",    ltr:"♪" },
   { id:"reels",     label:"Reels",     ltr:"◎" },
   { id:"shorts",    label:"Shorts",    ltr:"▶" },
@@ -19,10 +19,10 @@ const PLATFORM_OPTIONS = [
   { id:"twitter",   label:"Twitter/X", ltr:"𝕏" },
 ];
 
-const ASPECT_OPTIONS = ["9:16","1:1","16:9"];
-const LANG_OPTIONS   = ["en","es","fr","de","pt","ja","ko","zh","ar","hi"];
+export const ASPECT_OPTIONS = ["9:16","1:1","16:9"];
+export const LANG_OPTIONS   = ["en","es","fr","de","pt","ja","ko","zh","ar","hi"];
 
-const DEFAULT_CONFIG: ClipConfig = {
+export const DEFAULT_CONFIG: ClipConfig = {
   language: "en",
   max_clips: 3,
   min_score: 0.5,
@@ -36,178 +36,171 @@ const DEFAULT_CONFIG: ClipConfig = {
   output_quality: "1080p",
 };
 
-const CAPTION_STYLES = [
+export const CAPTION_STYLES = [
   { id:"capcut",      label:"CapCut",       desc:"Bold word-by-word, colored highlight" },
   { id:"capcut-bold", label:"CapCut Bold",  desc:"Thicker strokes, high contrast" },
   { id:"classic",     label:"Classic",      desc:"White subtitles, black outline" },
   { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline" },
 ];
 
-function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onChange: (c: ClipConfig) => void }) {
+export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onChange: (c: ClipConfig) => void }) {
   const set = (patch: Partial<ClipConfig>) => onChange({ ...config, ...patch });
   const togglePlat = (id: string) => {
     const cur = config.platforms ?? [];
     set({ platforms: cur.includes(id) ? cur.filter((p) => p !== id) : [...cur, id] });
   };
 
+  const labelCls = "mb-1.5 block text-[11px] font-semibold uppercase tracking-[.08em] text-zinc-500";
+  const inputCls = "w-full rounded-[8px] border border-white/[.07] bg-[#0b101a] px-3 py-2 text-[13px] text-zinc-200 outline-none focus:border-[#ff3d6a]/50 transition";
+  const chipBase = "rounded-[7px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer";
+  const chipOn  = "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-[#ff3d6a]";
+  const chipOff = "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12] hover:text-zinc-200";
+
   return (
-    <div className="mt-5 rounded-[14px] border border-white/[.08] bg-white/[.025] p-5 space-y-5">
-      <h4 className="font-display text-[13.5px] font-bold text-zinc-200">Clip settings</h4>
+    <div className="space-y-6 rounded-[16px] border border-white/[.07] bg-[#0d1219] p-5">
+
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <span className="text-[13px] font-bold text-white">Clip settings</span>
+      </div>
 
       {/* Platforms */}
       <div>
-        <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">Platforms</label>
-        <div className="flex flex-wrap gap-2">
+        <label className={labelCls}>Platforms</label>
+        <div className="flex flex-wrap gap-1.5">
           {PLATFORM_OPTIONS.map((p) => {
             const active = (config.platforms ?? []).includes(p.id);
             return (
               <button key={p.id} type="button" onClick={() => togglePlat(p.id)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12px] font-semibold transition",
-                  active ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-[#ff3d6a]" : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12] hover:text-zinc-200"
-                )}>
-                <span className="text-[10px]">{p.ltr}</span>{p.label}
+                className={cn(chipBase, active ? chipOn : chipOff)}>
+                {p.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {/* Aspect ratio */}
+      <div className="h-px bg-white/[.05]" />
+
+      {/* Aspect ratio + Language */}
+      <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">Aspect ratio</label>
-          <div className="flex gap-2">
+          <label className={labelCls}>Aspect ratio</label>
+          <div className="flex gap-1.5">
             {ASPECT_OPTIONS.map((r) => (
               <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
-                className={cn(
-                  "flex-1 rounded-[8px] border py-1.5 text-[12px] font-semibold transition",
-                  config.aspect_ratio === r ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-[#ff3d6a]" : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:text-zinc-200"
-                )}>{r}</button>
+                className={cn(chipBase, "flex-1 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
+                {r}
+              </button>
             ))}
           </div>
         </div>
-
-        {/* Language */}
         <div>
-          <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">Language</label>
-          <select
-            value={config.language ?? "en"}
-            onChange={(e) => set({ language: e.target.value })}
-            className="w-full rounded-[8px] border border-white/[.07] bg-[#0e1420] px-3 py-1.5 text-[12.5px] font-medium text-zinc-200 outline-none focus:border-[#ff3d6a]/40"
-          >
+          <label className={labelCls}>Language</label>
+          <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
+            className={inputCls}>
             {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
           </select>
         </div>
+      </div>
 
-        {/* Duration */}
-        <div>
-          <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">
-            Duration (sec) · {config.duration_min}s – {config.duration_max}s
-          </label>
-          <div className="flex items-center gap-2">
-            <input type="number" min={5} max={config.duration_max} value={config.duration_min}
-              onChange={(e) => set({ duration_min: Number(e.target.value) })}
-              className="w-full rounded-[8px] border border-white/[.07] bg-[#0e1420] px-3 py-1.5 text-[12.5px] font-medium text-zinc-200 outline-none focus:border-[#ff3d6a]/40" />
-            <span className="text-zinc-600">–</span>
-            <input type="number" min={config.duration_min} max={300} value={config.duration_max}
-              onChange={(e) => set({ duration_max: Number(e.target.value) })}
-              className="w-full rounded-[8px] border border-white/[.07] bg-[#0e1420] px-3 py-1.5 text-[12.5px] font-medium text-zinc-200 outline-none focus:border-[#ff3d6a]/40" />
-          </div>
-        </div>
-
-        {/* Max clips */}
-        <div>
-          <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">Max clips · {config.max_clips}</label>
-          <input type="range" min={1} max={20} value={config.max_clips}
-            onChange={(e) => set({ max_clips: Number(e.target.value) })}
-            className="w-full accent-[#ff3d6a]" />
-          <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1</span><span>20</span></div>
-        </div>
-
-        {/* Min virality score */}
-        <div>
-          <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">
-            Min virality score · <span className="text-[#ff3d6a]">{Math.round((config.min_score ?? 0.5) * 10)}/10</span>
-          </label>
-          <input type="range" min={0} max={10} step={1} value={Math.round((config.min_score ?? 0.5) * 10)}
-            onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
-            className="w-full accent-[#ff3d6a]" />
-          <div className="mt-1 flex justify-between text-[10px] text-zinc-600">
-            <span>0 · any</span><span>5 · balanced</span><span>10 · viral only</span>
-          </div>
+      {/* Duration */}
+      <div>
+        <label className={labelCls}>Duration (sec)</label>
+        <div className="flex items-center gap-2">
+          <input type="number" min={5} max={config.duration_max} value={config.duration_min}
+            onChange={(e) => set({ duration_min: Number(e.target.value) })}
+            className={inputCls} />
+          <span className="text-zinc-600 text-sm">–</span>
+          <input type="number" min={config.duration_min} max={300} value={config.duration_max}
+            onChange={(e) => set({ duration_max: Number(e.target.value) })}
+            className={inputCls} />
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {/* Topic focus */}
-        <div>
-          <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">Topic focus <span className="normal-case text-zinc-600">(optional)</span></label>
-          <input type="text" placeholder="e.g. fitness tips, product demo…"
-            value={config.topic_focus ?? ""}
-            onChange={(e) => set({ topic_focus: e.target.value || null })}
-            className="w-full rounded-[8px] border border-white/[.07] bg-[#0e1420] px-3 py-1.5 text-[12.5px] font-medium text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#ff3d6a]/40" />
+      {/* Max clips */}
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <label className={cn(labelCls, "mb-0")}>Max clips</label>
+          <span className="text-[12px] font-semibold text-[#ff3d6a]">{config.max_clips}</span>
         </div>
+        <input type="range" min={1} max={20} value={config.max_clips}
+          onChange={(e) => set({ max_clips: Number(e.target.value) })}
+          className="w-full accent-[#ff3d6a]" />
+        <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1</span><span>20</span></div>
+      </div>
 
-        {/* Captions toggle + style */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between rounded-[10px] border border-white/[.07] bg-white/[.02] px-4 py-3">
-            <div>
-              <div className="text-[12.5px] font-semibold text-zinc-200">Auto captions</div>
-              <div className="text-[11px] text-zinc-500">Burn subtitles into clips</div>
-            </div>
-            <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
-              className={cn(
-                "relative h-6 w-11 rounded-full transition-colors duration-200",
-                config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.12]"
-              )}>
-              <span className={cn(
-                "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
-                config.add_captions ? "left-[calc(100%-22px)]" : "left-0.5"
-              )} />
-            </button>
-          </div>
-
-          {config.add_captions && (
-            <div>
-              <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">Caption style</label>
-              <div className="grid grid-cols-2 gap-2">
-                {CAPTION_STYLES.map((s) => (
-                  <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
-                    className={cn(
-                      "rounded-[9px] border px-3 py-2.5 text-left transition",
-                      config.caption_style === s.id
-                        ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10"
-                        : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]"
-                    )}>
-                    <div className={cn("text-[12px] font-semibold", config.caption_style === s.id ? "text-[#ff3d6a]" : "text-zinc-200")}>{s.label}</div>
-                    <div className="mt-0.5 text-[10.5px] text-zinc-500">{s.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* Virality score */}
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <label className={cn(labelCls, "mb-0")}>Min virality score</label>
+          <span className="text-[12px] font-semibold text-[#ff3d6a]">{Math.round((config.min_score ?? 0.5) * 10)}/10</span>
+        </div>
+        <input type="range" min={0} max={10} step={1} value={Math.round((config.min_score ?? 0.5) * 10)}
+          onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
+          className="w-full accent-[#ff3d6a]" />
+        <div className="mt-1 flex justify-between text-[10px] text-zinc-600">
+          <span>Any</span><span>Balanced</span><span>Viral only</span>
         </div>
       </div>
+
+      <div className="h-px bg-white/[.05]" />
+
+      {/* Topic focus */}
+      <div>
+        <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-zinc-600">— optional</span></label>
+        <input type="text" placeholder="e.g. fitness tips, product demo…"
+          value={config.topic_focus ?? ""}
+          onChange={(e) => set({ topic_focus: e.target.value || null })}
+          className={inputCls} />
+      </div>
+
+      {/* Auto captions */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[13px] font-semibold text-zinc-200">Auto captions</div>
+          <div className="text-[11px] text-zinc-500">Burn subtitles into clips</div>
+        </div>
+        <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
+          className={cn("relative h-6 w-11 rounded-full transition-colors duration-200 shrink-0",
+            config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.12]")}>
+          <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+            config.add_captions ? "left-[calc(100%-22px)]" : "left-0.5")} />
+        </button>
+      </div>
+
+      {/* Caption style */}
+      {config.add_captions && (
+        <div>
+          <label className={labelCls}>Caption style</label>
+          <div className="grid grid-cols-2 gap-2">
+            {CAPTION_STYLES.map((s) => (
+              <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
+                className={cn("rounded-[9px] border px-3 py-2.5 text-left transition",
+                  config.caption_style === s.id ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
+                <div className={cn("text-[12px] font-semibold", config.caption_style === s.id ? "text-[#ff3d6a]" : "text-zinc-200")}>{s.label}</div>
+                <div className="mt-0.5 text-[10.5px] text-zinc-500">{s.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="h-px bg-white/[.05]" />
 
       {/* Output quality */}
       <div>
-        <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">Output quality</label>
-        <div className="flex gap-2">
+        <label className={labelCls}>Output quality</label>
+        <div className="flex gap-1.5">
           {(["source","1080p","720p","480p"] as const).map((q) => (
             <button key={q} type="button" onClick={() => set({ output_quality: q })}
-              className={cn(
-                "flex-1 rounded-[8px] border py-1.5 text-[12px] font-semibold transition",
-                config.output_quality === q
-                  ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-[#ff3d6a]"
-                  : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12] hover:text-zinc-200"
-              )}>
+              className={cn(chipBase, "flex-1 text-center", config.output_quality === q ? chipOn : chipOff)}>
               {q === "source" ? "Full res" : q}
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[10.5px] text-zinc-600">Full res keeps original quality. Lower = smaller file size.</p>
       </div>
+
     </div>
   );
 }
@@ -707,12 +700,15 @@ function SocialConnectBanner() {
 function ProcessingView({
   video,
   onDone,
+  onCancel,
 }: {
   video: VideoResponse;
   onDone: (updated: VideoResponse) => void;
+  onCancel?: () => void;
 }) {
   const [current, setCurrent] = useState(video);
   const [liveMsg, setLiveMsg] = useState<string>("");
+  const [errorMsg, setErrorMsg] = useState<string>(video.error_message ?? "");
   const doneRef = useRef(false);
 
   const isTerminal = (v: VideoResponse) =>
@@ -729,6 +725,7 @@ function ProcessingView({
         const d = JSON.parse(e.data);
         if (d.type === "keepalive") return;
         if (d.message) setLiveMsg(d.message);
+        if (d.status === "failed" && d.message) setErrorMsg(d.message);
         if (d.status === "complete" || d.status === "failed") {
           es.close();
           if (!doneRef.current) {
@@ -783,6 +780,11 @@ function ProcessingView({
           ? <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-1 text-[11px] font-semibold text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Failed</span>
           : <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/20 bg-yellow-400/10 px-2.5 py-1 text-[11px] font-semibold text-yellow-300"><span className="h-1.5 w-1.5 rounded-full bg-yellow-300" />Processing</span>}
       </div>
+      {current.status === "failed" && errorMsg && (
+        <div className="rounded-[8px] border border-red-500/20 bg-red-500/[.07] px-3 py-2 text-[11.5px] text-red-400 font-mono leading-snug break-all">
+          {errorMsg}
+        </div>
+      )}
 
       <div>
         <div className="mb-2 flex justify-between text-[12px] font-medium">
@@ -795,6 +797,17 @@ function ProcessingView({
       </div>
 
       <SocialConnectBanner />
+
+      {onCancel && current.status !== "failed" && !isTerminal(current) && (
+        <div className="flex justify-end">
+          <button
+            onClick={onCancel}
+            className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[12px] font-semibold text-zinc-400 transition hover:border-red-500/30 hover:bg-red-500/[.07] hover:text-red-400"
+          >
+            Cancel processing
+          </button>
+        </div>
+      )}
 
       <div className="space-y-2">
         {PROC_STEPS.map((step, i) => {
@@ -1219,7 +1232,7 @@ function ResultsView({
         </div>
       )}
       {clips.length > 0
-        ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{clips.map((c, i) => (
+        ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{clips.map((c, i) => (
             <ClipCard
               key={c.id}
               clip={c}
@@ -1452,29 +1465,39 @@ export function UploadPage() {
         />
       )}
 
-      <div className="min-h-[calc(100vh-116px)] rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/[.07] px-7 py-6">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.14em] text-zinc-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#ff3d6a]" /> Uploader
+      <div className="flex h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
+        <div className="flex flex-wrap items-center gap-3 border-b border-white/[.06] bg-[#090e16]/95 px-5 py-4">
+          <div className="mr-2">
+            <div className="flex items-center gap-2">
+              {view === "results" && (
+                <button
+                  onClick={() => navigate("/projects")}
+                  className="mr-1 text-zinc-500 transition hover:text-white"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="m15 18-6-6 6-6"/></svg>
+                </button>
+              )}
+              <h1 className="font-display text-[20px] font-bold tracking-[-.02em] text-white">
+                {view === "upload" ? "New upload" : view === "processing" ? "Processing…" : "Generated Clips"}
+              </h1>
+              {view === "results" && activeVideo && (
+                <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">
+                  {activeVideo.title || "Untitled"}
+                </span>
+              )}
             </div>
-            <h2 className="font-display text-[24px] font-bold tracking-[-0.02em]">
-              {view === "upload" ? "New upload"
-              : view === "processing" ? "Processing…"
-              : "Generated Clips"}
-            </h2>
-            <p className="mt-1 text-[13px] text-zinc-500">
-              {view === "upload" ? "Upload a file or paste a YouTube link. Existing upload behavior is unchanged."
+            <p className="mt-1 text-[11px] text-zinc-600">
+              {view === "upload" ? "Upload a file or paste a YouTube link."
               : view === "processing" ? "AI is analyzing your video and generating clips."
               : "Preview, edit, download or publish your clips below."}
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             {view !== "results" && (
               <button
                 onClick={() => navigate("/projects")}
-                className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-300 transition hover:bg-white/[.06] hover:text-white"
+                className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 transition hover:text-zinc-200"
               >
                 Projects
               </button>
@@ -1482,7 +1505,7 @@ export function UploadPage() {
             {view !== "upload" && (
               <button
                 onClick={() => { setView("upload"); setActiveVideo(null); setClips([]); setUploadError(""); }}
-                className="rounded-[10px] bg-[#ff3d6a] px-4 py-2 text-[13px] font-bold text-white shadow-[0_8px_24px_rgba(255,61,106,.28)] transition hover:bg-[#ff3d6a]/90"
+                className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_8px_24px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f]"
               >
                 + New upload
               </button>
@@ -1490,108 +1513,143 @@ export function UploadPage() {
           </div>
         </div>
 
-        <div className="px-7 py-6">
-          {/* Clean upload */}
+        <div className="flex flex-1 flex-col overflow-hidden px-5 py-5">
+          {/* Upload view — two-column layout */}
           {view === "upload" && (
-            <div className="mx-auto max-w-4xl">
-              <div className="overflow-hidden rounded-[20px] border border-white/[.08] bg-white/[.025]">
-                <div className="border-b border-white/[.07] p-4">
-                  <div className="flex w-fit gap-1 rounded-[10px] border border-white/[.07] bg-black/20 p-1">
-                    {(["file", "yt"] as Source[]).map((s) => (
-                      <button key={s} onClick={() => { setSource(s); setUploadError(""); }}
-                        className={cn("rounded-[8px] px-4 py-2 text-[13px] font-bold transition",
-                          source === s ? "bg-white/[.09] text-white" : "text-zinc-500 hover:text-zinc-300"
-                        )}>
-                        {s === "file" ? "Upload file" : "YouTube URL"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <div className="mx-auto flex h-full max-w-2xl flex-col gap-5 overflow-y-auto">
 
-                <div className="p-5">
-                  {source === "file" && (
-                    <div
-                      onClick={() => !uploading && fileInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                      onDragLeave={() => setDrag(false)}
-                      onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
+              {/* Import section */}
+              <div className="flex flex-col gap-4">
+                {/* Source tabs */}
+                <div className="flex gap-1 rounded-[12px] border border-white/[.07] bg-white/[.02] p-1">
+                  {(["file", "yt"] as Source[]).map((s) => (
+                    <button key={s} onClick={() => { setSource(s); setUploadError(""); }}
                       className={cn(
-                        "grid min-h-[260px] cursor-pointer place-items-center rounded-[16px] border border-dashed p-8 text-center transition",
-                        uploading ? "cursor-default border-[#ff3d6a]/40 bg-[#ff3d6a]/[.03]"
-                        : drag ? "border-[#ff3d6a]/60 bg-[#ff3d6a]/[.05]"
-                        : "border-white/15 bg-black/10 hover:border-white/25 hover:bg-white/[.025]"
-                      )}
-                    >
-                      <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
-                      {uploading ? (
-                        <div>
-                          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center"><span className="block h-10 w-10 rounded-full border-[3px] border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" /></div>
-                          <h3 className="font-display text-xl font-bold">Uploading…</h3>
-                          <p className="mt-2 text-[13px] text-zinc-500">Transferring your video to Viralo</p>
-                        </div>
+                        "flex flex-1 items-center justify-center gap-2 rounded-[9px] py-2.5 text-[13px] font-semibold transition",
+                        source === s ? "bg-white/[.08] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                      )}>
+                      {s === "file" ? (
+                        <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Upload file</>
                       ) : (
-                        <div>
-                          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-xl">↥</div>
-                          <h3 className="font-display text-2xl font-bold">{drag ? "Drop to upload" : "Drop video here"}</h3>
-                          <p className="mt-2 text-[13px] text-zinc-500">MP4, MOV, WebM, MKV, AVI · up to 4 GB</p>
-                          <button className="mt-5 rounded-[10px] bg-white/[.07] px-5 py-2 text-[13px] font-bold text-zinc-200 transition hover:bg-white/[.10]">Browse files</button>
-                        </div>
+                        <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>YouTube URL</>
                       )}
-                    </div>
-                  )}
-
-                  {source === "yt" && (
-                    <div className="rounded-[16px] border border-white/[.07] bg-black/10 p-5">
-                      <h3 className="font-display text-[16px] font-bold">Paste YouTube URL</h3>
-                      <p className="mt-1 text-[13px] text-zinc-500">Import a public YouTube video and generate clips from it.</p>
-                      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-                        <input
-                          value={urlVal}
-                          onChange={(e) => setUrlVal(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && urlReady && !uploading && handleUrlFetch()}
-                          placeholder="https://youtube.com/watch?v=…"
-                          className="min-w-0 flex-1 rounded-[10px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
-                        />
-                        <button
-                          disabled={!urlReady || uploading}
-                          onClick={handleUrlFetch}
-                          className="rounded-[10px] bg-[#ff3d6a] px-5 py-3 text-[13px] font-bold text-white transition hover:bg-[#ff3d6a]/90 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          {uploading ? <span className="block h-4 w-4 rounded-full border-2 border-white/70 border-t-transparent animate-spin" /> : "Import"}
-                        </button>
-                      </div>
-                      {urlReady && !uploading && (
-                        <div className="mt-4 rounded-[12px] border border-emerald-300/15 bg-emerald-400/10 px-4 py-3 text-[12.5px] font-semibold text-emerald-300">
-                          YouTube video detected. Ready to import and clip.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {uploadError && (
-                    <div className="mt-4 rounded-[10px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
-                      {uploadError}
-                    </div>
-                  )}
-
-                  <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
+                    </button>
+                  ))}
                 </div>
+
+                {/* File drop zone */}
+                {source === "file" && (
+                  <div
+                    onClick={() => !uploading && fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+                    onDragLeave={() => setDrag(false)}
+                    onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
+                    className={cn(
+                      "flex flex-1 cursor-pointer flex-col items-center justify-center gap-4 rounded-[18px] border-2 border-dashed p-12 text-center transition",
+                      uploading ? "cursor-default border-[#ff3d6a]/40 bg-[#ff3d6a]/[.03]"
+                      : drag ? "border-[#ff3d6a]/60 bg-[#ff3d6a]/[.06] scale-[1.01]"
+                      : "border-white/[.09] bg-white/[.015] hover:border-white/20 hover:bg-white/[.03]"
+                    )}
+                  >
+                    <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
+                    {uploading ? (
+                      <>
+                        <span className="block h-12 w-12 rounded-full border-[3px] border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
+                        <div>
+                          <p className="font-display text-xl font-bold text-white">Uploading…</p>
+                          <p className="mt-1 text-[13px] text-zinc-500">Transferring your video to Viralo</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="grid h-16 w-16 place-items-center rounded-[20px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08]">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        </div>
+                        <div>
+                          <p className="font-display text-2xl font-bold text-white">{drag ? "Drop to upload" : "Drop video here"}</p>
+                          <p className="mt-1.5 text-[13px] text-zinc-500">MP4, MOV, WebM, MKV, AVI · up to 4 GB</p>
+                        </div>
+                        <button className="rounded-[11px] border border-white/[.1] bg-white/[.06] px-6 py-2.5 text-[13px] font-bold text-zinc-200 transition hover:bg-white/[.10] hover:text-white">
+                          Browse files
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* YouTube input */}
+                {source === "yt" && (
+                  <div className="flex flex-1 flex-col justify-center rounded-[18px] border border-white/[.08] bg-white/[.02] p-8">
+                    <div className="mb-6 grid h-16 w-16 place-items-center rounded-[20px] border border-red-400/20 bg-red-400/[.08]">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
+                    </div>
+                    <h3 className="font-display text-xl font-bold text-white">Import from YouTube</h3>
+                    <p className="mt-1 text-[13px] text-zinc-500">Paste a public YouTube URL to generate clips from it.</p>
+                    <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+                      <input
+                        value={urlVal}
+                        onChange={(e) => setUrlVal(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && urlReady && !uploading && handleUrlFetch()}
+                        placeholder="https://youtube.com/watch?v=…"
+                        className="min-w-0 flex-1 rounded-[11px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
+                      />
+                      <button
+                        disabled={!urlReady || uploading}
+                        onClick={handleUrlFetch}
+                        className="rounded-[11px] bg-[#ff3d6a] px-6 py-3 text-[13px] font-bold text-white transition hover:bg-[#e8304f] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {uploading ? <span className="block h-4 w-4 rounded-full border-2 border-white/70 border-t-transparent animate-spin" /> : "Import"}
+                      </button>
+                    </div>
+                    {urlReady && !uploading && (
+                      <div className="mt-4 flex items-center gap-2.5 rounded-[11px] border border-emerald-300/15 bg-emerald-400/[.08] px-4 py-3 text-[12.5px] font-semibold text-emerald-300">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        YouTube video detected — ready to import
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {uploadError && (
+                  <div className="flex items-center gap-2.5 rounded-[11px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    {uploadError}
+                  </div>
+                )}
+              </div>
+
+              {/* Clip settings */}
+              <div>
+                <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
               </div>
             </div>
           )}
 
           {/* Processing */}
           {view === "processing" && activeVideo && (
-            <ProcessingView video={activeVideo} onDone={handleDone} />
+            <div className="h-full overflow-y-auto">
+              <ProcessingView
+                video={activeVideo}
+                onDone={handleDone}
+                onCancel={async () => {
+                  try { await videoApi.cancel(activeVideo.id); } catch { /* ignore */ }
+                  setView("upload");
+                  setActiveVideo(null);
+                  setClips([]);
+                }}
+              />
+            </div>
           )}
 
           {/* Results */}
           {view === "results" && activeVideo && (
-            <ResultsView
-              video={activeVideo}
-              clips={clips}
-              onBack={() => navigate("/projects")}
-            />
+            <div className="h-full overflow-y-auto">
+              <ResultsView
+                video={activeVideo}
+                clips={clips}
+                onBack={() => navigate("/projects")}
+              />
+            </div>
           )}
         </div>
       </div>

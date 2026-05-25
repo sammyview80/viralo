@@ -9,7 +9,7 @@ export const nav: Array<{
 }> = [
   { key: "studio", label: "Studio", href: "/studio", mark: "AI", group: "Create" },
   { key: "clips", label: "Clips", href: "/clips", mark: "9:16", group: "Create" },
-  { key: "upload", label: "Uploader", href: "/upload", mark: "UP", group: "Create" },
+  { key: "projects", label: "Projects", href: "/projects", mark: "PRJ", group: "Create" },
   { key: "brainstorm", label: "Brainstorm", href: "/brainstorm", mark: "3", group: "Create" },
   { key: "workflows", label: "Workflows", href: "/workflows", mark: "WF", group: "Create" },
   { key: "scheduler", label: "Scheduler", href: "/scheduler", mark: "CAL", group: "Create" },

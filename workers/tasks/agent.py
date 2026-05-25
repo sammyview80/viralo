@@ -84,16 +84,21 @@ def _get_tenant_row(tenant_id: str) -> dict | None:
 
 
 def _extend_lock(lock_key: str, ttl: int = 1800, stop_event: threading.Event = None):
-    if stop_event and stop_event.wait(timeout=300):
-        return
-    try:
-        redis_client.expire(lock_key, ttl)
-    except Exception:
-        pass
-    if not (stop_event and stop_event.is_set()):
-        t = threading.Timer(300, _extend_lock, args=[lock_key, ttl, stop_event])
-        t.daemon = True
-        t.start()
+    # Run lock renewal in background thread to avoid blocking caller
+    def _renew():
+        if stop_event and stop_event.wait(timeout=300):
+            return
+        try:
+            redis_client.expire(lock_key, ttl)
+        except Exception:
+            pass
+        if not (stop_event and stop_event.is_set()):
+            t = threading.Timer(300, _renew)
+            t.daemon = True
+            t.start()
+
+    t = threading.Thread(target=_renew, daemon=True)
+    t.start()
 
 
 @celery_app.task(
@@ -122,8 +127,6 @@ def run_session(self, tenant_id: str, session_id: str):
 
 
 def _run_session_sync(tenant_id: str, session_id: str):
-    import redis.asyncio as aioredis
-
     tenant = _get_tenant_row(tenant_id)
     if not tenant:
         logger.error("Tenant %s not found", tenant_id)

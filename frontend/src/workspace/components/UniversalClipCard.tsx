@@ -73,12 +73,13 @@ export function UniversalClipCard({
   const durMs = localClip.duration_ms ?? ((localClip.end_ms ?? 0) - (localClip.start_ms ?? 0));
   const scoreValue = localClip.score ?? 0;
   const score = localClip.score != null ? localClip.score.toFixed(1) : "--";
-  const scorePct = Math.round(scoreValue * 100);
-  const scoreColor = scoreValue >= 0.7 ? "#34d399" : scoreValue >= 0.4 ? "#fbbf24" : "#f87171";
+  const scorePct = Math.min(100, Math.round(scoreValue * 10));
+  const scoreColor = scoreValue >= 7 ? "#34d399" : scoreValue >= 4 ? "#fbbf24" : "#f87171";
   const platformKey = localClip.platform ?? "shorts";
   const platformContent = localClip.clip_metadata?.platforms?.[platformKey] ?? localClip.clip_metadata?.platforms?.shorts ?? null;
   const title = localClip.clip_metadata?.ai_title ?? localClip.title ?? "Untitled clip";
-  const description = platformContent?.description ?? title;
+  const viralReason = localClip.clip_metadata?.viral_reason;
+  const description = platformContent?.description ?? viralReason ?? null;
   const tags = platformContent?.tags ?? [];
   const clipStart = localClip.start_ms != null ? formatDuration(localClip.start_ms) : null;
   const clipEnd = localClip.end_ms != null ? formatDuration(localClip.end_ms) : null;

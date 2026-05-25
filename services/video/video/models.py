@@ -31,6 +31,7 @@ class Video(Base, TenantMixin, TimestampMixin):
     resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
     video_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     clip_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Clip(Base, TenantMixin, TimestampMixin):

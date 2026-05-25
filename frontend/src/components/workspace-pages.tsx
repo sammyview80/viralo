@@ -5,6 +5,7 @@ import { BrainstormPage } from "@/workspace/pages/BrainstormPage";
 import { ClipsPage } from "@/workspace/pages/ClipsPage";
 import { IntegrationsPage } from "@/workspace/pages/IntegrationsPage";
 import { OnboardingPage } from "@/workspace/pages/OnboardingPage";
+import { ProjectsPage } from "@/workspace/pages/ProjectsPage";
 import { SchedulerPage } from "@/workspace/pages/SchedulerPage";
 import { SettingsPage } from "@/workspace/pages/SettingsPage";
 import { StudioPage } from "@/workspace/pages/StudioPage";
@@ -15,6 +16,7 @@ import { WorkflowsPage } from "@/workspace/pages/WorkflowsPage";
 const pages: Record<PageKey, React.ReactNode> = {
   studio: <StudioPage />,
   clips: <ClipsPage />,
+  projects: <ProjectsPage />,
   upload: <UploadPage />,
   brainstorm: <BrainstormPage />,
   workflows: <WorkflowsPage />,

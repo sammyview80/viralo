@@ -1,6 +1,7 @@
 export type PageKey =
   | "studio"
   | "clips"
+  | "projects"
   | "upload"
   | "brainstorm"
   | "workflows"

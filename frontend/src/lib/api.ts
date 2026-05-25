@@ -1,4 +1,4 @@
-const BASE = "http://localhost:8001/api/v1";
+const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost/api/v1";
 const LS_ACCESS  = "viralo_access_token";
 const LS_SESSION = "viralo_has_session"; // flag: refresh cookie likely valid
 
@@ -134,7 +134,7 @@ export const onboarding = {
 };
 
 /* ─── Video service (port 8003) ─── */
-const VIDEO_BASE = "http://localhost:8003/api/v1";
+const VIDEO_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 
 async function _videoFetch<T>(method: string, path: string, body?: unknown | FormData): Promise<T> {
   const headers: Record<string, string> = {};
@@ -188,6 +188,7 @@ export interface VideoResponse {
   duration_sec: number | null;
   celery_task_id: string | null;
   clip_config: ClipConfig | null;
+  error_message: string | null;
   created_at: string;
 }
 
@@ -218,6 +219,8 @@ export interface ClipApiResponse {
   caption_srt: string | null;
   clip_metadata: {
     ai_title?: string;
+    viral_reason?: string;
+    viral_score?: number;
     platforms?: Record<string, ClipPlatformContent>;
   } | null;
   created_at: string;
@@ -256,13 +259,16 @@ export const videoApi = {
     videoReq<VideoListResponse>("GET", `/videos?page=${page}&per_page=${per_page}`),
   clips:   (videoId: string) =>
     videoReq<ClipApiResponse[]>("GET", `/clips?video_id=${videoId}`),
+  patchClip: (clipId: string, patch: { tags?: string[]; platform_copy?: Record<string, { description: string; tags: string[] }> }) =>
+    videoReq<ClipApiResponse>("PATCH", `/clips/${clipId}`, patch),
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),
+  cancel:  (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/cancel`),
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
 };
 
 /* ─── Platform service (port 8006) ─── */
-const PLATFORM_BASE = "http://localhost:8006/api/v1";
+const PLATFORM_BASE = import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1";
 
 async function _platformFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -433,8 +439,8 @@ export const platformApi = {
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
 
-/* ─── Agent API (port 8004) ─── */
-const AGENT_BASE = "http://localhost:8004/api/v1";
+/* ─── Agent API (via nginx) ─── */
+const AGENT_BASE = import.meta.env.VITE_AGENT_BASE ?? "http://localhost:8004/api/v1";
 
 async function _agentFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -482,7 +488,49 @@ export interface TagSuggestResponse {
   platforms: Record<string, PlatformCopy>;
 }
 
+export interface BrainstormSession {
+  id: string;
+  tenant_id: string;
+  name: string | null;
+  topic: string;
+  status: "draft" | "running" | "paused" | "complete" | "failed" | "deleted";
+  current_agent: string | null;
+  agents_completed: string[] | null;
+  niche_verdict: string | null;
+  video_ideas: VideoIdea[] | null;
+  generated_video_id: string | null;
+  generated_workflow_id: string | null;
+  created_at: string;
+}
+
+export interface VideoIdea {
+  title: string;
+  hook: string;
+  format: string;
+  estimated_views_potential: string;
+  virality_score: number;
+  reasoning: string;
+}
+
+export interface SessionListResponse {
+  items: BrainstormSession[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
 export const agentApi = {
   suggestTags: (data: TagSuggestRequest) =>
     agentReq<TagSuggestResponse>("POST", "/tags/suggest", data),
+
+  createSession: (topic: string, name?: string) =>
+    agentReq<BrainstormSession>("POST", "/sessions", { topic, name }),
+  listSessions: (page = 1) =>
+    agentReq<SessionListResponse>("GET", `/sessions?page=${page}&per_page=20`),
+  getSession: (id: string) =>
+    agentReq<BrainstormSession>("GET", `/sessions/${id}`),
+  runSession: (id: string) =>
+    agentReq<{ status: string; session_id: string }>("POST", `/sessions/${id}/run`),
+  deleteSession: (id: string) =>
+    agentReq<void>("DELETE", `/sessions/${id}`),
 };

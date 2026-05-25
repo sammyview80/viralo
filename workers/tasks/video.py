@@ -364,31 +364,79 @@ def _transcribe_chunk(groq_client, audio_bytes: bytes, filename: str, offset: fl
 
 
 def _transcribe(source_path: str, duration: float, language: str = "en") -> list[WordTimestamp]:
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_key:
+    # Collect all GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, … in order
+    from groq import Groq, RateLimitError as GroqRateLimitError
+
+    groq_keys: list[str] = []
+    for env in ["GROQ_API_KEY"] + [f"GROQ_API_KEY_{i}" for i in range(2, 20)]:
+        k = os.getenv(env, "")
+        if k and k not in groq_keys:
+            groq_keys.append(k)
+
+    if not groq_keys:
         return []
 
-    from groq import Groq
-    client = Groq(api_key=groq_key)
-
     audio_chunks = _prepare_audio_chunks(source_path, duration)
-    all_words = []
-    for i, (audio_bytes, offset) in enumerate(audio_chunks):
-        fname = f"audio_chunk_{i}.mp3"
-        words = _transcribe_chunk(client, audio_bytes, fname, offset, language)
-        all_words.extend(words)
+    last_exc: Exception | None = None
 
-    # Deduplicate overlapping chunk boundaries
-    if len(audio_chunks) > 1:
-        seen, deduped = set(), []
-        for w in sorted(all_words, key=lambda x: x.start):
-            key = round(w.start, 1)
-            if key not in seen:
-                deduped.append(w)
-                seen.add(key)
-        all_words = deduped
+    for key_idx, groq_key in enumerate(groq_keys):
+        client = Groq(api_key=groq_key)
+        label = "GROQ_API_KEY" if key_idx == 0 else f"GROQ_API_KEY_{key_idx + 1}"
+        try:
+            all_words: list[WordTimestamp] = []
+            for i, (audio_bytes, offset) in enumerate(audio_chunks):
+                fname = f"audio_chunk_{i}.mp3"
+                words = _transcribe_chunk(client, audio_bytes, fname, offset, language)
+                all_words.extend(words)
 
-    return all_words
+            # Deduplicate overlapping chunk boundaries
+            if len(audio_chunks) > 1:
+                seen: set = set()
+                deduped: list[WordTimestamp] = []
+                for w in sorted(all_words, key=lambda x: x.start):
+                    k = round(w.start, 1)
+                    if k not in seen:
+                        deduped.append(w)
+                        seen.add(k)
+                all_words = deduped
+
+            logging.info(f"[Whisper] Transcribed {len(all_words)} words via {label}")
+            return all_words
+
+        except GroqRateLimitError as e:
+            logging.warning(f"[Whisper] {label} rate-limited — trying next key: {str(e)[:120]}")
+            last_exc = e
+            continue
+        except Exception as e:
+            logging.warning(f"[Whisper] {label} failed: {str(e)[:120]}")
+            last_exc = e
+            break  # non-rate-limit errors won't be fixed by switching keys
+
+    logging.error(f"[Whisper] All Groq keys exhausted. Last error: {last_exc}")
+    return []
+
+
+# ── LLM helpers: multi-provider fallback ─────────────────────────────────────
+
+# ── LLM: delegate to shared.llm (Groq → Cloudflare → Cerebras → OpenRouter → SambaNova → Groq-small)
+from shared.llm import LLM_PROVIDERS, call_llm_json as _shared_call_llm_json, probe_all_providers  # noqa: F401
+
+
+def _call_llm_json(
+    messages: list[dict],
+    temperature: float = 0.3,
+    max_tokens: int = 1000,
+    prefer_large: bool = True,
+    _progress_fn=None,
+) -> dict:
+    """Thin shim — delegates to shared.llm.call_llm_json with the global free-tier hierarchy."""
+    return _shared_call_llm_json(
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        prefer_large=prefer_large,
+        notify=_progress_fn,
+    )
 
 
 # ── Stage 4: AI clip scoring via Groq LLaMA ───────────────────────────────────
@@ -424,10 +472,6 @@ def _ai_score_clips(
     if platforms is None:
         platforms = ["tiktok", "reels", "shorts"]
     if not words:
-        return []
-
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_key:
         return []
 
     transcript = _build_timed_transcript(words)
@@ -471,18 +515,10 @@ Return JSON:
 }}"""
 
     try:
-        from groq import Groq
-        client = Groq(api_key=groq_key)
-
-        # Step 1: get viral signals
-        r1 = client.chat.completions.create(
-            model=GROQ_LLM_MODEL,
-            messages=[{"role": "user", "content": analysis_prompt}],
-            temperature=0.2,
-            max_tokens=2000,
-            response_format={"type": "json_object"},
+        signals_data = _call_llm_json(
+            [{"role": "user", "content": analysis_prompt}],
+            temperature=0.2, max_tokens=2000,
         )
-        signals_data = json.loads(r1.choices[0].message.content)
         signals = signals_data.get("signals", [])
 
         if not signals:
@@ -525,22 +561,10 @@ Return ONLY JSON:
   ]
 }}"""
 
-        resp = client.chat.completions.create(
-            model=GROQ_LLM_MODEL,
-            messages=[{"role": "user", "content": clip_prompt}],
-            temperature=0.2,
-            max_tokens=max(2000, num_clips * 350),
-            response_format={"type": "json_object"},
+        data = _call_llm_json(
+            [{"role": "user", "content": clip_prompt}],
+            temperature=0.2, max_tokens=max(2000, num_clips * 350),
         )
-        content = resp.choices[0].message.content.strip()
-        # response_format=json_object ensures valid JSON — parse directly
-        try:
-            data = json.loads(content)
-        except Exception:
-            match = re.search(r"\{.*\}", content, re.DOTALL)
-            if not match:
-                return []
-            data = json.loads(match.group())
         clips = []
         for c in data.get("clips", []):
             start = float(c.get("start_seconds", 0))
@@ -1038,10 +1062,6 @@ def _ai_generate_clip_content(
     captions_srt: str = "",
 ) -> dict:
     """Return {title, description, tags} per platform using Groq LLM."""
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_key:
-        return {}
-
     # Caption SRT is the primary source — it contains exactly what's spoken in the clip
     caption_text = _srt_to_plain(captions_srt) if captions_srt else transcript_snippet
     if not caption_text.strip():
@@ -1081,17 +1101,10 @@ Return ONLY valid JSON — MUST include every platform listed above:
 }}"""
 
     try:
-        from groq import Groq
-        client = Groq(api_key=groq_key)
-        resp = client.chat.completions.create(
-            model=GROQ_LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=max(1500, len(platforms) * 400),
-            response_format={"type": "json_object"},
+        result = _call_llm_json(
+            [{"role": "user", "content": prompt}],
+            temperature=0.7, max_tokens=max(1500, len(platforms) * 400),
         )
-        result = json.loads(resp.choices[0].message.content)
-        # Validate structure
         if "platforms" not in result or not result["platforms"]:
             raise ValueError("empty platforms in response")
         return result
@@ -1102,8 +1115,7 @@ Return ONLY valid JSON — MUST include every platform listed above:
 
 def _ai_generate_video_metadata(words: list[WordTimestamp], duration: float, topic_focus: str = "") -> dict:
     """Analyze full transcript and return video-level metadata: summary, topics, keywords, sentiment, content type."""
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_key or not words:
+    if not words:
         return {}
 
     # Use timed transcript (M:SS stamped lines) — better sentence structure than raw word join
@@ -1133,16 +1145,10 @@ Return ONLY valid JSON:
 }}"""
 
     try:
-        from groq import Groq
-        client = Groq(api_key=groq_key)
-        resp = client.chat.completions.create(
-            model=GROQ_LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=1000,
-            response_format={"type": "json_object"},
+        return _call_llm_json(
+            [{"role": "user", "content": prompt}],
+            temperature=0.3, max_tokens=1000,
         )
-        return json.loads(resp.choices[0].message.content)
     except Exception as e:
         logging.warning(f"_ai_generate_video_metadata failed: {e}")
         return {}
@@ -1165,7 +1171,7 @@ def _batch_ai_content(
         return idx, content
 
     results: dict[int, dict] = {}
-    with ThreadPoolExecutor(max_workers=min(len(clips), 4)) as executor:
+    with ThreadPoolExecutor(max_workers=min(len(clips), 8)) as executor:
         for idx, content in executor.map(_gen_one, enumerate(clips)):
             results[idx] = content
     return results
@@ -1238,6 +1244,8 @@ def _export_clip(
     ai_title = (content.get("title") or clip.title or "")[:100].strip()
     clip_meta = {
         "ai_title": ai_title,
+        "viral_reason": clip.reason or "",
+        "viral_score": round(clip.score, 2),
         "platforms": content.get("platforms", {}),
     }
 
@@ -1245,13 +1253,18 @@ def _export_clip(
 
     async def _upload_files() -> tuple[str, str | None]:
         _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
-        with open(clip_path, "rb") as f:
-            s_url = await _storage.upload(f, storage_key, "video/mp4")
-        t_url = None
-        if Path(thumb_path).exists():
+
+        async def _up_video():
+            with open(clip_path, "rb") as f:
+                return await _storage.upload(f, storage_key, "video/mp4")
+
+        async def _up_thumb():
+            if not Path(thumb_path).exists():
+                return None
             with open(thumb_path, "rb") as f:
-                t_url = await _storage.upload(f, thumb_key, "image/jpeg")
-        return s_url, t_url
+                return await _storage.upload(f, thumb_key, "image/jpeg")
+
+        return await asyncio.gather(_up_video(), _up_thumb())
 
     storage_url, thumb_url = asyncio.run(_upload_files())
 
@@ -1490,7 +1503,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             _publish_progress(job_id, "transcribe", 37, "processing", "Generating video metadata from transcript...")
             vid_meta = _ai_generate_video_metadata(words, meta.duration, topic_focus)
             if vid_meta:
-                _update_video(tenant_id, video_id, video_metadata=json.dumps(vid_meta))
+                _update_video(tenant_id, video_id, metadata=json.dumps(vid_meta))
                 _save_step_artifact(tenant_id, video_id, "video_metadata", vid_meta)
 
     if _check_cancelled(tenant_id, video_id):
@@ -1580,7 +1593,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             ai_content=ai_content,
         )
 
-    max_workers = min(len(clips), 4)
+    max_workers = min(len(clips), 8)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {executor.submit(_export_one, (i, clip)): (i, clip) for i, clip in enumerate(clips)}
         for future in as_completed(future_map):
@@ -1611,6 +1624,251 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
 
 # ── Celery tasks ──────────────────────────────────────────────────────────────
 
+def _segments_to_words(segments: list[dict]) -> list[WordTimestamp]:
+    """Reconstruct word-level timestamps from transcript segments."""
+    words: list[WordTimestamp] = []
+    for seg in segments:
+        seg_words = seg.get("text", "").split()
+        if not seg_words:
+            continue
+        seg_start = float(seg.get("start", 0))
+        seg_end   = float(seg.get("end", seg_start + len(seg_words) * 0.4))
+        step = (seg_end - seg_start) / max(len(seg_words), 1)
+        for i, w in enumerate(seg_words):
+            words.append(WordTimestamp(
+                word=w,
+                start=round(seg_start + i * step, 3),
+                end=round(seg_start + (i + 1) * step, 3),
+            ))
+    return words
+
+
+@celery_app.task(bind=True, name="workers.tasks.video.generate_viral_clips",
+                 queue="viralo.video.generate", acks_late=True, max_retries=2,
+                 time_limit=600, soft_time_limit=570)
+def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None = None):
+    """
+    Transcript → viral clip scoring → per-clip social content. No video rendering.
+
+    Flow:
+      1. Load transcript from DB if exists (YouTube SRT or prior Whisper run).
+      2. If no transcript: locate source file via original_storage_key → Groq Whisper.
+      3. AI clip scoring (Groq LLaMA two-step viral analysis).
+      4. Generate SRT captions per clip.
+      5. Generate title + description + tags for each target platform.
+      6. Persist Clip rows with status='scored' and full social metadata.
+    """
+    cfg = cfg or {}
+    job_id = self.request.id or video_id
+
+    num_clips   = int(cfg.get("max_clips", 5))
+    min_dur     = int(cfg.get("duration_min", 15))
+    max_dur     = int(cfg.get("duration_max", 60))
+    min_score   = float(cfg.get("min_score", 0.5))
+    topic_focus = cfg.get("topic_focus") or ""
+    platforms   = cfg.get("platforms") or ["tiktok", "reels", "shorts"]
+    language    = cfg.get("language", "en")
+    style       = cfg.get("caption_style", "capcut")
+
+    _update_video(tenant_id, video_id, status="processing",
+                  celery_task_id=job_id, pipeline_step="transcribe", pipeline_pct=5)
+    _publish_progress(job_id, "transcribe", 5, "processing", "Checking for existing transcript...")
+
+    # ── Step 1: Load or generate transcript ───────────────────────────────────
+    words: list[WordTimestamp] = []
+    transcript_source = "none"
+
+    with _get_session(tenant_id) as session:
+        tr_row = session.execute(
+            text("SELECT segments FROM transcripts WHERE video_id = CAST(:vid AS uuid)"),
+            {"vid": video_id},
+        ).fetchone()
+        vid_row = session.execute(
+            text("SELECT duration_sec, topic, source_url, original_storage_key, source_type FROM videos WHERE id = CAST(:vid AS uuid)"),
+            {"vid": video_id},
+        ).fetchone()
+
+    if tr_row and tr_row.segments:
+        segments = tr_row.segments if isinstance(tr_row.segments, list) else json.loads(tr_row.segments)
+        words = _segments_to_words(segments)
+        transcript_source = "db"
+        _publish_progress(job_id, "transcribe", 20, "processing",
+                          f"Loaded existing transcript ({len(words)} words)")
+    else:
+        # No transcript — try to generate one
+        source_path: str | None = None
+        yt_url = vid_row.source_url if vid_row and vid_row.source_type == "youtube_url" else None
+
+        # Try YouTube captions first for YT videos
+        if yt_url:
+            _publish_progress(job_id, "transcribe", 10, "processing",
+                              "Fetching YouTube captions...")
+            words = _fetch_youtube_captions(yt_url, language)
+            if words:
+                transcript_source = "youtube_captions"
+                _publish_progress(job_id, "transcribe", 20, "processing",
+                                  f"Using YouTube captions ({len(words)} words)")
+
+        if not words:
+            # Locate source file from storage
+            storage_key = vid_row.original_storage_key if vid_row else None
+            if not storage_key:
+                _update_video(tenant_id, video_id, status="failed",
+                              pipeline_step="failed",
+                              error_message="No transcript and no source file available.")
+                _publish_progress(job_id, "failed", 0, "failed",
+                                  "No transcript found and no source file available. Run full pipeline first.")
+                return []
+
+            _publish_progress(job_id, "transcribe", 10, "processing",
+                              "Downloading source file for transcription...")
+            work_dir = Path(VIDEO_TEMP_DIR) / video_id
+            work_dir.mkdir(parents=True, exist_ok=True)
+            source_path = str(work_dir / "source.mp4")
+
+            try:
+                provider = os.getenv("STORAGE_PROVIDER", "local")
+                if provider == "local":
+                    local_dir = os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage")
+                    src = Path(local_dir) / storage_key.lstrip("/storage/").lstrip("storage/")
+                    import shutil as _shutil
+                    _shutil.copy2(str(src), source_path)
+                else:
+                    from shared.storage.base import get_storage
+                    import asyncio as _asyncio
+                    storage = get_storage(provider)
+                    _asyncio.run(storage.download(storage_key, source_path))
+            except Exception as exc:
+                _update_video(tenant_id, video_id, status="failed",
+                              pipeline_step="failed", error_message=str(exc)[:500])
+                _publish_progress(job_id, "failed", 0, "failed", f"Failed to download source: {exc}")
+                return []
+
+            _publish_progress(job_id, "transcribe", 15, "processing",
+                              "Transcribing with Groq Whisper...")
+            meta = _probe_video(source_path)
+            words = _transcribe(source_path, meta.duration, language)
+            transcript_source = "whisper"
+            _publish_progress(job_id, "transcribe", 30, "processing",
+                              f"Transcribed {len(words)} words via Whisper")
+
+        if words:
+            _save_transcript(tenant_id, video_id, words)
+
+    if not words:
+        _update_video(tenant_id, video_id, status="failed",
+                      pipeline_step="failed", error_message="Could not obtain transcript.")
+        _publish_progress(job_id, "failed", 0, "failed", "No transcript available.")
+        return []
+
+    # Resolve duration and topic from video row
+    duration = words[-1].end if words else 0.0
+    if vid_row:
+        if vid_row.duration_sec and float(vid_row.duration_sec) > duration:
+            duration = float(vid_row.duration_sec)
+        if not topic_focus and vid_row.topic:
+            topic_focus = vid_row.topic
+
+    # ── Step 2: AI viral clip scoring ─────────────────────────────────────────
+    _update_video(tenant_id, video_id, pipeline_step="scoring", pipeline_pct=35)
+    _publish_progress(job_id, "scoring", 35, "processing",
+                      "Analyzing transcript for viral signals...")
+
+    min_score_10 = min_score * 10
+    clips = _ai_score_clips(
+        words=words,
+        duration=duration,
+        num_clips=num_clips,
+        min_dur=min_dur,
+        max_dur=max_dur,
+        min_score_10=min_score_10,
+        topic_focus=topic_focus,
+        platforms=platforms,
+    )
+
+    # Heuristic fill if AI returned fewer than requested
+    if len(clips) < num_clips:
+        fallback = _heuristic_clips(words, duration, num_clips, min_dur, max_dur, platforms)
+        for fc in fallback:
+            if len(clips) >= num_clips:
+                break
+            if not any(fc.start < ec.end and fc.end > ec.start for ec in clips):
+                fc.title = f"Clip {len(clips) + 1}"
+                clips.append(fc)
+
+    if not clips:
+        clips = [ClipResult(
+            start=0.0, end=min(float(max_dur), duration),
+            score=0.5, title="Clip 1", reason="fallback",
+            platform=platforms[0],
+        )]
+
+    _publish_progress(job_id, "scoring", 60, "processing",
+                      f"Found {len(clips)} viral clips (source={transcript_source})")
+
+    # ── Step 3: Captions per clip ──────────────────────────────────────────────
+    words_per_line = 3 if style in CAPCUT_STYLES else 6
+    all_captions: dict[int, list[CaptionSegment]] = {}
+    for idx, clip in enumerate(clips):
+        all_captions[idx] = _generate_captions(words, clip, max_words=words_per_line)
+
+    # ── Step 4: AI social content per clip (parallel) ─────────────────────────
+    _publish_progress(job_id, "ai_content", 65, "processing",
+                      f"Generating social content for {len(clips)} clips across {len(platforms)} platforms...")
+    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms)
+
+    # ── Step 5: Persist clips ─────────────────────────────────────────────────
+    _publish_progress(job_id, "saving", 90, "processing", f"Saving {len(clips)} clips...")
+
+    clip_ids: list[str] = []
+    with _get_session(tenant_id) as session:
+        for idx, clip in enumerate(clips):
+            cid = str(uuid.uuid4())
+            captions = all_captions.get(idx, [])
+            srt_content = _generate_srt(captions)
+            ai_content = all_ai_content.get(idx, {})
+
+            # Title from AI content if available, else clip default
+            title = (ai_content.get("title") or clip.title or f"Clip {idx + 1}")[:100]
+
+            clip_meta = {
+                "reason": clip.reason,
+                "transcript_source": transcript_source,
+                "social": ai_content.get("platforms", {}),
+            }
+
+            session.execute(
+                text("""
+                    INSERT INTO clips
+                      (id, tenant_id, video_id, title, start_sec, end_sec,
+                       start_ms, end_ms, duration_ms, platform, score, status,
+                       caption_srt, metadata, created_at, updated_at)
+                    VALUES
+                      (:id, CAST(:tid AS uuid), CAST(:vid AS uuid), :title,
+                       :ss, :es, :sms, :ems, :dur, :plat, :score, 'scored',
+                       :srt, CAST(:meta AS jsonb), NOW(), NOW())
+                """),
+                {
+                    "id": cid, "tid": tenant_id, "vid": video_id,
+                    "title": title,
+                    "ss": clip.start, "es": clip.end,
+                    "sms": int(clip.start * 1000), "ems": int(clip.end * 1000),
+                    "dur": int((clip.end - clip.start) * 1000),
+                    "plat": clip.platform,
+                    "score": float(clip.score),
+                    "srt": srt_content or None,
+                    "meta": json.dumps(clip_meta),
+                },
+            )
+            clip_ids.append(cid)
+
+    _update_video(tenant_id, video_id, status="complete",
+                  pipeline_step="complete", pipeline_pct=100)
+    _publish_progress(job_id, "complete", 100, "complete",
+                      f"Generated {len(clips)} viral clips with social content")
+    return clip_ids
+
+
 @celery_app.task(bind=True, name="workers.tasks.video.process_uploaded_video",
                  queue="viralo.video.generate", acks_late=True, max_retries=3,
                  time_limit=1800, soft_time_limit=1700)
@@ -1640,11 +1898,11 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
 
         run_video_pipeline(tenant_id, video_id, source, job_id, cfg)
     except FileNotFoundError as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed")
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
         raise  # file won't reappear — no retry
     except Exception as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed")
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
         raise self.retry(exc=exc, countdown=30)
 
@@ -1668,6 +1926,6 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         _publish_progress(job_id, "download", 15, "processing", "Download complete, processing...")
         run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url)
     except Exception as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed")
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
         raise self.retry(exc=exc, countdown=30)

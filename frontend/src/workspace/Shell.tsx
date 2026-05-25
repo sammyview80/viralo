@@ -48,7 +48,7 @@ const NAV_GROUPS: Array<{
     items: [
       { key: "studio",     label: "Studio",     href: "/studio",     icon: "Video",    badge: "AI" },
       { key: "clips",      label: "Clips",      href: "/clips",      icon: "Film" },
-      { key: "upload",     label: "Uploader",   href: "/upload",     icon: "Rocket" },
+      { key: "projects",   label: "Projects",   href: "/projects",   icon: "Rocket" },
       { key: "brainstorm", label: "Brainstorm", href: "/brainstorm", icon: "Brain",    badge: "3" },
       { key: "workflows",  label: "Workflows",  href: "/workflows",  icon: "Branch" },
       { key: "scheduler",  label: "Scheduler",  href: "/scheduler",  icon: "Calendar" },
@@ -72,7 +72,7 @@ const NAV_GROUPS: Array<{
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  studio: "Video Studio", clips: "Clips", upload: "Uploader",
+  studio: "Video Studio", clips: "Clips", projects: "Projects", upload: "Uploader",
   brainstorm: "Brainstorm", workflows: "Workflow Builder", scheduler: "Scheduler",
   analytics: "Analytics", trending: "Trending", integrations: "Integrations",
   settings: "Settings", onboarding: "Onboarding",

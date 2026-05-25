@@ -17,7 +17,9 @@ from shared.schemas.auth import TokenPayload
 from video.models import Clip, Video
 from video.schemas import (
     ClipConfig,
+    ClipPatchRequest,
     ClipResponse,
+    GenerateClipsRequest,
     VideoListResponse,
     VideoResponse,
     VideoUpdateRequest,
@@ -536,6 +538,53 @@ async def retry_video(
     return VideoResponse.model_validate(video)
 
 
+@router.post("/videos/{video_id}/generate-clips", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
+async def generate_viral_clips(
+    video_id: uuid.UUID,
+    body: GenerateClipsRequest = GenerateClipsRequest(),
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Score the video's transcript for viral moments and create Clip records (no re-render)."""
+    from sqlalchemy import text as sa_text
+
+    result = await db.execute(
+        select(Video).where(Video.id == video_id, Video.status != "deleted")
+    )
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found.")
+
+    # Verify transcript exists
+    tr = await db.execute(
+        sa_text("SELECT 1 FROM transcripts WHERE video_id = CAST(:vid AS uuid)"),
+        {"vid": str(video_id)},
+    )
+    if not tr.fetchone():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Video has no transcript yet. Run the full pipeline first.",
+        )
+
+    tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
+    cfg = body.config.model_dump()
+
+    celery_app = _get_celery()
+    task = celery_app.send_task(
+        "workers.tasks.video.generate_viral_clips",
+        args=[str(tenant_id), str(video_id), cfg],
+        queue="viralo.video.generate",
+    )
+
+    await db.execute(
+        sa_text("UPDATE videos SET celery_task_id = :tid WHERE id = CAST(:vid AS uuid)"),
+        {"tid": task.id, "vid": str(video_id)},
+    )
+    await db.commit()
+    await db.refresh(video)
+    return VideoResponse.model_validate(video)
+
+
 # ---------------------------------------------------------------------------
 # Clip CRUD
 # ---------------------------------------------------------------------------
@@ -567,6 +616,30 @@ async def get_clip(
     clip = result.scalar_one_or_none()
     if not clip:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
+    return ClipResponse.model_validate(clip)
+
+
+@router.patch("/clips/{clip_id}", response_model=ClipResponse)
+async def patch_clip(
+    clip_id: uuid.UUID,
+    body: ClipPatchRequest,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    result = await db.execute(
+        select(Clip).where(Clip.id == clip_id, Clip.status != "deleted")
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
+    meta = dict(clip.clip_metadata or {})
+    if body.tags is not None:
+        meta["tags"] = body.tags
+    if body.platform_copy is not None:
+        meta["platform_copy"] = body.platform_copy
+    clip.clip_metadata = meta
+    await db.commit()
+    await db.refresh(clip)
     return ClipResponse.model_validate(clip)
 
 

@@ -46,6 +46,7 @@ class VideoResponse(BaseModel):
     duration_sec: int | None
     clip_config: dict | None = None
     celery_task_id: str | None = None
+    error_message: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
 
@@ -68,6 +69,11 @@ class ClipResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ClipPatchRequest(BaseModel):
+    tags: list[str] | None = None
+    platform_copy: dict[str, dict] | None = None
+
+
 class VideoListResponse(BaseModel):
     items: list[VideoResponse]
     total: int
@@ -78,6 +84,10 @@ class VideoListResponse(BaseModel):
 class YouTubeImportRequest(BaseModel):
     url: str
     title: str | None = None
+    config: ClipConfig = Field(default_factory=ClipConfig)
+
+
+class GenerateClipsRequest(BaseModel):
     config: ClipConfig = Field(default_factory=ClipConfig)
 
 

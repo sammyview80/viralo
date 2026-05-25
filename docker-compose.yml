@@ -195,7 +195,7 @@ services:
     build:
       context: .
       dockerfile: services/agent/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.agent.run --concurrency=1 --loglevel=debug
+    command: celery -A workers.celery_app worker -Q viralo.agent.run --concurrency=1 --pool=threads --loglevel=info
     depends_on:
       rabbitmq:
         condition: service_healthy

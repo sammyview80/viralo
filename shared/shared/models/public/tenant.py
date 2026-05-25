@@ -15,7 +15,7 @@ class Tenant(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")  # active|suspended|deleted
     trial_ends_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     storage_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="cloudinary")  # cloudinary|r2|s3
-    llm_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="google")  # google|openai|anthropic|groq
+    llm_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="groq")  # google|openai|anthropic|groq
     llm_api_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     llm_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     timezone: Mapped[str] = mapped_column(String(50), nullable=False, default="UTC")

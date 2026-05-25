@@ -45,11 +45,12 @@ function ClipCard({ clip, active, onClick, delay = 0, isPosted, isScheduled, cli
   const dur = formatDuration(clip.duration_ms);
   const scoreValue = clip.score ?? 0;
   const score = clip.score != null ? clip.score.toFixed(1) : "--";
-  const scorePct = Math.round(scoreValue * 100);
-  const scoreColor = scoreValue >= 0.7 ? "#34d399" : scoreValue >= 0.4 ? "#fbbf24" : "#f87171";
+  const scorePct = Math.min(100, Math.round(scoreValue * 10));
+  const scoreColor = scoreValue >= 7 ? "#34d399" : scoreValue >= 4 ? "#fbbf24" : "#f87171";
   const platformKey = clip.platform ?? "shorts";
   const platformContent = clip.clip_metadata?.platforms?.[platformKey] ?? clip.clip_metadata?.platforms?.shorts ?? null;
-  const description = platformContent?.description ?? clip.clip_metadata?.ai_title ?? clip.title ?? "";
+  const viralReason = clip.clip_metadata?.viral_reason;
+  const description = platformContent?.description ?? viralReason ?? clip.clip_metadata?.ai_title ?? clip.title ?? "";
   const tags = platformContent?.tags ?? [];
   const clipStart = clip.start_ms != null ? formatDuration(clip.start_ms) : null;
   const clipEnd = clip.end_ms != null ? formatDuration(clip.end_ms) : null;
@@ -354,9 +355,9 @@ const DURATION_OPTIONS = [
   { id: "long",   label: "> 1 min",  match: (c: ClipApiResponse) => (c.duration_ms ?? 0) >= 60_000 },
 ];
 const SCORE_OPTIONS = [
-  { id: "high", label: "High ≥0.7",  match: (c: ClipApiResponse) => (c.score ?? 0) >= 0.7 },
-  { id: "mid",  label: "Mid 0.4–0.7",match: (c: ClipApiResponse) => (c.score ?? 0) >= 0.4 && (c.score ?? 0) < 0.7 },
-  { id: "low",  label: "Low <0.4",   match: (c: ClipApiResponse) => (c.score ?? 0) < 0.4 },
+  { id: "high", label: "High ≥7",  match: (c: ClipApiResponse) => (c.score ?? 0) >= 7 },
+  { id: "mid",  label: "Mid 4–7",  match: (c: ClipApiResponse) => (c.score ?? 0) >= 4 && (c.score ?? 0) < 7 },
+  { id: "low",  label: "Low <4",   match: (c: ClipApiResponse) => (c.score ?? 0) < 4 },
 ];
 const PUBLISHED_OPTIONS = [
   { id: "posted",   label: "Posted" },
@@ -397,15 +398,37 @@ export function ClipsPage() {
   const [suggestingTags, setSuggestingTags] = useState(false);
   const [tagSuggestError, setTagSuggestError] = useState<string | null>(null);
   const [tagSuggestClipId, setTagSuggestClipId] = useState<string | null>(null);
+  const [savingTags, setSavingTags] = useState(false);
+  const [savedTagClipId, setSavedTagClipId] = useState<string | null>(null);
+
+  async function handleSaveAiSuggestions(clip: ClipApiResponse, suggestions: TagSuggestResponse) {
+    setSavingTags(true);
+    try {
+      await videoApi.patchClip(clip.id, {
+        tags: suggestions.primary_hashtags.map((t) => t.replace(/^#/, "")),
+        platform_copy: Object.fromEntries(
+          Object.entries(suggestions.platforms).map(([k, v]) => [k, { description: v.description, tags: v.tags }])
+        ),
+      });
+      setSavedTagClipId(clip.id);
+    } catch {
+      // silently fail — user can retry
+    } finally {
+      setSavingTags(false);
+    }
+  }
 
   async function handleSuggestTags(clip: ClipApiResponse) {
     const topic = clip.clip_metadata?.ai_title ?? clip.title ?? "video content";
+    const extra_context = clip.caption_srt
+      ? clip.caption_srt.replace(/^\d+\n[\d:,]+ --> [\d:,]+\n/gm, "").replace(/\n{2,}/g, " ").trim().slice(0, 2000)
+      : undefined;
     setSuggestingTags(true);
     setTagSuggestError(null);
     setTagSuggestions(null);
     setTagSuggestClipId(clip.id);
     try {
-      const result = await agentApi.suggestTags({ topic });
+      const result = await agentApi.suggestTags({ topic, extra_context });
       setTagSuggestions(result);
     } catch (e: unknown) {
       setTagSuggestError(e instanceof Error ? e.message : "Failed to suggest tags");
@@ -547,8 +570,8 @@ export function ClipsPage() {
                   const isScheduled = scheduledClipIds.has(clip.id);
                   const platCfg = CARD_PLAT_CFG[clip.platform?.toLowerCase() ?? ""] ?? null;
                   const score = clip.score ?? 0;
-                  const scorePct = Math.round(score * 100);
-                  const scoreColor = score >= 0.7 ? "#34d399" : score >= 0.4 ? "#fbbf24" : "#f87171";
+                  const scorePct = Math.min(100, Math.round(score * 10));
+                  const scoreColor = score >= 7 ? "#34d399" : score >= 4 ? "#fbbf24" : "#f87171";
                   const aiCaption = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.description ?? clip.clip_metadata?.ai_title ?? null;
                   const hashtags = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.tags ?? [];
                   const clipPostsList = posts.filter((p) => p.clip_id === clip.id);
@@ -630,8 +653,8 @@ export function ClipsPage() {
               const clipStart = drawer.start_ms != null ? formatDuration(drawer.start_ms) : "--:--";
               const clipEnd = drawer.end_ms != null ? formatDuration(drawer.end_ms) : "--:--";
               const score = drawer.score ?? 0;
-              const scorePct = Math.round(score * 100);
-              const scoreColor = score >= 0.7 ? "#34d399" : score >= 0.4 ? "#fbbf24" : "#f87171";
+              const scorePct = Math.min(100, Math.round(score * 10));
+              const scoreColor = score >= 7 ? "#34d399" : score >= 4 ? "#fbbf24" : "#f87171";
               const captionLineCount = drawer.caption_srt ? drawer.caption_srt.split(/\n\n+/).filter(Boolean).length : 0;
               const cleanCaptionPreview = drawer.caption_srt
                 ? drawer.caption_srt
@@ -717,6 +740,21 @@ export function ClipsPage() {
                                   <>✦ AI Suggest</>
                                 )}
                               </button>
+                              {suggestionsForClip && (
+                                <button
+                                  onClick={() => handleSaveAiSuggestions(drawer, suggestionsForClip)}
+                                  disabled={savingTags}
+                                  className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                                >
+                                  {savingTags ? (
+                                    <><span className="inline-block h-2 w-2 animate-spin rounded-full border border-emerald-300 border-t-transparent" /> Saving...</>
+                                  ) : savedTagClipId === drawer.id ? (
+                                    <>✓ Saved</>
+                                  ) : (
+                                    <>↓ Save</>
+                                  )}
+                                </button>
+                              )}
                             </div>
                           </div>
                           {tagSuggestError && tagSuggestClipId === drawer.id && (

@@ -6,13 +6,14 @@ from agent.routers import sessions, tags, ws
 
 app = FastAPI(title="Viralo Agent Service", version="0.1.0")
 
-app.add_middleware(TenantMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
+app.add_middleware(TenantMiddleware)
 
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(tags.router, prefix="/api/v1")
