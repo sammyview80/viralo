@@ -5,7 +5,9 @@ import { cn } from "@/lib/utils";
 import { Shell } from "../Shell";
 import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
-import { videoApi, platformApi, agentApi, type ClipApiResponse, type VideoResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
+import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
+import { Pagination } from "../components/Pagination";
+import { videoApi, platformApi, agentApi, type ClipApiResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return "--:--";
@@ -400,6 +402,9 @@ export function ClipsPage() {
   const [tagSuggestClipId, setTagSuggestClipId] = useState<string | null>(null);
   const [savingTags, setSavingTags] = useState(false);
   const [savedTagClipId, setSavedTagClipId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalClips, setTotalClips] = useState(0);
+  const perPage = 24;
 
   async function handleSaveAiSuggestions(clip: ClipApiResponse, suggestions: TagSuggestResponse) {
     setSavingTags(true);
@@ -439,23 +444,42 @@ export function ClipsPage() {
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
       try {
-        const [{ items: videos }, postsResp] = await Promise.all([videoApi.list(1, 50), platformApi.listPosts()]);
-        const doneVideos = videos.filter((v: VideoResponse) => v.status === "done" || v.status === "ready");
-        const results = await Promise.allSettled(doneVideos.map((v: VideoResponse) => videoApi.clips(v.id)));
-        const allClips: ClipApiResponse[] = [];
-        results.forEach((r) => { if (r.status === "fulfilled") allClips.push(...r.value); });
+        const [clipsResp, postsResp] = await Promise.all([
+          videoApi.listClips(page, perPage),
+          platformApi.listPosts({ per_page: 100 }),
+        ]);
+        const allClips = Array.isArray(clipsResp.items) ? clipsResp.items : [];
         setClips(allClips);
-        setPosts(postsResp.items ?? []);
-        if (allClips.length > 0) setSelectedId(allClips[0].id);
-      } catch { setClips([]); }
-      finally { setLoading(false); }
+        setTotalClips(typeof clipsResp.total === "number" ? clipsResp.total : allClips.length);
+        setPosts(Array.isArray(postsResp.items) ? postsResp.items : []);
+        setSelectedId((current) => current ?? (allClips.at(0)?.id ?? null));
+      } catch {
+        setClips([]);
+        setTotalClips(0);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
-  }, []);
+  }, [page]);
 
   const postedClipIds = useMemo(() => buildPostedClipIds(posts), [posts]);
   const scheduledClipIds = useMemo(() => buildScheduledClipIds(posts), [posts]);
+  const postsByClipId = useMemo(() => {
+    const map = new Map<string, ScheduledPost[]>();
+    for (const post of posts) {
+      if (!post.clip_id) continue;
+      const list = map.get(post.clip_id) ?? [];
+      list.push(post);
+      map.set(post.clip_id, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    return map;
+  }, [posts]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -486,7 +510,7 @@ export function ClipsPage() {
   const drawerPosted = drawer ? postedClipIds.has(drawer.id) : false;
   const drawerScheduled = drawer ? scheduledClipIds.has(drawer.id) : false;
   const drawerPost = drawer
-    ? posts.filter((p) => p.clip_id === drawer.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+    ? (postsByClipId.get(drawer.id) ?? [])[0] ?? null
     : null;
   const activeFilterCount = [platforms.size, statuses.size, durations.size, scores.size, published.size, search !== "" ? 1 : 0].reduce((a, b) => a + b, 0);
   function clearFilters() { setPlatforms(new Set()); setStatuses(new Set()); setDurations(new Set()); setScores(new Set()); setPublished(new Set()); setSearch(""); }
@@ -495,16 +519,16 @@ export function ClipsPage() {
     <Shell active="clips">
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0b1018] shadow-[0_18px_80px_rgba(0,0,0,.28)]">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-5 py-4">
-          <div className="flex flex-wrap items-center gap-3">
-          <div className="mr-2 min-w-[140px]">
+        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+          <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
             <div className="flex items-center gap-2">
               <h1 className="font-display text-[20px] font-bold tracking-[-.02em]">Clips</h1>
               <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
             </div>
             <p className="mt-1 text-[11px] text-zinc-600">Search, review, and publish shorts.</p>
           </div>
-          <div className="relative min-w-[240px] flex-1 max-w-[520px]">
+          <div className="relative min-w-0 max-w-none flex-1 lg:min-w-[240px] lg:max-w-[520px]">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-600 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
             {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
@@ -536,7 +560,7 @@ export function ClipsPage() {
 
         {/* Filter bar — collapsed by default to keep the workspace calm */}
         {showFilters && (
-          <div className="border-b border-white/[.06] bg-[#0b1018] px-5 py-4">
+          <div className="border-b border-white/[.06] bg-[#0b1018] px-3 py-3 sm:px-5 sm:py-4">
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
               <FilterGroup label="Platform">{PLATFORM_OPTIONS.map((f) => <Chip key={f.id} active={platforms.has(f.id)} onClick={() => setPlatforms((p) => toggle(p, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Status">{STATUS_OPTIONS.map((f) => <Chip key={f.id} active={statuses.has(f.id)} onClick={() => setStatuses((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
@@ -548,10 +572,10 @@ export function ClipsPage() {
         )}
 
         {/* Body */}
-        <div className="grid flex-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: "start" }}>
-          <div className="p-4 xl:p-5">
+        <div className="grid min-w-0 flex-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: "start" }}>
+          <div className="min-w-0 p-3 sm:p-4 xl:p-5">
             {loading ? (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}</div>
+              <div className="grid gap-4 md:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}</div>
             ) : filtered.length === 0 ? (
               <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-3 text-center">
                 <div className="text-4xl opacity-20">✂</div>
@@ -560,12 +584,30 @@ export function ClipsPage() {
                 {activeFilterCount > 0 && <button onClick={clearFilters} className="mt-2 text-xs font-semibold text-[#ff3d6a] hover:underline cursor-pointer">Clear all filters</button>}
               </div>
             ) : viewMode === "grid" ? (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                {filtered.map((clip, i) => <UniversalClipCard key={clip.id} clip={clip} active={clip.id === selectedId} onClick={() => setSelectedId(clip.id)} delay={i * 35} isPosted={postedClipIds.has(clip.id)} isScheduled={scheduledClipIds.has(clip.id)} posts={posts.filter((p) => p.clip_id === clip.id)} />)}
-              </div>
+              <VirtualizedGrid
+                items={filtered}
+                keyForItem={(clip) => clip.id}
+                estimateRowHeight={430}
+                columns={[{ minWidth: 768, columns: 3 }]}
+                renderItem={(clip, i) => (
+                  <UniversalClipCard
+                    clip={clip}
+                    active={clip.id === selectedId}
+                    onClick={() => setSelectedId(clip.id)}
+                    delay={(i % 12) * 35}
+                    isPosted={postedClipIds.has(clip.id)}
+                    isScheduled={scheduledClipIds.has(clip.id)}
+                    posts={postsByClipId.get(clip.id) ?? []}
+                  />
+                )}
+              />
             ) : (
-              <div className="overflow-hidden rounded-[16px] border border-white/[.06] bg-white/[.012]">
-                {filtered.map((clip) => {
+              <VirtualizedList
+                items={filtered}
+                keyForItem={(clip) => clip.id}
+                estimateRowHeight={92}
+                className="overflow-hidden rounded-[16px] border border-white/[.06] bg-white/[.012]"
+                renderItem={(clip) => {
                   const isPosted = postedClipIds.has(clip.id);
                   const isScheduled = scheduledClipIds.has(clip.id);
                   const platCfg = CARD_PLAT_CFG[clip.platform?.toLowerCase() ?? ""] ?? null;
@@ -574,21 +616,17 @@ export function ClipsPage() {
                   const scoreColor = score >= 7 ? "#34d399" : score >= 4 ? "#fbbf24" : "#f87171";
                   const aiCaption = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.description ?? clip.clip_metadata?.ai_title ?? null;
                   const hashtags = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.tags ?? [];
-                  const clipPostsList = posts.filter((p) => p.clip_id === clip.id);
-                  const mostRecentPost = clipPostsList.sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0];
+                  const mostRecentPost = (postsByClipId.get(clip.id) ?? [])[0];
                   return (
-                    <button key={clip.id} onClick={() => setSelectedId(clip.id)} className={cn("w-full flex items-start gap-4 px-5 py-4 text-left transition hover:bg-white/[.025] cursor-pointer", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
-                      {/* Thumbnail */}
+                    <button onClick={() => setSelectedId(clip.id)} className={cn("w-full flex items-start gap-3 px-3 py-3.5 text-left transition hover:bg-white/[.025] cursor-pointer sm:gap-4 sm:px-5 sm:py-4", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
                       <div className="relative h-16 w-[42px] shrink-0 overflow-hidden rounded-[7px] bg-white/[.04]">
-                        {clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-gradient-to-br from-rose-600/40 to-violet-700/40" />}
+                        {clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" /> : <div className="h-full w-full bg-gradient-to-br from-rose-600/40 to-violet-700/40" />}
                         {isPosted && <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/55 backdrop-blur-[1px]"><svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6 9 17l-5-5"/></svg></div>}
                         {!isPosted && isScheduled && <div className="absolute inset-0 flex items-center justify-center bg-blue-500/50 backdrop-blur-[1px]"><svg className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>}
                       </div>
 
-                      {/* Main content */}
                       <div className="min-w-0 flex-1 space-y-1">
-                        {/* Row 1: title + badges */}
-                        <div className="flex items-start gap-2">
+                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-2">
                           <p className="flex-1 truncate text-[13px] font-semibold leading-[1.3]">{clip.title ?? "Untitled clip"}</p>
                           <div className="flex shrink-0 items-center gap-1.5">
                             <Badge variant={clip.status === "ready" ? "ready" : clip.status === "processing" ? "warn" : "muted"}>{clip.status}</Badge>
@@ -597,12 +635,9 @@ export function ClipsPage() {
                           </div>
                         </div>
 
-                        {/* Row 2: caption preview */}
                         {aiCaption && <p className="truncate text-[11px] text-zinc-500 leading-[1.4]">{aiCaption}</p>}
 
-                        {/* Row 3: meta pills + score bar */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          {/* Platform dot + name */}
                           <span className="flex items-center gap-1 text-[11px] text-zinc-500">
                             {platCfg && <span className="h-1.5 w-1.5 rounded-full shrink-0 inline-block" style={{ background: platCfg.color }} />}
                             <span className="capitalize">{clip.platform ?? "—"}</span>
@@ -625,8 +660,7 @@ export function ClipsPage() {
                           <span className="text-zinc-700">·</span>
                           <span className="text-[11px] text-zinc-600">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
 
-                          {/* Score bar */}
-                          <div className="ml-auto flex items-center gap-2 shrink-0">
+                          <div className="w-full flex items-center gap-2 shrink-0 sm:ml-auto sm:w-auto">
                             <div className="h-1 w-20 rounded-full bg-white/[.06] overflow-hidden">
                               <div className="h-full rounded-full transition-all" style={{ width: `${scorePct}%`, background: scoreColor }} />
                             </div>
@@ -636,9 +670,21 @@ export function ClipsPage() {
                       </div>
                     </button>
                   );
-                })}
-              </div>
+                }}
+              />
             )}
+            <Pagination
+              page={page}
+              perPage={perPage}
+              total={totalClips}
+              itemLabel="clips"
+              onPageChange={(next) => {
+                setPage(next);
+                setSelectedId(null);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="mt-4 rounded-[14px] border border-white/[.06] bg-white/[.012]"
+            />
           </div>
 
           {/* Clip details sidebar */}
@@ -846,3 +892,5 @@ export function ClipsPage() {
     </Shell>
   );
 }
+
+

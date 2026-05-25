@@ -397,12 +397,12 @@ function StudioPanel() {
   return (
     <Card className="overflow-hidden">
       <div className="grid lg:grid-cols-[1.05fr_.95fr]">
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 px-3 py-1 text-[11px] font-semibold text-rose-200">
             <WandSparkles className="h-3 w-3" />
             Creator studio
           </div>
-          <h1 className="max-w-[680px] font-display text-4xl font-extrabold tracking-tight text-balance sm:text-5xl">
+          <h1 className="max-w-[680px] font-display text-3xl font-extrabold tracking-tight text-balance sm:text-5xl">
             Turn any idea into viral short videos.
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-7 text-zinc-400">
@@ -419,7 +419,7 @@ function StudioPanel() {
             </Button>
           </div>
         </div>
-        <div className="relative min-h-[300px] border-t border-white/[.06] bg-[#111725] p-6 lg:border-l lg:border-t-0">
+        <div className="relative min-h-[260px] border-t border-white/[.06] bg-[#111725] p-4 sm:p-6 lg:border-l lg:border-t-0">
           <div className="absolute right-8 top-8 h-24 w-24 rounded-full bg-[#3daaff]/15 blur-3xl" />
           <div className="relative mx-auto max-w-[280px] rounded-[22px] border border-white/10 bg-zinc-950 p-2 shadow-2xl">
             <div className="aspect-[9/16] overflow-hidden rounded-[16px] bg-gradient-to-br from-[#ff3d6a] via-[#ff7a3d] to-[#3daaff] p-4">
@@ -427,7 +427,7 @@ function StudioPanel() {
                 <span>00:47</span>
                 <span>9:16</span>
               </div>
-              <div className="mt-28 rounded-xl bg-black/25 p-3 backdrop-blur">
+              <div className="mt-20 rounded-xl bg-black/25 p-3 backdrop-blur sm:mt-28">
                 <div className="text-lg font-black leading-5">5 habits that changed my mornings</div>
                 <div className="mt-2 h-1.5 w-24 rounded-full bg-white/70" />
                 <div className="mt-1.5 h-1.5 w-16 rounded-full bg-white/50" />
@@ -450,16 +450,16 @@ export function Dashboard() {
     <Shell active="dashboard">
       <StudioPanel />
       <StatStrip />
-      <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
-        <div className="space-y-6">
+      <div className="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="space-y-4 sm:space-y-6">
           <ViralityCard />
           <ChartCard />
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
             <VideoList />
             <Workflows />
           </div>
         </div>
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           <UsageBars />
           <UpcomingPosts />
           <Card className="p-5">
@@ -486,3 +486,4 @@ export function Dashboard() {
     </Shell>
   );
 }
+

@@ -7,15 +7,15 @@ from functools import partial
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.deps import get_current_user, get_tenant_db
 from shared.schemas.auth import TokenPayload
 from platform_svc.crypto import decrypt_token, encrypt_token
 from platform_svc.models import SocialAccount
-from platform_svc.schemas import OAuthConnectRequest, OAuthConnectResponse, SocialAccountResponse
+from platform_svc.schemas import OAuthConnectRequest, OAuthConnectResponse, SocialAccountListResponse, SocialAccountResponse
 
 router = APIRouter(tags=["social-accounts"])
 
@@ -450,17 +450,26 @@ async def oauth_connect(
     )
 
 
-@router.get("/social-accounts", response_model=list[SocialAccountResponse])
+@router.get("/social-accounts", response_model=SocialAccountListResponse)
 async def list_social_accounts(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=100),
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """List all connected social accounts for the current tenant."""
+    """List connected social accounts for the current tenant with pagination."""
+    query = select(SocialAccount).where(SocialAccount.is_active == True)
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
     result = await db.execute(
-        select(SocialAccount).where(SocialAccount.is_active == True).order_by(SocialAccount.created_at.desc())
+        query.order_by(SocialAccount.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
     )
     accounts = result.scalars().all()
-    return [SocialAccountResponse.model_validate(a) for a in accounts]
+    return SocialAccountListResponse(
+        items=[SocialAccountResponse.model_validate(a) for a in accounts],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
 
 
 @router.delete("/social-accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

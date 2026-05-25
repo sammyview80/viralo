@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { Shell } from "../Shell";
 import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
+import { VirtualizedGrid } from "../components/VirtualizedCollection";
 import { videoApi, platformApi, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount } from "@/lib/api";
 
 /* ─── Types ─── */
@@ -83,7 +84,7 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
       <div className="h-px bg-white/[.05]" />
 
       {/* Aspect ratio + Language */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className={labelCls}>Aspect ratio</label>
           <div className="flex gap-1.5">
@@ -173,7 +174,7 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
       {config.add_captions && (
         <div>
           <label className={labelCls}>Caption style</label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {CAPTION_STYLES.map((s) => (
               <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
                 className={cn("rounded-[9px] border px-3 py-2.5 text-left transition",
@@ -403,7 +404,7 @@ function TimelineEditor({
 
   return (
     <div
-      className="fixed inset-0 z-[400] flex items-center justify-center p-6"
+      className="fixed inset-0 z-[400] flex items-center justify-center p-3 sm:p-6"
       style={{ background: "rgba(4,7,15,.82)", backdropFilter: "blur(8px)", animation: "fadeUp .15s ease" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
@@ -485,7 +486,7 @@ function TimelineEditor({
             </div>
 
             {/* Time inputs */}
-            <div className="mt-6 grid grid-cols-3 gap-3">
+            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {[
                 { label:"Start", val:fmtInput(startSec), set:(v:string)=>{ const n=parseInput(v); if(!isNaN(n)) setStartSec(Math.min(n,endSec-3)); } },
                 { label:"Duration", val:fmtSec(dur), set:null, accent:true },
@@ -1088,7 +1089,7 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
 
                     <div className="p-4 space-y-3">
                       {/* Account + time */}
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-zinc-500">Account</label>
                           <select value={g.accountId} onChange={(e) => updateGroup(g.id, { accountId: e.target.value })}
@@ -1232,15 +1233,20 @@ function ResultsView({
         </div>
       )}
       {clips.length > 0
-        ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{clips.map((c, i) => (
-            <ClipCard
-              key={c.id}
-              clip={c}
-              idx={i}
-              selected={selected.has(c.id)}
-              onToggleSelect={() => toggleSelect(c.id)}
-            />
-          ))}</div>
+        ? <VirtualizedGrid
+            items={clips}
+            keyForItem={(clip) => clip.id}
+            estimateRowHeight={390}
+            columns={[{ minWidth: 640, columns: 2 }, { minWidth: 1024, columns: 4 }]}
+            renderItem={(c, i) => (
+              <ClipCard
+                clip={c}
+                idx={i}
+                selected={selected.has(c.id)}
+                onToggleSelect={() => toggleSelect(c.id)}
+              />
+            )}
+          />
         : <div className="py-16 text-center text-zinc-500">No clips generated yet.</div>}
 
       {bulkModal && (
@@ -1252,10 +1258,10 @@ function ResultsView({
 
       {/* Regenerate modal */}
       {regenModal && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-6"
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6"
           style={{ background: "rgba(4,7,15,.8)", backdropFilter: "blur(6px)", animation: "fadeUp .15s ease" }}
           onClick={(e) => e.target === e.currentTarget && setRegenModal(false)}>
-          <div className="w-full max-w-[460px] overflow-hidden rounded-[20px] border border-white/[.12] bg-[#0e1420] p-6 shadow-[0_40px_100px_rgba(0,0,0,.7)]"
+          <div className="w-full max-w-[460px] overflow-hidden rounded-[18px] border border-white/[.12] bg-[#0e1420] p-4 shadow-[0_40px_100px_rgba(0,0,0,.7)] sm:rounded-[20px] sm:p-6"
             style={{ animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}
             onClick={(e) => e.stopPropagation()}>
             <div className="mb-5 flex items-center gap-3">
@@ -1397,7 +1403,7 @@ export function UploadPage() {
     if (updated.status === "done" || updated.status === "ready") {
       try {
         const clipList = await videoApi.clips(updated.id);
-        setClips(clipList);
+        setClips(clipList.items);
       } catch { setClips([]); }
     }
     setView("results");
@@ -1413,7 +1419,7 @@ export function UploadPage() {
     if (vid.status === "done" || vid.status === "ready") {
       try {
         const clipList = await videoApi.clips(vid.id);
-        setClips(clipList);
+        setClips(clipList.items);
       } catch { setClips([]); }
     }
     setView("results");
@@ -1466,8 +1472,8 @@ export function UploadPage() {
       )}
 
       <div className="flex h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
-        <div className="flex flex-wrap items-center gap-3 border-b border-white/[.06] bg-[#090e16]/95 px-5 py-4">
-          <div className="mr-2">
+        <div className="flex flex-col items-stretch gap-3 border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4 lg:flex-row lg:flex-wrap lg:items-center">
+          <div className="min-w-0 lg:mr-2">
             <div className="flex items-center gap-2">
               {view === "results" && (
                 <button
@@ -1493,7 +1499,7 @@ export function UploadPage() {
             </p>
           </div>
 
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:ml-auto">
             {view !== "results" && (
               <button
                 onClick={() => navigate("/projects")}
@@ -1513,15 +1519,15 @@ export function UploadPage() {
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col overflow-hidden px-5 py-5">
+        <div className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-5 sm:py-5">
           {/* Upload view — two-column layout */}
           {view === "upload" && (
-            <div className="mx-auto flex h-full max-w-2xl flex-col gap-5 overflow-y-auto">
+            <div className="mx-auto flex h-full w-full max-w-2xl flex-col gap-5 overflow-y-auto">
 
               {/* Import section */}
               <div className="flex flex-col gap-4">
                 {/* Source tabs */}
-                <div className="flex gap-1 rounded-[12px] border border-white/[.07] bg-white/[.02] p-1">
+                <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-white/[.07] bg-white/[.02] p-1">
                   {(["file", "yt"] as Source[]).map((s) => (
                     <button key={s} onClick={() => { setSource(s); setUploadError(""); }}
                       className={cn(
@@ -1663,3 +1669,4 @@ export function UploadPage() {
     </Shell>
   );
 }
+

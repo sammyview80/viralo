@@ -81,6 +81,13 @@ class VideoListResponse(BaseModel):
     per_page: int
 
 
+class ClipListResponse(BaseModel):
+    items: list[ClipResponse]
+    total: int
+    page: int
+    per_page: int
+
+
 class YouTubeImportRequest(BaseModel):
     url: str
     title: str | None = None

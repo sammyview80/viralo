@@ -14,7 +14,7 @@ export function AuthShell({
   footer?: ReactNode;
 }) {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#080b12] px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#080b12] px-3 py-8 sm:px-4">
       {/* Ambient glow */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute left-[-10%] top-[-10%] h-[500px] w-[500px] rounded-full bg-[#ff3d6a]/[.06] blur-[120px]" />
@@ -32,7 +32,7 @@ export function AuthShell({
 
       <div className="relative z-10 w-full max-w-[420px]">
         {/* Logo */}
-        <div className="mb-8 flex flex-col items-center gap-3">
+        <div className="mb-6 flex flex-col items-center gap-3 sm:mb-8">
           <div className="grid h-10 w-10 place-items-center rounded-[11px] bg-gradient-to-br from-[#ff4d78] to-[#ff8040] shadow-[0_6px_24px_rgba(255,61,106,.35),inset_0_1px_0_rgba(255,255,255,.2)]">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
@@ -42,15 +42,15 @@ export function AuthShell({
         </div>
 
         {/* Card */}
-        <div className="overflow-hidden rounded-[18px] border border-white/[.08] bg-[#0e1420] shadow-[0_32px_80px_rgba(0,0,0,.6)]">
+        <div className="app-card overflow-hidden rounded-[18px] shadow-[0_32px_80px_rgba(0,0,0,.45)]">
           {/* Header */}
-          <div className="border-b border-white/[.06] px-8 py-6">
-            <h1 className="font-display text-[22px] font-bold tracking-[-0.01em]">{title}</h1>
+          <div className="border-b border-white/[.06] px-5 py-5 sm:px-8 sm:py-6">
+            <h1 className="font-display text-[22px] font-bold tracking-[-0.02em]">{title}</h1>
             <p className="mt-1 text-[13px] text-zinc-500">{subtitle}</p>
           </div>
 
           {/* Body */}
-          <div className="px-8 py-6">{children}</div>
+          <div className="px-5 py-5 sm:px-8 sm:py-6">{children}</div>
         </div>
 
         {/* Footer */}
@@ -89,7 +89,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   return (
     <input
       className={cn(
-        "w-full rounded-[9px] border border-white/[.08] bg-white/[.04] px-3.5 py-2.5 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition",
+        "w-full rounded-[9px] border border-white/[.08] bg-white/[.035] px-3.5 py-2.5 text-[13px] font-medium text-zinc-200 placeholder-zinc-500 outline-none transition",
         "focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]",
         className,
       )}

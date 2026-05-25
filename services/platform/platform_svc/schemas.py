@@ -20,6 +20,13 @@ class SocialAccountResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SocialAccountListResponse(BaseModel):
+    items: list[SocialAccountResponse]
+    total: int
+    page: int
+    per_page: int
+
+
 class OAuthConnectRequest(BaseModel):
     platform: str
     code: str

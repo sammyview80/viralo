@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Shell } from "../Shell";
 import { platformApi, type SocialAccount, type ScheduledPost, type CalendarDay } from "@/lib/api";
+import { Pagination } from "../components/Pagination";
 
 /* ─── Constants ─── */
 const PLATFORM_COLORS: Record<string, string> = {
@@ -59,6 +60,25 @@ const STATUS_ICON: Record<string, string> = {
   posted:     "✓",
   failed:     "✕",
   cancelled:  "—",
+};
+
+const PLATFORM_ABBR: Record<string, string> = {
+  tiktok: "TT",
+  instagram: "IG",
+  youtube: "YT",
+  twitter: "X",
+  linkedin: "IN",
+  facebook: "FB",
+};
+
+// Calendar pill colors — platform-keyed, dark maroon style matching design
+const CAL_PILL: Record<string, { pill: string; badge: string }> = {
+  tiktok:    { pill: "bg-rose-950/70 border-rose-800/40 text-rose-300",    badge: "bg-rose-900/80 text-rose-200" },
+  instagram: { pill: "bg-pink-950/70 border-pink-800/40 text-pink-300",    badge: "bg-pink-900/80 text-pink-200" },
+  youtube:   { pill: "bg-red-950/70 border-red-800/40 text-red-300",       badge: "bg-red-900/80 text-red-200" },
+  twitter:   { pill: "bg-zinc-900/80 border-zinc-700/40 text-zinc-300",    badge: "bg-zinc-800/80 text-zinc-200" },
+  linkedin:  { pill: "bg-blue-950/70 border-blue-800/40 text-blue-300",    badge: "bg-blue-900/80 text-blue-200" },
+  facebook:  { pill: "bg-indigo-950/70 border-indigo-800/40 text-indigo-300", badge: "bg-indigo-900/80 text-indigo-200" },
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -498,10 +518,10 @@ function PostPopover({ post, onClose, onCancelled, onPublished }: { post: Schedu
   const canPublishNow = post.status === "scheduled" || post.status === "pending" || post.status === "failed";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
       <div
-        className="relative z-10 w-[340px] rounded-[14px] border border-white/[.08] bg-[#111827] p-5 shadow-2xl"
+        className="relative z-10 w-full max-w-[340px] rounded-[14px] border border-white/[.08] bg-[#111827] p-4 shadow-2xl sm:p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1 text-zinc-600 hover:text-zinc-300 transition">✕</button>
@@ -675,7 +695,7 @@ function ScheduleModal({
   const labelCls = "mb-1.5 block text-xs font-semibold uppercase tracking-[.06em] text-zinc-500";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
       <div
         className="relative z-10 w-full max-w-md rounded-[16px] border border-white/[.08] bg-[#0e1420] p-6 shadow-2xl"
@@ -796,6 +816,8 @@ function PostsListView({
   }, [initialStatusFilter]);
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
+  const [page, setPage] = useState(1);
+  const perPage = 20;
 
   const statusDef = STATUS_FILTERS.find((f) => f.id === statusFilter) ?? STATUS_FILTERS[0];
   const filtered = posts
@@ -816,6 +838,11 @@ function PostsListView({
   }, {});
 
   const usedPlatforms = Array.from(new Set(posts.map((p) => p.platform)));
+  const pagedPosts = filtered.slice((page - 1) * perPage, page * perPage);
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, platformFilter, sort]);
 
   if (loading) return (
     <div className="p-6 space-y-3">
@@ -904,7 +931,7 @@ function PostsListView({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
-          {filtered.map((post) => {
+          {pagedPosts.map((post) => {
             const isPosted = post.status === "posted";
             const isFailed = post.status === "failed";
             const isProcessing = post.status === "processing";
@@ -914,7 +941,7 @@ function PostsListView({
                 className="flex w-full items-center gap-4 rounded-[10px] border border-white/[.06] bg-white/[.02] px-4 py-3 text-left transition hover:border-white/[.1] hover:bg-white/[.04]">
                 <span className={cn("h-2 w-2 shrink-0 rounded-full", PLATFORM_DOT[post.platform] ?? "bg-zinc-500")} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2 sm:justify-start">
                     <span className="text-[13px] font-semibold text-zinc-200 truncate">
                       {post.caption || <span className="text-zinc-600">No caption</span>}
                     </span>
@@ -966,6 +993,14 @@ function PostsListView({
               </button>
             );
           })}
+          <Pagination
+            page={page}
+            perPage={perPage}
+            total={filtered.length}
+            itemLabel="posts"
+            onPageChange={setPage}
+            className="mt-3 rounded-[10px] border border-white/[.06] bg-white/[.012]"
+          />
         </div>
       )}
     </div>
@@ -1079,7 +1114,7 @@ export function SchedulerPage() {
     <Shell active="scheduler">
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0e1420]">
         {/* Header */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-white/[.07] bg-[#0b101a] p-4">
+        <div className="flex flex-col items-stretch gap-3 border-b border-white/[.07] bg-[#0b101a] p-3 sm:p-4 lg:flex-row lg:flex-wrap lg:items-center">
           <h1 className="font-display text-[19px] font-bold tracking-[-.01em]">Scheduler</h1>
           {totalPostsThisMonth > 0 && (
             <span className="rounded-full border border-white/[.07] bg-[#141926] px-2 py-0.5 text-xs font-semibold text-zinc-500">
@@ -1087,7 +1122,7 @@ export function SchedulerPage() {
             </span>
           )}
           {/* Tab toggle */}
-          <div className="flex rounded-[9px] border border-white/[.07] bg-[#141926] p-0.5">
+          <div className="grid grid-cols-2 rounded-[9px] border border-white/[.07] bg-[#141926] p-0.5 sm:flex">
             {(["calendar", "posts"] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}
                 className={cn("rounded-[7px] px-3 py-1 text-xs font-semibold capitalize transition",
@@ -1097,13 +1132,13 @@ export function SchedulerPage() {
             ))}
           </div>
           {activeTab === "calendar" && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 sm:justify-start">
               <button onClick={prevMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">‹</button>
-              <span className="min-w-[150px] text-center text-sm font-semibold text-zinc-200">{monthName} {year}</span>
+              <span className="min-w-0 flex-1 text-center text-sm font-semibold text-zinc-200 sm:min-w-[150px] sm:flex-none">{monthName} {year}</span>
               <button onClick={nextMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">›</button>
             </div>
           )}
-          <Button size="sm" className="ml-auto bg-[#ff3d6a] hover:bg-[#e8304f] text-white" onClick={() => setShowModal(true)}>
+          <Button size="sm" className="bg-[#ff3d6a] text-white hover:bg-[#e8304f] lg:ml-auto" onClick={() => setShowModal(true)}>
             + Schedule Post
           </Button>
         </div>
@@ -1250,26 +1285,29 @@ export function SchedulerPage() {
                             )}
                           </div>
                           <div className="space-y-0.5">
-                            {posts.slice(0, 3).map((post) => (
-                              <button
-                                key={post.id}
-                                onClick={() => setSelectedPost(post)}
-                                className={cn(
-                                  "group w-full truncate rounded border px-1.5 py-0.5 text-left text-[10px] font-medium transition hover:brightness-125 cursor-pointer",
-                                  PILL_COLORS[post.status] ?? "bg-zinc-500/15 border-zinc-500/25 text-zinc-400"
-                                )}
-                                title={`${post.caption ?? ""} · ${post.status} · ${PLATFORM_LABELS[post.platform] ?? post.platform}`}
-                              >
-                                <span className="mr-1 opacity-70">{STATUS_ICON[post.status]}</span>
-                                <span
+                            {posts.slice(0, 3).map((post) => {
+                              const cp = CAL_PILL[post.platform] ?? { pill: "bg-rose-950/70 border-rose-800/40 text-rose-300", badge: "bg-rose-900/80 text-rose-200" };
+                              const abbr = PLATFORM_ABBR[post.platform] ?? post.platform.slice(0, 2).toUpperCase();
+                              const title = (post.caption ?? "").trim() || PLATFORM_LABELS[post.platform] || post.platform;
+                              return (
+                                <button
+                                  key={post.id}
+                                  onClick={() => setSelectedPost(post)}
+                                  title={`${post.caption ?? ""} · ${post.status} · ${PLATFORM_LABELS[post.platform] ?? post.platform}`}
                                   className={cn(
-                                    "mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle",
-                                    PLATFORM_DOT[post.platform]
+                                    "group flex w-full items-center gap-1 rounded-[4px] border py-[3px] pl-[3px] pr-1.5 text-left transition hover:brightness-125 cursor-pointer",
+                                    cp.pill
                                   )}
-                                />
-                                {(post.caption ?? "").slice(0, 14) || PLATFORM_LABELS[post.platform] || post.platform}
-                              </button>
-                            ))}
+                                >
+                                  <span className={cn("shrink-0 rounded-[3px] px-[4px] py-px text-[8px] font-bold leading-tight", cp.badge)}>
+                                    {abbr}
+                                  </span>
+                                  <span className="truncate text-[10px] font-medium leading-tight flex-1">
+                                    {title}
+                                  </span>
+                                </button>
+                              );
+                            })}
                             {posts.length > 3 && (
                               <button
                                 onClick={() => setExpandedDay(cell.ymd)}
@@ -1364,3 +1402,4 @@ export function SchedulerPage() {
     </Shell>
   );
 }
+

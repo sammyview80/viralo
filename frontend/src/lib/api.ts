@@ -192,12 +192,14 @@ export interface VideoResponse {
   created_at: string;
 }
 
-export interface VideoListResponse {
-  items: VideoResponse[];
+export interface PaginatedResponse<T> {
+  items: T[];
   total: number;
   page: number;
   per_page: number;
 }
+
+export type VideoListResponse = PaginatedResponse<VideoResponse>;
 
 export interface ClipPlatformContent {
   description: string;
@@ -224,6 +226,22 @@ export interface ClipApiResponse {
     platforms?: Record<string, ClipPlatformContent>;
   } | null;
   created_at: string;
+}
+
+export type ClipListResponse = PaginatedResponse<ClipApiResponse>;
+
+function normalizePaginated<T>(data: PaginatedResponse<T> | T[] | null | undefined, page: number, per_page: number): PaginatedResponse<T> {
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page, per_page };
+  }
+  const maybe = data as Partial<PaginatedResponse<T>> | null | undefined;
+  const items = Array.isArray(maybe?.items) ? maybe.items : [];
+  return {
+    items,
+    total: typeof maybe?.total === "number" ? maybe.total : items.length,
+    page: typeof maybe?.page === "number" ? maybe.page : page,
+    per_page: typeof maybe?.per_page === "number" ? maybe.per_page : per_page,
+  };
 }
 
 export interface ClipConfig {
@@ -256,9 +274,14 @@ export const videoApi = {
     }),
   get:     (id: string) => videoReq<VideoResponse>("GET", `/videos/${id}`),
   list:    (page = 1, per_page = 20) =>
-    videoReq<VideoListResponse>("GET", `/videos?page=${page}&per_page=${per_page}`),
-  clips:   (videoId: string) =>
-    videoReq<ClipApiResponse[]>("GET", `/clips?video_id=${videoId}`),
+    videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
+  clips:   (videoId: string, page = 1, per_page = 100) =>
+    videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?video_id=${videoId}&page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page)),
+  listClips: (page = 1, per_page = 24) =>
+    videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page)),
   patchClip: (clipId: string, patch: { tags?: string[]; platform_copy?: Record<string, { description: string; tags: string[] }> }) =>
     videoReq<ClipApiResponse>("PATCH", `/clips/${clipId}`, patch),
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),
@@ -378,10 +401,8 @@ export interface Notification {
   created_at: string;
 }
 
-export interface NotificationListResponse {
-  items: Notification[];
-  total: number;
-}
+export type NotificationListResponse = PaginatedResponse<Notification>;
+export type SocialAccountListResponse = PaginatedResponse<SocialAccount>;
 
 /* ─── Platform API ─── */
 
@@ -391,7 +412,8 @@ let _accountsCache: { data: SocialAccount[]; at: number } | null = null;
 function _listAccountsCached(): Promise<SocialAccount[]> {
   if (_accountsCache && Date.now() - _accountsCache.at < 30_000) return Promise.resolve(_accountsCache.data);
   if (_accountsInflight) return _accountsInflight;
-  _accountsInflight = platformReq<SocialAccount[]>("GET", "/social-accounts")
+  _accountsInflight = platformReq<SocialAccountListResponse | SocialAccount[]>("GET", "/social-accounts?per_page=100")
+    .then((data) => normalizePaginated<SocialAccount>(data, 1, 100).items)
     .then((data) => { _accountsCache = { data, at: Date.now() }; return data; })
     .finally(() => { _accountsInflight = null; });
   return _accountsInflight;
@@ -402,18 +424,24 @@ export const platformApi = {
   connectOAuth: (platform: string, code: string, redirect_uri: string, extra?: Record<string, string>) =>
     platformReq<{ account_id: string; platform: string; username: string }>(
       "POST", "/oauth/connect", { platform, code, redirect_uri, ...extra }
-    ),
+    ).then((r) => { _accountsCache = null; return r; }),
   listAccounts: _listAccountsCached,
-  deleteAccount: (id: string) => platformReq<void>("DELETE", `/social-accounts/${id}`),
+  deleteAccount: (id: string) => platformReq<void>("DELETE", `/social-accounts/${id}`)
+    .then((r) => { _accountsCache = null; return r; }),
 
   // Scheduling
   schedulePost: (data: ScheduledPostCreate) =>
     platformReq<ScheduledPost>("POST", "/scheduled-posts", data),
-  listPosts: (params?: { platform?: string; status?: string; from?: string; to?: string }) => {
-    const q = new URLSearchParams(params as Record<string, string>).toString();
-    return platformReq<{ items: ScheduledPost[]; total: number; page: number; per_page: number }>(
-      "GET", `/scheduled-posts${q ? `?${q}` : ""}`
-    );
+  listPosts: (params?: { platform?: string; status?: string; from?: string; to?: string; page?: number; per_page?: number }) => {
+    const q = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") q.set(key, String(value));
+      });
+    }
+    return platformReq<PaginatedResponse<ScheduledPost> | ScheduledPost[]>(
+      "GET", `/scheduled-posts${q.toString() ? `?${q.toString()}` : ""}`
+    ).then((data) => normalizePaginated<ScheduledPost>(data, params?.page ?? 1, params?.per_page ?? 20));
   },
   getPost: (id: string) => platformReq<ScheduledPost>("GET", `/scheduled-posts/${id}`),
   updatePost: (id: string, data: Partial<Pick<ScheduledPost, "scheduled_at" | "caption" | "hashtags">>) =>
@@ -428,12 +456,14 @@ export const platformApi = {
   // Analytics
   analyticsOverview: (period: "7d" | "30d" | "90d" = "30d") =>
     platformReq<AnalyticsOverview>("GET", `/analytics/overview?period=${period}`),
-  analyticsPosts: (page = 1) =>
-    platformReq<{ items: PostAnalytics[]; total: number }>("GET", `/analytics/posts?page=${page}`),
+  analyticsPosts: (page = 1, per_page = 10) =>
+    platformReq<PaginatedResponse<PostAnalytics> | PostAnalytics[]>("GET", `/analytics/posts?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<PostAnalytics>(data, page, per_page)),
 
   // Notifications
-  listNotifications: (unread?: boolean) =>
-    platformReq<NotificationListResponse>("GET", `/notifications${unread ? "?unread=true" : ""}`),
+  listNotifications: (unread?: boolean, page = 1, per_page = 20) =>
+    platformReq<NotificationListResponse | Notification[]>("GET", `/notifications?${unread !== undefined ? `unread=${unread}&` : ""}page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<Notification>(data, page, per_page)),
   markRead: (id: string) => platformReq<void>("PATCH", `/notifications/${id}/read`),
   markAllRead: () => platformReq<void>("POST", "/notifications/read-all"),
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),

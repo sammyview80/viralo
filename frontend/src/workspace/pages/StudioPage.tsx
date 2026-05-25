@@ -75,10 +75,10 @@ export function StudioPage() {
       <div className="flex flex-col overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0e1420]">
         {/* ── Left panel ── */}
         <div className="flex min-w-0 flex-col border-b border-white/[.07]">
-          <div className="px-6 pt-6">
+          <div className="px-4 pt-4 sm:px-6 sm:pt-6">
             <h1 className="font-display text-[22px] font-bold tracking-[-.01em]">Video Studio</h1>
             <p className="mt-1 text-[13px] text-zinc-500">Turn any idea into a viral short video in minutes.</p>
-            <div className="mt-5 flex max-w-[440px] rounded-[12px] border border-white/[.07] bg-[#141926] p-1">
+            <div className="mt-5 grid max-w-[440px] grid-cols-1 rounded-[12px] border border-white/[.07] bg-[#141926] p-1 sm:grid-cols-3">
               {([["ai", "✦ AI Generate"], ["upload", "↑ Upload"], ["url", "↗ YouTube URL"]] as [StudioTab, string][]).map(([id, label]) => (
                 <button key={id} onClick={() => { setTab(id); setUploadError(""); }}
                   className={cn(
@@ -91,7 +91,7 @@ export function StudioPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             {/* ── AI Generate ── */}
             {tab === "ai" && (
               <div className="space-y-5">
@@ -222,11 +222,11 @@ export function StudioPage() {
 
         {/* ── Right panel: preview (AI) or clip settings (upload/url) ── */}
         {isUploadTab ? (
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
           </div>
         ) : (
-          <div className="flex min-h-[620px] flex-col bg-[#0b101a]">
+          <div className="flex min-h-[520px] flex-col bg-[#0b101a] sm:min-h-[620px]">
             <div className="flex h-[53px] items-center gap-2 border-b border-white/[.07] px-5">
               <span className="font-display text-[13px] font-bold">Preview</span>
               <span className="text-[11.5px] text-zinc-500">{prompt.trim() ? "— estimated" : "— enter a prompt"}</span>
@@ -262,3 +262,4 @@ export function StudioPage() {
     </Shell>
   );
 }
+

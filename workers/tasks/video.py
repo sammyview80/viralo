@@ -41,6 +41,7 @@ GROQ_MAX_AUDIO_MB = 24
 VIDEO_CRF = 18          # visually lossless (default 23 is lossy)
 AUDIO_BITRATE = 192_000  # 192kbps vs 128kbps
 CAPTION_BURN_MAX_SECONDS = 120
+CAPTION_LEAD_SEC = 0.15  # Whisper timestamps lag ~150ms behind actual pronunciation
 
 REFRAME_PRESETS = {
     "9:16":  (1080, 1920, "9:16"),
@@ -714,17 +715,17 @@ def _generate_captions(words: list[WordTimestamp], clip: ClipResult, max_words: 
         if is_break:
             segments.append(CaptionSegment(
                 text=" ".join(cw.word for cw in current),
-                start=max(0.0, current[0].start - clip.start),
-                end=max(0.0, current[-1].end - clip.start),
-                words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start), max(0.0, cw.end - clip.start)) for cw in current],
+                start=max(0.0, current[0].start - clip.start - CAPTION_LEAD_SEC),
+                end=max(0.0, current[-1].end - clip.start - CAPTION_LEAD_SEC),
+                words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start - CAPTION_LEAD_SEC), max(0.0, cw.end - clip.start - CAPTION_LEAD_SEC)) for cw in current],
             ))
             current = []
     if current:
         segments.append(CaptionSegment(
             text=" ".join(cw.word for cw in current),
-            start=max(0.0, current[0].start - clip.start),
-            end=max(0.0, current[-1].end - clip.start),
-            words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start), max(0.0, cw.end - clip.start)) for cw in current],
+            start=max(0.0, current[0].start - clip.start - CAPTION_LEAD_SEC),
+            end=max(0.0, current[-1].end - clip.start - CAPTION_LEAD_SEC),
+            words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start - CAPTION_LEAD_SEC), max(0.0, cw.end - clip.start - CAPTION_LEAD_SEC)) for cw in current],
         ))
     return segments
 
@@ -1005,7 +1006,7 @@ def _render_clip(
                     if t > clip.end + 0.1:
                         audio_done = True
                         continue
-                    if t < clip.start - 0.1:
+                    if t < clip.start - 0.05:
                         continue
                     for frame in packet.decode():
                         frame.pts = audio_sample_idx
@@ -1305,6 +1306,53 @@ def _export_clip(
 
 
 # ── YouTube download ──────────────────────────────────────────────────────────
+
+def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
+    """Return {title, thumbnail_url} for a YouTube URL.
+
+    Uses YouTube oEmbed API (no auth, no rate-limit) for title + thumbnail,
+    then uploads thumbnail to Cloudinary so we own the URL.
+    """
+    import urllib.request as _urllib_req
+    import urllib.parse as _urllib_parse
+    try:
+        # oEmbed: lightweight, no bot-detection, returns title + thumbnail_url
+        oembed_url = f"https://www.youtube.com/oembed?url={_urllib_parse.quote(url, safe='')}&format=json"
+        with _urllib_req.urlopen(oembed_url, timeout=10) as resp:
+            info = json.loads(resp.read())
+
+        title = (info.get("title") or "")[:255]
+        raw_thumb = info.get("thumbnail_url") or ""
+
+        # oEmbed gives sddefault; swap to maxresdefault for better quality
+        if raw_thumb and "/hqdefault" in raw_thumb:
+            raw_thumb = raw_thumb.replace("/hqdefault", "/sddefault")
+
+        thumbnail_url = raw_thumb  # fallback: store YT URL as-is
+
+        if raw_thumb and video_id:
+            try:
+                thumb_data = _urllib_req.urlopen(raw_thumb, timeout=15).read()
+                storage_key = f"thumbnails/{video_id}/thumb.jpg"
+                provider = os.getenv("STORAGE_PROVIDER", "local")
+                if provider == "cloudinary":
+                    import cloudinary as _cld, cloudinary.uploader as _cld_up, os as _os2
+                    _cld.config(cloudinary_url=os.getenv("CLOUDINARY_URL", ""))
+                    pub_id = _os2.path.splitext(storage_key)[0]
+                    result = _cld_up.upload(thumb_data, public_id=pub_id, resource_type="image", overwrite=True)
+                    thumbnail_url = result["secure_url"]
+                else:
+                    from shared.storage.base import get_storage
+                    storage = get_storage(provider)
+                    thumbnail_url = asyncio.run(storage.upload(thumb_data, storage_key, "image/jpeg"))
+            except Exception as e:
+                logging.warning("thumbnail upload failed, using raw URL: %s", e)
+
+        return {"title": title, "thumbnail_url": thumbnail_url}
+    except Exception as e:
+        logging.warning("_fetch_youtube_metadata failed: %s", e)
+        return {"title": "", "thumbnail_url": ""}
+
 
 def _download_youtube(url: str, out_path: str, quality: str = "1080p") -> None:
     errors = []
@@ -1921,6 +1969,10 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         work_dir = Path(VIDEO_TEMP_DIR) / video_id
         work_dir.mkdir(parents=True, exist_ok=True)
         out_path = str(work_dir / "source.mp4")
+
+        meta = _fetch_youtube_metadata(url, video_id=video_id)
+        if meta.get("title") or meta.get("thumbnail_url"):
+            _update_video(tenant_id, video_id, **{k: v for k, v in meta.items() if v})
 
         _download_youtube(url, out_path, quality=cfg.get("output_quality", "1080p"))
         _publish_progress(job_id, "download", 15, "processing", "Download complete, processing...")

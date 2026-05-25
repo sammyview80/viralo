@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Shell } from "../Shell";
 import { platformApi, AnalyticsOverview, PostAnalytics } from "@/lib/api";
+import { Pagination } from "../components/Pagination";
 
 type Period = "7d" | "30d" | "90d";
 
@@ -103,7 +104,7 @@ export function AnalyticsPage() {
     setLoadingPosts(true);
     setErrorPosts(null);
     platformApi
-      .analyticsPosts(page)
+      .analyticsPosts(page, PAGE_SIZE)
       .then((res) => {
         setPosts(res.items);
         setTotal(res.total);
@@ -112,16 +113,15 @@ export function AnalyticsPage() {
       .finally(() => setLoadingPosts(false));
   }, [page]);
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
   const isEmpty = !loadingPosts && !errorPosts && posts.length === 0 && !loadingOverview && overview !== null && overview.posts_count === 0;
 
   return (
     <Shell active="analytics">
       <div className="space-y-6">
         {/* Header + period selector */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
           <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Analytics</h1>
-          <div className="flex rounded-[10px] border border-white/[.07] bg-[#0e1420] p-1 gap-1">
+          <div className="grid grid-cols-3 rounded-[10px] border border-white/[.07] bg-[#0e1420] p-1 gap-1 sm:flex">
             {(["7d", "30d", "90d"] as Period[]).map((p) => (
               <button
                 key={p}
@@ -164,7 +164,7 @@ export function AnalyticsPage() {
 
         {/* Per-post table */}
         <div className="overflow-hidden rounded-[14px] border border-white/[.07] bg-[#0e1420]">
-          <div className="flex items-center justify-between border-b border-white/[.07] px-5 py-4">
+          <div className="flex flex-col gap-1 border-b border-white/[.07] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <span className="font-display text-[15px] font-bold">Post Performance</span>
             {total > 0 && (
               <span className="text-xs text-zinc-500">
@@ -247,30 +247,13 @@ export function AnalyticsPage() {
                 </table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between border-t border-white/[.05] px-5 py-3">
-                  <span className="text-xs text-zinc-500">
-                    Page {page} of {totalPages}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                      className="rounded-[8px] border border-white/[.07] bg-white/[.03] px-3 py-1.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      ← Prev
-                    </button>
-                    <button
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                      className="rounded-[8px] border border-white/[.07] bg-white/[.03] px-3 py-1.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Next →
-                    </button>
-                  </div>
-                </div>
-              )}
+              <Pagination
+                page={page}
+                perPage={PAGE_SIZE}
+                total={total}
+                itemLabel="posts"
+                onPageChange={setPage}
+              />
             </>
           )}
         </div>
@@ -278,3 +261,4 @@ export function AnalyticsPage() {
     </Shell>
   );
 }
+

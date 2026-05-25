@@ -17,6 +17,7 @@ from shared.schemas.auth import TokenPayload
 from video.models import Clip, Video
 from video.schemas import (
     ClipConfig,
+    ClipListResponse,
     ClipPatchRequest,
     ClipResponse,
     GenerateClipsRequest,
@@ -370,32 +371,43 @@ async def fetch_video_metadata(
     if video.source_type != "youtube_url" or not video.source_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a YouTube video.")
 
+    import urllib.request as _req, urllib.parse as _uparse, logging as _log
     try:
-        data = _ytdlp_fetch_json(video.source_url.strip())
+        oembed_url = f"https://www.youtube.com/oembed?url={_uparse.quote(video.source_url.strip(), safe='')}&format=json"
+        with _req.urlopen(oembed_url, timeout=10) as _resp:
+            data = json.loads(_resp.read())
     except Exception as exc:
-        msg = str(exc)
-        http_status = status.HTTP_504_GATEWAY_TIMEOUT if "timed out" in msg else status.HTTP_502_BAD_GATEWAY
-        raise HTTPException(status_code=http_status, detail=msg[:300])
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"YouTube oEmbed failed: {exc}")
 
     title = data.get("title")
-    thumbnails = data.get("thumbnails", [])
-    thumb_url = data.get("thumbnail")
-    if thumbnails:
-        best = max(
-            (t for t in thumbnails if t.get("url")),
-            key=lambda t: (t.get("width", 0) or 0),
-            default=None,
-        )
-        if best:
-            thumb_url = best["url"]
-    duration = data.get("duration")
+    thumb_url = data.get("thumbnail_url") or ""
+    if thumb_url and "/hqdefault" in thumb_url:
+        thumb_url = thumb_url.replace("/hqdefault", "/sddefault")
 
     if title:
         video.title = title
     if thumb_url:
+        try:
+            _provider = os.getenv("STORAGE_PROVIDER", "local")
+            _vid_id_str = str(video_id)
+            _thumb_data = _req.urlopen(thumb_url, timeout=15).read()
+            _storage_key = f"thumbnails/{_vid_id_str}/thumb.jpg"
+            if _provider == "cloudinary":
+                import cloudinary as _cld, cloudinary.uploader as _cld_up
+                _cld.config(cloudinary_url=os.getenv("CLOUDINARY_URL", ""))
+                import os as _os2
+                _result = _cld_up.upload(
+                    _thumb_data, public_id=_os2.path.splitext(_storage_key)[0],
+                    resource_type="image", overwrite=True
+                )
+                thumb_url = _result["secure_url"]
+                _log.info("thumbnail uploaded to Cloudinary: %s", thumb_url)
+            else:
+                from shared.storage.base import get_storage as _get_storage
+                thumb_url = await _get_storage(_provider).upload(_thumb_data, _storage_key, "image/jpeg")
+        except BaseException as _e:
+            _log.warning("thumbnail upload failed (%s): %s", type(_e).__name__, _e)
         video.thumbnail_url = thumb_url
-    if duration and not video.duration_sec:
-        video.duration_sec = int(duration)
 
     await db.commit()
     await db.refresh(video)
@@ -589,19 +601,29 @@ async def generate_viral_clips(
 # Clip CRUD
 # ---------------------------------------------------------------------------
 
-@router.get("/clips", response_model=list[ClipResponse])
+@router.get("/clips", response_model=ClipListResponse)
 async def list_clips(
     video_id: uuid.UUID | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     query = select(Clip).where(Clip.status != "deleted")
     if video_id:
         query = query.where(Clip.video_id == video_id)
-    query = query.order_by(Clip.created_at.desc())
-    result = await db.execute(query)
+
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+    result = await db.execute(
+        query.order_by(Clip.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    )
     clips = result.scalars().all()
-    return [ClipResponse.model_validate(c) for c in clips]
+    return ClipListResponse(
+        items=[ClipResponse.model_validate(c) for c in clips],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
 
 
 @router.get("/clips/{clip_id}", response_model=ClipResponse)
