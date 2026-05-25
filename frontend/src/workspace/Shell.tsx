@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { groups, nav } from "./data";
 import type { PageKey } from "./types";
 import { useAuth, logout } from "@/stores/auth";
 import { navigate } from "@/lib/router";
+import { NotificationBell } from "./components/NotificationBell";
+import { ToastContainer } from "./components/ToastContainer";
+import { connectSSE, fetchUnreadCount } from "@/stores/notifications";
 
 type ActiveKey = PageKey | "dashboard";
 
@@ -255,6 +258,12 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
   const [collapsed, setCollapsed] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const { user } = useAuth();
+
+  useEffect(() => {
+    fetchUnreadCount();
+    const cleanup = connectSSE();
+    return cleanup;
+  }, []);
   const title = PAGE_LABELS[active] ?? active;
   const sideW = collapsed ? 62 : 216;
   const shellStyle = { "--sidebar-width": `${sideW}px` } as CSSProperties;
@@ -262,6 +271,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
 
   return (
     <div className="relative min-h-screen" style={shellStyle}>
+      <ToastContainer />
       <Sidebar active={active} collapsed={collapsed} onCollapse={() => setCollapsed((c) => !c)} />
       <MobileNav active={active} />
 
@@ -290,10 +300,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <button className="relative grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-white/[.08] text-zinc-400 transition hover:border-white/[.13] hover:bg-[#141926] hover:text-zinc-200">
-            <Icons.Bell size={15} />
-            <span className="absolute right-[7px] top-[7px] h-[7px] w-[7px] rounded-full bg-[#ff3d6a] shadow-[0_0_8px_rgba(255,61,106,.8),0_0_0_2px_#080b12]" />
-          </button>
+          <NotificationBell />
           <button className="grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-white/[.08] text-zinc-400 transition hover:border-white/[.13] hover:bg-[#141926] hover:text-zinc-200">
             <Icons.Help size={15} />
           </button>

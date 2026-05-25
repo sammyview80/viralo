@@ -7,7 +7,9 @@ import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
 import { Pagination } from "../components/Pagination";
-import { videoApi, platformApi, agentApi, type ClipApiResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
+import { videoApi, platformApi, agentApi, token, type ClipApiResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
+
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return "--:--";
@@ -489,23 +491,39 @@ export function ClipsPage() {
     load();
   }, [page]);
 
-  // Subscribe to per-clip upload events from SSE (clip_upload_complete / clip_upload_failed)
+  // Ref-based SSE subscriptions — keyed by video_id so we never double-subscribe or loop
+  const sseSourcesRef = useRef<Map<string, EventSource>>(new Map());
+
   useEffect(() => {
-    // Re-use the video progress SSE channel; job_id == video_id for clip events
-    // We listen on all active video jobs by polling clips with pending_upload status
-    const pendingIds = clips
-      .filter((c) => c.status === "pending_upload" || c.status === "uploading")
-      .map((c) => String(c.video_id));
-    if (pendingIds.length === 0) return;
+    const pendingVideoIds = new Set(
+      clips
+        .filter((c) => c.status === "pending_upload" || c.status === "uploading")
+        .map((c) => String(c.video_id))
+    );
 
-    const uniqueVideoIds = [...new Set(pendingIds)];
-    const sources: EventSource[] = [];
+    // Close sources for video IDs that are no longer pending
+    for (const [vid, es] of sseSourcesRef.current) {
+      if (!pendingVideoIds.has(vid)) {
+        es.close();
+        sseSourcesRef.current.delete(vid);
+      }
+    }
 
-    for (const videoId of uniqueVideoIds) {
-      const es = new EventSource(`/api/video/progress/${videoId}`);
-      es.addEventListener("message", (e) => {
+    // Open new sources for newly pending video IDs
+    const authToken = token.get();
+    if (!authToken) return;
+
+    for (const videoId of pendingVideoIds) {
+      if (sseSourcesRef.current.has(videoId)) continue; // already subscribed
+
+      const url = `${VIDEO_SSE_BASE}/video/progress/${videoId}?token=${encodeURIComponent(authToken)}`;
+      const es = new EventSource(url);
+
+      es.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
+          if (data.type === "keepalive") return;
+
           if (data.event === "clip_upload_complete") {
             setClips((prev) =>
               prev.map((c) =>
@@ -521,15 +539,25 @@ export function ClipsPage() {
               )
             );
           }
-        } catch {
-          // ignore malformed
-        }
-      });
-      sources.push(es);
-    }
+        } catch { /* ignore malformed */ }
+      };
 
-    return () => sources.forEach((es) => es.close());
-  }, [clips]);
+      es.onerror = () => {
+        es.close();
+        sseSourcesRef.current.delete(videoId);
+      };
+
+      sseSourcesRef.current.set(videoId, es);
+    }
+  }, [clips.map((c) => `${c.id}:${c.status}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      for (const es of sseSourcesRef.current.values()) es.close();
+      sseSourcesRef.current.clear();
+    };
+  }, []);
 
   const postedClipIds = useMemo(() => buildPostedClipIds(posts), [posts]);
   const scheduledClipIds = useMemo(() => buildScheduledClipIds(posts), [posts]);

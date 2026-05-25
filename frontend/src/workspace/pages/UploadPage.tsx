@@ -4,7 +4,9 @@ import { Shell } from "../Shell";
 import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
 import { VirtualizedGrid } from "../components/VirtualizedCollection";
-import { videoApi, platformApi, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount } from "@/lib/api";
+import { videoApi, platformApi, token as authToken, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount } from "@/lib/api";
+
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 
 /* ─── Types ─── */
 type Source = "file" | "yt";
@@ -718,9 +720,9 @@ function ProcessingView({
   // SSE for real-time progress messages
   useEffect(() => {
     if (!current.celery_task_id || doneRef.current) return;
-    const token = localStorage.getItem("viralo_access_token") || "";
-    const url = `http://localhost:8003/api/v1/video/progress/${current.celery_task_id}`;
-    const es = new EventSource(`${url}?token=${encodeURIComponent(token)}`);
+    const t = authToken.get() || "";
+    const url = `${VIDEO_SSE_BASE}/video/progress/${current.celery_task_id}`;
+    const es = new EventSource(`${url}?token=${encodeURIComponent(t)}`);
     es.onmessage = (e) => {
       try {
         const d = JSON.parse(e.data);

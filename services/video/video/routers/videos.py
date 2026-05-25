@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.auth import decode_token
 from shared.deps import get_current_user, get_redis, get_tenant_db
 from shared.schemas.auth import TokenPayload
 from video.models import Clip, Video
@@ -240,9 +241,16 @@ async def import_youtube(
 @router.get("/video/progress/{job_id}")
 async def video_progress(
     job_id: str,
-    token: TokenPayload = Depends(get_current_user),
+    token: str | None = Query(None, alias="token"),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    # EventSource cannot send custom headers; accept token as query param
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
+    try:
+        decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     async def event_generator():
         pubsub = redis.pubsub()
         # Subscribe to both progress events and per-clip upload events

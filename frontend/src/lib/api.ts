@@ -393,17 +393,19 @@ export interface PostAnalytics {
   fetched_at: string;
 }
 
-export interface Notification {
+export interface AppNotification {
   id: string;
-  type: string;
+  type: string | null;
   title: string;
   body: string | null;
   is_read: boolean;
+  action_url: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  read_at: string | null;
 }
 
-export type NotificationListResponse = PaginatedResponse<Notification>;
+export type NotificationListResponse = PaginatedResponse<AppNotification>;
 export type SocialAccountListResponse = PaginatedResponse<SocialAccount>;
 
 /* ─── Platform API ─── */
@@ -464,11 +466,20 @@ export const platformApi = {
 
   // Notifications
   listNotifications: (unread?: boolean, page = 1, per_page = 20) =>
-    platformReq<NotificationListResponse | Notification[]>("GET", `/notifications?${unread !== undefined ? `unread=${unread}&` : ""}page=${page}&per_page=${per_page}`)
-      .then((data) => normalizePaginated<Notification>(data, page, per_page)),
+    platformReq<NotificationListResponse | AppNotification[]>("GET", `/notifications?${unread !== undefined ? `unread=${unread}&` : ""}page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<AppNotification>(data, page, per_page)),
   markRead: (id: string) => platformReq<void>("PATCH", `/notifications/${id}/read`),
   markAllRead: () => platformReq<void>("POST", "/notifications/read-all"),
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
+};
+
+export const notificationApi = {
+  list: (unread?: boolean, page = 1) =>
+    platformReq<NotificationListResponse | AppNotification[]>("GET", `/notifications?page=${page}&per_page=20${unread ? "&unread=true" : ""}`)
+      .then((data) => normalizePaginated<AppNotification>(data, page, 20)),
+  markRead: (id: string) => platformReq<AppNotification>("PATCH", `/notifications/${id}/read`),
+  markAllRead: () => platformReq<void>("POST", `/notifications/read-all`),
+  delete: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
 
 /* ─── Agent API (via nginx) ─── */

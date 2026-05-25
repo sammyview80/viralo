@@ -141,7 +141,12 @@ def _publish_progress(job_id: str, step: str, pct: int, status: str, message: st
 
 
 def _publish_clip_event(job_id: str, event: str, payload: dict) -> None:
-    redis_client.publish(f"job:{job_id}:clips", json.dumps({"event": event, **payload}))
+    msg = json.dumps({"event": event, **payload})
+    # Publish on job channel (task ID) AND video_id channel so frontend can subscribe by either key
+    redis_client.publish(f"job:{job_id}:clips", msg)
+    video_id = payload.get("video_id") or payload.get("clip_id", "")[:0]  # video_id in payload when available
+    if video_id:
+        redis_client.publish(f"job:{video_id}:clips", msg)
 
 
 def _update_video(tenant_id: str, video_id: str, **kwargs) -> None:
@@ -1966,10 +1971,11 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
 
         with _get_session(tenant_id) as session:
             row = session.execute(
-                text("SELECT thumbnail_url FROM clips WHERE id = CAST(:cid AS uuid)"),
+                text("SELECT thumbnail_url, video_id::text FROM clips WHERE id = CAST(:cid AS uuid)"),
                 {"cid": clip_id},
             ).fetchone()
             thumbnail_url = row[0] if row else None
+            video_id = row[1] if row else None
 
             session.execute(
                 text("""
@@ -1985,6 +1991,7 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
 
         _publish_clip_event(job_id, "clip_upload_complete", {
             "clip_id": clip_id,
+            "video_id": video_id,
             "media_url": storage_url,
             "thumbnail_url": thumbnail_url,
         })
@@ -1992,7 +1999,13 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
     except Exception as exc:
         logging.exception("upload_clip_to_storage failed for clip %s (attempt %d)", clip_id, attempt)
         if self.request.retries >= self.max_retries:
+            failed_video_id = None
             with _get_session(tenant_id) as session:
+                _row = session.execute(
+                    text("SELECT video_id::text FROM clips WHERE id = CAST(:cid AS uuid)"),
+                    {"cid": clip_id},
+                ).fetchone()
+                failed_video_id = _row[0] if _row else None
                 session.execute(
                     text("""
                         UPDATE clips
@@ -2005,6 +2018,7 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
                 )
             _publish_clip_event(job_id, "clip_upload_failed", {
                 "clip_id": clip_id,
+                "video_id": failed_video_id,
                 "error": str(exc)[:300],
                 "attempts": attempt,
             })
