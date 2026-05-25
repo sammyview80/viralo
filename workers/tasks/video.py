@@ -518,7 +518,7 @@ Return ONLY JSON:
       "start_seconds": <number>,
       "end_seconds": <number>,
       "score": <0.0-10.0>,
-      "title": "<punchy 6-word title>",
+      "title": "<STRICT MAX 100 CHARS — count before writing, shorten if over>",
       "reason": "<why this goes viral, max 12 words>",
       "platform": "<best from: {platforms_str}>"
     }}
@@ -564,7 +564,7 @@ Return ONLY JSON:
                 start=round(start, 2),
                 end=round(end, 2),
                 score=score,
-                title=c.get("title", f"Clip {len(clips)+1}"),
+                title=(c.get("title") or f"Clip {len(clips)+1}")[:100],
                 reason=c.get("reason", ""),
                 platform=plat,
             ))
@@ -1057,7 +1057,7 @@ Caption text (exact words spoken in this clip):
 Platforms to generate for: {platforms_str}
 
 Rules:
-- Title: punchy, 6-10 words, no hashtags, creates curiosity or urgency
+- Title: STRICT MAXIMUM 100 CHARACTERS. Count every character before writing. If over 100, shorten it. No exceptions. Punchy, no hashtags, creates curiosity or urgency.
 - Description: platform-native tone
   - tiktok/reels/shorts: 1-2 casual sentences, hook first
   - youtube: 2-3 keyword-rich searchable sentences
@@ -1071,7 +1071,7 @@ Rules:
 
 Return ONLY valid JSON — MUST include every platform listed above:
 {{
-  "title": "<viral clip title>",
+  "title": "<viral clip title, MUST be 100 characters or fewer>",
   "platforms": {{
     "<platform_name>": {{
       "description": "<description>",
@@ -1235,7 +1235,7 @@ def _export_clip(
     srt_content = _generate_srt(captions)
 
     content = ai_content or {}
-    ai_title = content.get("title") or clip.title
+    ai_title = (content.get("title") or clip.title or "")[:100].strip()
     clip_meta = {
         "ai_title": ai_title,
         "platforms": content.get("platforms", {}),
