@@ -146,9 +146,10 @@ export function connectSSE(): () => void {
             if (line.startsWith("event:")) eventType = line.slice(6).trim();
             if (line.startsWith("data:")) dataStr = line.slice(5).trim();
           }
-          if (eventType === "keepalive" || !dataStr) continue;
+          if (!dataStr) continue;
           try {
             const notification = JSON.parse(dataStr) as Notification;
+            if (!notification.id || (notification as { type?: string }).type === "keepalive") continue;
             addToast(notification);
             setState({ unreadCount: state.unreadCount + 1 });
           } catch {

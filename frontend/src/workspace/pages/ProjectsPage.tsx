@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { Shell } from "../Shell";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/lib/router";
-import { videoApi, type VideoResponse } from "@/lib/api";
+import { videoApi, token as authToken, type VideoResponse } from "@/lib/api";
+
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 import { Pagination } from "../components/Pagination";
 
 /* ─── helpers ─── */
@@ -222,20 +224,49 @@ export function ProjectsPage() {
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
+  /* SSE subscriptions for in-progress videos — replaces 3s polling */
+  const sseRef = useRef<Map<string, EventSource>>(new Map());
   useEffect(() => {
-    const inProgress = history.filter((v) => !isTerminalStatus(v));
-    if (inProgress.length === 0) return;
-    const t = setTimeout(async () => {
-      const updates = await Promise.allSettled(inProgress.map((v) => videoApi.get(v.id)));
-      setHistory((prev) => prev.map((v) => {
-        const idx = inProgress.findIndex((p) => p.id === v.id);
-        if (idx === -1) return v;
-        const result = updates[idx];
-        return result.status === "fulfilled" ? result.value : v;
-      }));
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [history]);
+    const inProgress = history.filter((v) => !isTerminalStatus(v) && v.celery_task_id);
+    const activeIds = new Set(inProgress.map((v) => v.celery_task_id!));
+
+    for (const [tid, es] of sseRef.current) {
+      if (!activeIds.has(tid)) { es.close(); sseRef.current.delete(tid); }
+    }
+
+    const t = authToken.get() || "";
+    if (!t) return;
+
+    for (const video of inProgress) {
+      const tid = video.celery_task_id!;
+      if (sseRef.current.has(tid)) continue;
+      const es = new EventSource(`${VIDEO_SSE_BASE}/video/progress/${tid}?token=${encodeURIComponent(t)}`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "keepalive") return;
+          if (d.pct != null || d.step != null || d.status != null) {
+            setHistory((prev) => prev.map((v) =>
+              v.id === video.id
+                ? { ...v, pipeline_pct: d.pct ?? v.pipeline_pct, pipeline_step: d.step ?? v.pipeline_step,
+                    status: d.status === "complete" ? "ready" : d.status === "failed" ? "failed" : v.status }
+                : v
+            ));
+          }
+          if (d.status === "complete" || d.status === "failed") {
+            es.close(); sseRef.current.delete(tid);
+            videoApi.get(video.id).then((u) =>
+              setHistory((prev) => prev.map((v) => v.id === u.id ? u : v))
+            ).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => { es.close(); sseRef.current.delete(tid); };
+      sseRef.current.set(tid, es);
+    }
+  }, [history.map((v) => `${v.id}:${v.status}:${v.celery_task_id}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => { for (const es of sseRef.current.values()) es.close(); sseRef.current.clear(); }, []);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();

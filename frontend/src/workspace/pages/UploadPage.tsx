@@ -713,24 +713,31 @@ function ProcessingView({
   const [liveMsg, setLiveMsg] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>(video.error_message ?? "");
   const doneRef = useRef(false);
+  const sseActiveRef = useRef(false); // true while SSE connection is healthy
 
   const isTerminal = (v: VideoResponse) =>
     v.status === "done" || v.status === "ready" || v.status === "failed" || v.pipeline_step === "complete";
 
-  // SSE for real-time progress messages
+  // SSE — primary real-time progress channel
   useEffect(() => {
     if (!current.celery_task_id || doneRef.current) return;
     const t = authToken.get() || "";
+    if (!t) return;
     const url = `${VIDEO_SSE_BASE}/video/progress/${current.celery_task_id}`;
     const es = new EventSource(`${url}?token=${encodeURIComponent(t)}`);
+
+    es.onopen = () => { sseActiveRef.current = true; };
+
     es.onmessage = (e) => {
       try {
         const d = JSON.parse(e.data);
         if (d.type === "keepalive") return;
         if (d.message) setLiveMsg(d.message);
+        if (d.pct != null) setCurrent((prev) => ({ ...prev, pipeline_pct: d.pct, pipeline_step: d.step ?? prev.pipeline_step }));
         if (d.status === "failed" && d.message) setErrorMsg(d.message);
         if (d.status === "complete" || d.status === "failed") {
           es.close();
+          sseActiveRef.current = false;
           if (!doneRef.current) {
             doneRef.current = true;
             videoApi.get(current.id).then(onDone).catch(() => onDone(current));
@@ -738,18 +745,24 @@ function ProcessingView({
         }
       } catch { /* ignore malformed */ }
     };
-    es.onerror = () => es.close();
-    return () => es.close();
+
+    es.onerror = () => {
+      sseActiveRef.current = false;
+      es.close();
+    };
+
+    return () => { es.close(); sseActiveRef.current = false; };
   }, [current.celery_task_id]);
 
-  // Polling fallback — keeps video state fresh
+  // Polling fallback — only fires when SSE is not connected
   useEffect(() => {
-    if (doneRef.current) return;
+    if (doneRef.current || sseActiveRef.current) return;
     if (isTerminal(current)) {
       if (!doneRef.current) { doneRef.current = true; setTimeout(() => onDone(current), 400); }
       return;
     }
     const id = setTimeout(async () => {
+      if (sseActiveRef.current || doneRef.current) return; // SSE connected in the meantime
       try {
         const updated = await videoApi.get(current.id);
         setCurrent(updated);
@@ -1334,23 +1347,61 @@ export function UploadPage() {
     }).catch(() => {}).finally(() => setHistoryLoading(false));
   }, []);
 
-  /* Poll in-progress videos in history every 3s */
+  /* SSE subscriptions for in-progress videos in history — no polling */
+  const historySseRef = useRef<Map<string, EventSource>>(new Map());
   useEffect(() => {
-    const inProgress = history.filter((v) => !isTerminalStatus(v));
-    if (inProgress.length === 0) return;
-    const t = setTimeout(async () => {
-      const updates = await Promise.allSettled(inProgress.map((v) => videoApi.get(v.id)));
-      setHistory((prev) =>
-        prev.map((v) => {
-          const idx = inProgress.findIndex((p) => p.id === v.id);
-          if (idx === -1) return v;
-          const result = updates[idx];
-          return result.status === "fulfilled" ? result.value : v;
-        })
-      );
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [history]);
+    const inProgress = history.filter((v) => !isTerminalStatus(v) && v.celery_task_id);
+    const activeIds = new Set(inProgress.map((v) => v.celery_task_id!));
+
+    // Close stale sources
+    for (const [tid, es] of historySseRef.current) {
+      if (!activeIds.has(tid)) { es.close(); historySseRef.current.delete(tid); }
+    }
+
+    const t = authToken.get() || "";
+    if (!t) return;
+
+    for (const video of inProgress) {
+      const tid = video.celery_task_id!;
+      if (historySseRef.current.has(tid)) continue;
+
+      const es = new EventSource(`${VIDEO_SSE_BASE}/video/progress/${tid}?token=${encodeURIComponent(t)}`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "keepalive") return;
+          if (d.pct != null || d.step != null || d.status != null) {
+            setHistory((prev) => prev.map((v) =>
+              v.id === video.id
+                ? { ...v,
+                    pipeline_pct: d.pct ?? v.pipeline_pct,
+                    pipeline_step: d.step ?? v.pipeline_step,
+                    status: d.status === "complete" ? "ready" : d.status === "failed" ? "failed" : v.status,
+                  }
+                : v
+            ));
+          }
+          if (d.status === "complete" || d.status === "failed") {
+            es.close();
+            historySseRef.current.delete(tid);
+            videoApi.get(video.id).then((updated) =>
+              setHistory((prev) => prev.map((v) => v.id === updated.id ? updated : v))
+            ).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => { es.close(); historySseRef.current.delete(tid); };
+      historySseRef.current.set(tid, es);
+    }
+
+    return () => {/* keep sources open across renders — cleaned up above */};
+  }, [history.map((v) => `${v.id}:${v.status}:${v.celery_task_id}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    for (const es of historySseRef.current.values()) es.close();
+    historySseRef.current.clear();
+  }, []);
 
   /* YouTube URL validation */
   useEffect(() => {
