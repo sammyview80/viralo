@@ -7,7 +7,10 @@ import uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None  # type: ignore
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 

@@ -81,7 +81,7 @@ def process_due_posts():
             text("""
                 SELECT id, tenant_id
                 FROM scheduled_posts
-                WHERE status = 'pending'
+                WHERE status IN ('pending', 'scheduled')
                   AND scheduled_at <= NOW()
                 ORDER BY scheduled_at ASC
                 LIMIT 500
@@ -103,7 +103,7 @@ def process_due_posts():
                     UPDATE scheduled_posts
                     SET status = 'processing', updated_at = NOW()
                     WHERE id = CAST(:pid AS uuid)
-                      AND status = 'pending'
+                      AND status IN ('pending', 'scheduled')
                 """),
                 {"pid": post_id},
             )
@@ -291,13 +291,6 @@ def publish_post(self, tenant_id: str, post_id: str):
                     post_id=post_id,
                 )
 
-            # Trigger analytics sync
-            from workers.tasks.analytics import fetch_post_analytics
-            fetch_post_analytics.apply_async(
-                args=[tenant_id, post_id],
-                queue="viralo.analytics.ingest",
-                countdown=300,  # give the platform 5 min to index
-            )
 
         elif result.retry_after_seconds is not None:
             # 429 rate-limited: reschedule the post itself

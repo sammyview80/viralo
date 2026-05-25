@@ -14,7 +14,6 @@ celery_app = Celery(
         "workers.tasks.video",
         "workers.tasks.agent",
         "workers.tasks.post",
-        "workers.tasks.analytics",
     ],
 )
 
@@ -37,9 +36,5 @@ celery_app.conf.beat_schedule = {
     "process-due-posts": {
         "task": "workers.tasks.post.process_due_posts",
         "schedule": 60.0,  # every 60 seconds
-    },
-    "refresh-analytics": {
-        "task": "workers.tasks.analytics.refresh_analytics",
-        "schedule": crontab(minute=0, hour="*/4"),  # every 4 hours
     },
 }
