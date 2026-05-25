@@ -56,7 +56,7 @@ function PublishModal({ clipId, defaultCaption, onClose }: PublishModalProps) {
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [scheduledAt, setScheduledAt] = useState(() => {
     const d = new Date(Date.now() + 60 * 60 * 1000);
-    return d.toISOString().slice(0, 16);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   });
   const [caption, setCaption] = useState(defaultCaption);
   const [hashtags, setHashtags] = useState("");

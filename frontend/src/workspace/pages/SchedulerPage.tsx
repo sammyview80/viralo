@@ -49,20 +49,27 @@ function toYMD(year: number, month: number, day: number) {
   return `${year}-${pad(month + 1)}-${pad(day)}`;
 }
 
+function fmtLocal(iso: string) {
+  return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
 /* ─── Popover ─── */
 function PostPopover({ post, onClose }: { post: ScheduledPost; onClose: () => void }) {
-  const time = new Date(post.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const scheduledLocal = fmtLocal(post.scheduled_at);
+  const postedLocal = post.posted_at ? fmtLocal(post.posted_at) : null;
+  const isPosted = post.status === "posted";
+  const isFailed = post.status === "failed";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        aria-hidden="true"
-      />
-      <div
-        className="relative z-10 w-80 rounded-[14px] border border-white/[.08] bg-[#111827] p-5 shadow-2xl"
+        className="relative z-10 w-[340px] rounded-[14px] border border-white/[.08] bg-[#111827] p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
+        <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1 text-zinc-600 hover:text-zinc-300 transition">✕</button>
+
+        <div className="flex items-start gap-2">
           <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize", PLATFORM_COLORS[post.platform] ?? "bg-zinc-500/20 text-zinc-300 border-zinc-500/30")}>
             <span className={cn("h-1.5 w-1.5 rounded-full", PLATFORM_DOT[post.platform])} />
             {PLATFORM_LABELS[post.platform] ?? post.platform}
@@ -71,27 +78,50 @@ function PostPopover({ post, onClose }: { post: ScheduledPost; onClose: () => vo
             {post.status}
           </span>
         </div>
+
         <p className="mt-3 text-sm leading-relaxed text-zinc-200">
           {post.caption || <span className="text-zinc-600">No caption</span>}
         </p>
         {post.hashtags?.length > 0 && (
-          <p className="mt-2 text-xs text-[#ff3d6a]/80">
-            {post.hashtags.map((h) => `#${h}`).join(" ")}
-          </p>
+          <p className="mt-2 text-xs text-[#ff3d6a]/80">{post.hashtags.map((h) => `#${h}`).join(" ")}</p>
         )}
-        <div className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500">
-          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {time}
+
+        <div className="mt-4 space-y-2 rounded-[10px] border border-white/[.06] bg-white/[.02] p-3 text-xs">
+          <div className="flex justify-between">
+            <span className="text-zinc-500">Scheduled</span>
+            <span className="text-zinc-300">{scheduledLocal}</span>
+          </div>
+          {isPosted && postedLocal && (
+            <div className="flex justify-between">
+              <span className="text-zinc-500">Published</span>
+              <span className="text-emerald-400">{postedLocal}</span>
+            </div>
+          )}
+          {isPosted && post.platform_post_id && (
+            <div className="flex justify-between gap-3">
+              <span className="shrink-0 text-zinc-500">Post ID</span>
+              <span className="truncate font-mono text-[10px] text-zinc-400">{post.platform_post_id}</span>
+            </div>
+          )}
+          {isFailed && post.last_error && (
+            <div className="mt-1 rounded-[7px] bg-red-500/10 px-2.5 py-2 text-red-400">
+              <span className="font-semibold">Error: </span>{post.last_error}
+            </div>
+          )}
         </div>
-        <button
-          onClick={onClose}
-          className="absolute right-3 top-3 rounded-md p-1 text-zinc-600 hover:text-zinc-300 transition"
-          aria-label="Close"
-        >
-          ✕
-        </button>
+
+        {isPosted && (
+          <div className="mt-3 flex items-center gap-2 rounded-[8px] border border-emerald-400/20 bg-emerald-400/5 px-3 py-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="text-[11.5px] font-semibold text-emerald-300">Published successfully</span>
+          </div>
+        )}
+        {isFailed && (
+          <div className="mt-3 flex items-center gap-2 rounded-[8px] border border-red-400/20 bg-red-400/5 px-3 py-2">
+            <span className="h-2 w-2 rounded-full bg-red-400" />
+            <span className="text-[11.5px] font-semibold text-red-400">Publish failed — check error above</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -109,7 +139,10 @@ function ScheduleModal({
 }) {
   const [clipId, setClipId] = useState("");
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [scheduledAt, setScheduledAt] = useState("");
+  const [scheduledAt, setScheduledAt] = useState(() => {
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
   const [caption, setCaption] = useState("");
   const [hashtagsRaw, setHashtagsRaw] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -238,6 +271,73 @@ function ScheduleModal({
   );
 }
 
+/* ─── Posts List View ─── */
+function PostsListView({
+  posts, platformFilter, statusFilter, onSelect, loading,
+}: {
+  posts: ScheduledPost[];
+  platformFilter: string;
+  statusFilter: string;
+  onSelect: (p: ScheduledPost) => void;
+  loading: boolean;
+}) {
+  const filtered = posts.filter((p) => {
+    const mp = platformFilter === "all" || p.platform === platformFilter;
+    const ms = statusFilter === "all" || p.status === statusFilter;
+    return mp && ms;
+  }).sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+
+  if (loading) return (
+    <div className="p-6 space-y-3">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="h-16 animate-pulse rounded-[10px] bg-white/[.04]" />
+      ))}
+    </div>
+  );
+
+  if (filtered.length === 0) return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
+      <div className="text-3xl opacity-20">📭</div>
+      <p className="text-sm font-semibold text-zinc-400">No posts found</p>
+      <p className="text-xs text-zinc-600">Schedule a post to see it here.</p>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-2">
+      {filtered.map((post) => {
+        const isPosted = post.status === "posted";
+        const isFailed = post.status === "failed";
+        return (
+          <button key={post.id} onClick={() => onSelect(post)}
+            className="flex w-full items-center gap-4 rounded-[10px] border border-white/[.06] bg-white/[.02] px-4 py-3 text-left transition hover:border-white/[.1] hover:bg-white/[.04]">
+            <span className={cn("h-2 w-2 shrink-0 rounded-full", PLATFORM_DOT[post.platform] ?? "bg-zinc-500")} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-zinc-200 truncate">
+                  {post.caption || <span className="text-zinc-600">No caption</span>}
+                </span>
+                <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize", STATUS_COLORS[post.status] ?? "bg-zinc-500/20 text-zinc-300 border-zinc-500/30")}>
+                  {post.status}
+                </span>
+              </div>
+              <div className="mt-0.5 flex items-center gap-3 text-[11px] text-zinc-500">
+                <span>{PLATFORM_LABELS[post.platform] ?? post.platform}</span>
+                <span>·</span>
+                <span>Scheduled {fmtLocal(post.scheduled_at)}</span>
+                {isPosted && post.posted_at && <><span>·</span><span className="text-emerald-400">Published {fmtLocal(post.posted_at)}</span></>}
+                {isFailed && post.last_error && <><span>·</span><span className="text-red-400 truncate max-w-[200px]">{post.last_error}</span></>}
+              </div>
+            </div>
+            {isPosted && <span className="shrink-0 text-emerald-400">✓</span>}
+            {isFailed && <span className="shrink-0 text-red-400">✕</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 export function SchedulerPage() {
   const now = new Date();
@@ -250,6 +350,7 @@ export function SchedulerPage() {
   const [showModal, setShowModal] = useState(false);
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<"calendar" | "posts">("calendar");
 
   const monthKey = `${year}-${pad(month + 1)}`;
 
@@ -349,32 +450,39 @@ export function SchedulerPage() {
               {totalPostsThisMonth}
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={prevMonth}
-              className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition"
-            >
-              ‹
-            </button>
-            <span className="min-w-[150px] text-center text-sm font-semibold text-zinc-200">
-              {monthName} {year}
-            </span>
-            <button
-              onClick={nextMonth}
-              className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition"
-            >
-              ›
-            </button>
+          {/* Tab toggle */}
+          <div className="flex rounded-[9px] border border-white/[.07] bg-[#141926] p-0.5">
+            {(["calendar", "posts"] as const).map((t) => (
+              <button key={t} onClick={() => setActiveTab(t)}
+                className={cn("rounded-[7px] px-3 py-1 text-xs font-semibold capitalize transition",
+                  activeTab === t ? "bg-white/[.08] text-white" : "text-zinc-500 hover:text-zinc-300")}>
+                {t === "calendar" ? "Calendar" : "All Posts"}
+              </button>
+            ))}
           </div>
-          <Button
-            size="sm"
-            className="bg-[#ff3d6a] hover:bg-[#e8304f] text-white"
-            onClick={() => setShowModal(true)}
-          >
+          {activeTab === "calendar" && (
+            <div className="flex items-center gap-2">
+              <button onClick={prevMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">‹</button>
+              <span className="min-w-[150px] text-center text-sm font-semibold text-zinc-200">{monthName} {year}</span>
+              <button onClick={nextMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">›</button>
+            </div>
+          )}
+          <Button size="sm" className="ml-auto bg-[#ff3d6a] hover:bg-[#e8304f] text-white" onClick={() => setShowModal(true)}>
             + Schedule Post
           </Button>
         </div>
 
+        {activeTab === "posts" && (
+          <PostsListView
+            posts={calendarData.flatMap((cd) => cd.posts)}
+            platformFilter={platformFilter}
+            statusFilter={statusFilter}
+            onSelect={setSelectedPost}
+            loading={loading}
+          />
+        )}
+
+        {activeTab === "calendar" && (
         <div className="flex flex-1 min-h-0">
           {/* Left Sidebar */}
           <aside className="hidden w-52 shrink-0 border-r border-white/[.07] bg-[#0b101a] p-4 md:flex md:flex-col gap-6">
@@ -552,6 +660,7 @@ export function SchedulerPage() {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {/* Post detail popover */}

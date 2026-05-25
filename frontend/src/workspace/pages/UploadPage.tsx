@@ -1035,7 +1035,8 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [groups, setGroups] = useState<Array<{ id: string; clipIds: string[]; accountId: string; scheduledAt: string }>>(() => {
     const base = new Date(Date.now() + 60 * 60 * 1000);
-    return [{ id: crypto.randomUUID(), clipIds: clips.map((c) => c.id), accountId: "", scheduledAt: base.toISOString().slice(0, 16) }];
+    const localIso = new Date(base.getTime() - base.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    return [{ id: crypto.randomUUID(), clipIds: clips.map((c) => c.id), accountId: "", scheduledAt: localIso }];
   });
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -1055,7 +1056,8 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
   const addGroup = () => {
     const last = groups[groups.length - 1];
     const nextTime = new Date(new Date(last.scheduledAt).getTime() + 2 * 60 * 60 * 1000);
-    setGroups((prev) => [...prev, { id: crypto.randomUUID(), clipIds: [], accountId: accounts[0]?.id ?? "", scheduledAt: nextTime.toISOString().slice(0, 16) }]);
+    const localIso = new Date(nextTime.getTime() - nextTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setGroups((prev) => [...prev, { id: crypto.randomUUID(), clipIds: [], accountId: accounts[0]?.id ?? "", scheduledAt: localIso }]);
   };
 
   const removeGroup = (gid: string) => setGroups((prev) => prev.filter((g) => g.id !== gid));
