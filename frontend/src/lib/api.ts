@@ -281,9 +281,12 @@ export const videoApi = {
   clips:   (videoId: string, page = 1, per_page = 100) =>
     videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?video_id=${videoId}&page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page)),
-  listClips: (page = 1, per_page = 24) =>
-    videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?page=${page}&per_page=${per_page}`)
-      .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page)),
+  listClips: (page = 1, per_page = 24, minViralityScore?: number) => {
+    const qs = new URLSearchParams({ page: String(page), per_page: String(per_page) });
+    if (minViralityScore !== undefined) qs.set("min_virality_score", String(minViralityScore));
+    return videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?${qs}`)
+      .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page));
+  },
   patchClip: (clipId: string, patch: { tags?: string[]; platform_copy?: Record<string, { description: string; tags: string[] }> }) =>
     videoReq<ClipApiResponse>("PATCH", `/clips/${clipId}`, patch),
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),

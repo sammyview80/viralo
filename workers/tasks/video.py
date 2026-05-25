@@ -604,10 +604,7 @@ Return ONLY JSON:
             ))
 
         clips.sort(key=lambda c: c.score, reverse=True)
-        # Apply min_score filter — but only if enough clips survive; otherwise keep all
-        filtered = [c for c in clips if c.score >= min_score_10]
-        if len(filtered) >= num_clips:
-            clips = filtered
+        clips = [c for c in clips if c.score >= min_score_10]
         # Remove overlapping clips — keep higher score, greedy
         deduped: list[ClipResult] = []
         for clip in clips:
@@ -1354,9 +1351,24 @@ def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
         return {"title": "", "thumbnail_url": ""}
 
 
+def _ytdlp_base_flags() -> list[str]:
+    """Return common yt-dlp flags including cookies file if configured."""
+    flags = ["--no-check-certificate", "--retries", "3",
+             "--sleep-interval", "2", "--max-sleep-interval", "5"]
+    cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
+    if cookies_file and Path(cookies_file).exists():
+        flags += ["--cookies", cookies_file]
+    return flags
+
+
+def _is_429(stderr: str) -> bool:
+    return "429" in stderr or "Too Many Requests" in stderr
+
+
 def _download_youtube(url: str, out_path: str, quality: str = "1080p") -> None:
+    import time, random
     errors = []
-    # For source quality use uncapped best; otherwise cap to requested resolution
+
     if quality == "source":
         fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
     else:
@@ -1365,32 +1377,52 @@ def _download_youtube(url: str, out_path: str, quality: str = "1080p") -> None:
             f"bestvideo[height<={cap}][ext=mp4]+bestaudio[ext=m4a]"
             f"/best[height<={cap}][ext=mp4]/best[ext=mp4]/best"
         )
+
+    base = _ytdlp_base_flags()
     ytdlp_strategies = [
-        ["yt-dlp", "--js-runtimes", "node",
-         "--extractor-args", "youtube:player_client=android",
-         "-f", fmt,
-         "--merge-output-format", "mp4", "--no-check-certificate",
-         "--retries", "3", "-o", out_path, url],
-        ["yt-dlp", "--js-runtimes", "node",
-         "--extractor-args", "youtube:player_client=mweb",
-         "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4",
-         "--no-check-certificate", "--retries", "3", "-o", out_path, url],
-        ["yt-dlp", "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4",
-         "--no-check-certificate", "--retries", "3",
-         "--user-agent", "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36",
-         "-o", out_path, url],
+        # android client — best compat, bypasses some throttling
+        ["yt-dlp"] + base + [
+            "--js-runtimes", "node",
+            "--extractor-args", "youtube:player_client=android",
+            "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url,
+        ],
+        # mweb client — different IP treatment
+        ["yt-dlp"] + base + [
+            "--js-runtimes", "node",
+            "--extractor-args", "youtube:player_client=mweb",
+            "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
+        ],
+        # tv_embedded client — rarely rate-limited
+        ["yt-dlp"] + base + [
+            "--extractor-args", "youtube:player_client=tv_embedded",
+            "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
+        ],
+        # plain fallback with mobile UA
+        ["yt-dlp"] + base + [
+            "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4",
+            "--user-agent", "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36",
+            "-o", out_path, url,
+        ],
     ]
-    for cmd in ytdlp_strategies:
+
+    for attempt, cmd in enumerate(ytdlp_strategies):
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
                 return
-            errors.append(f"yt-dlp: {result.stderr[:200]}")
+            stderr = result.stderr or ""
+            errors.append(f"yt-dlp strategy {attempt+1}: {stderr[:200]}")
+            if _is_429(stderr):
+                # Exponential backoff on 429 before trying next strategy
+                wait = min(30, (2 ** attempt) + random.uniform(1, 3))
+                logging.warning("YouTube 429 on strategy %d, waiting %.1fs before retry", attempt + 1, wait)
+                time.sleep(wait)
         except subprocess.TimeoutExpired:
-            errors.append("yt-dlp: timeout")
+            errors.append(f"yt-dlp strategy {attempt+1}: timeout")
         except Exception as e:
-            errors.append(f"yt-dlp: {e}")
+            errors.append(f"yt-dlp strategy {attempt+1}: {e}")
 
+    # pytubefix as final fallback (different HTTP stack, avoids some rate-limits)
     try:
         from pytubefix import YouTube
         yt = YouTube(url, use_oauth=False, allow_oauth_cache=False)
@@ -1420,10 +1452,14 @@ def _fetch_youtube_captions(url: str, language: str = "en") -> list[WordTimestam
         for lang in lang_codes:
             for sub_type in ["--write-sub", "--write-auto-sub"]:
                 try:
+                    _cookies = []
+                    _cf = os.getenv("YTDLP_COOKIES_FILE", "")
+                    if _cf and Path(_cf).exists():
+                        _cookies = ["--cookies", _cf]
                     result = subprocess.run(
                         ["yt-dlp", "--skip-download", sub_type,
                          "--sub-lang", lang, "--sub-format", "vtt",
-                         "--no-check-certificate", "-o", out_tmpl, url],
+                         "--no-check-certificate", "-o", out_tmpl] + _cookies + [url],
                         capture_output=True, text=True, timeout=30,
                     )
                     vtt_files = list(Path(tmp).glob("*.vtt"))

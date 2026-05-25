@@ -31,26 +31,37 @@ from video.schemas import (
 )
 
 def _ytdlp_fetch_json(url: str, timeout: int = 30) -> dict:
-    """Run yt-dlp --dump-json, try android extractor first then plain. Raises RuntimeError on failure."""
+    """Run yt-dlp --dump-json for metadata. Raises RuntimeError on failure or 429."""
+    import os as _os
     base = ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", "--no-check-certificate"]
+    cookies_file = _os.getenv("YTDLP_COOKIES_FILE", "")
+    if cookies_file and Path(cookies_file).exists():
+        base += ["--cookies", cookies_file]
+
     strategies = [
         base + ["--extractor-args", "youtube:player_client=android", url],
+        base + ["--extractor-args", "youtube:player_client=tv_embedded", url],
         base + [url],
     ]
     last_err = "yt-dlp returned no data"
     for args in strategies:
         try:
             result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            stderr = result.stderr or ""
+            if "429" in stderr or "Too Many Requests" in stderr:
+                raise RuntimeError(f"YouTube rate-limited (429): {stderr[:200]}")
             if result.returncode == 0 and result.stdout.strip():
                 try:
                     return json.loads(result.stdout.strip().splitlines()[0])
                 except json.JSONDecodeError as e:
                     last_err = f"yt-dlp JSON parse error: {e}"
                     continue
-            last_err = result.stderr.strip()[:300] or last_err
+            last_err = stderr[:300] or last_err
         except subprocess.TimeoutExpired:
             last_err = "yt-dlp timed out"
             continue
+        except RuntimeError:
+            raise
         except Exception as e:
             last_err = str(e)[:300]
     raise RuntimeError(last_err)
@@ -72,6 +83,53 @@ def _get_celery():
 # Upload & import
 # ---------------------------------------------------------------------------
 
+async def _oembed_inspect(video_id: str, url: str) -> dict:
+    """Fetch YouTube metadata via oEmbed + noembed (no API key, no rate-limit).
+    Returns partial dict: title, thumbnail_url, channel. Duration/views need yt-dlp."""
+    import urllib.request as _req, urllib.parse as _uparse, asyncio as _asyncio
+
+    def _fetch_sync() -> dict:
+        result: dict = {}
+        # Primary: YouTube oEmbed
+        try:
+            oe_url = f"https://www.youtube.com/oembed?url={_uparse.quote(url, safe='')}&format=json"
+            with _req.urlopen(oe_url, timeout=8) as r:
+                d = json.loads(r.read())
+            result["title"] = d.get("title") or ""
+            result["channel"] = d.get("author_name") or ""
+            raw_thumb = d.get("thumbnail_url") or ""
+            # oEmbed gives hqdefault; try maxresdefault first
+            if raw_thumb:
+                maxres = raw_thumb.replace("/hqdefault.jpg", "/maxresdefault.jpg").replace("/hqdefault", "/maxresdefault")
+                try:
+                    with _req.urlopen(maxres, timeout=4) as tr:
+                        if tr.status == 200:
+                            raw_thumb = maxres
+                except Exception:
+                    pass
+            result["thumbnail_url"] = raw_thumb
+        except Exception:
+            pass
+
+        # Fallback thumbnail from known URL pattern if oEmbed failed
+        if not result.get("thumbnail_url"):
+            result["thumbnail_url"] = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+        # noembed for view_count (best-effort, may not have it)
+        try:
+            ne_url = f"https://noembed.com/embed?url={_uparse.quote(url, safe='')}"
+            with _req.urlopen(ne_url, timeout=6) as r:
+                ne = json.loads(r.read())
+            if not result.get("title") and ne.get("title"):
+                result["title"] = ne["title"]
+        except Exception:
+            pass
+
+        return result
+
+    return await _asyncio.get_event_loop().run_in_executor(None, _fetch_sync)
+
+
 @router.post("/video/youtube/inspect", response_model=YouTubeInspectResponse)
 async def inspect_youtube(
     body: YouTubeInspectRequest,
@@ -81,7 +139,6 @@ async def inspect_youtube(
 
     url = body.url.strip()
 
-    # Validate it's a YouTube URL
     yt_pattern = re.compile(
         r"(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})"
     )
@@ -91,42 +148,51 @@ async def inspect_youtube(
 
     video_id = match.group(1)
 
-    try:
-        data = _ytdlp_fetch_json(url)
-    except (RuntimeError, Exception) as exc:
-        msg = str(exc)[:300]
-        return YouTubeInspectResponse(valid=False, url=url, video_id=video_id, error=msg)
+    # Primary: oEmbed — fast, no auth, no rate-limit
+    oembed_data = await _oembed_inspect(video_id, url)
 
-    duration = data.get("duration")
-    upload_raw = data.get("upload_date", "")
+    # Secondary: yt-dlp for duration, view_count, upload_date, description
+    # If YouTube returns 429, skip gracefully — oEmbed data is enough to start
+    ytdlp_data: dict = {}
+    try:
+        ytdlp_data = _ytdlp_fetch_json(url, timeout=20)
+    except Exception:
+        pass  # 429 or timeout — non-fatal, oEmbed covers the critical fields
+
+    duration = ytdlp_data.get("duration")
+    upload_raw = ytdlp_data.get("upload_date", "")
     upload_date = (
         f"{upload_raw[:4]}-{upload_raw[4:6]}-{upload_raw[6:]}"
         if len(upload_raw) == 8 else upload_raw
     )
 
-    # Best thumbnail: prefer maxresdefault or largest
-    thumbnails = data.get("thumbnails", [])
-    thumb_url = data.get("thumbnail")
-    if thumbnails:
+    # yt-dlp thumbnail is higher quality if available
+    thumb_url = oembed_data.get("thumbnail_url") or ""
+    if ytdlp_data.get("thumbnails"):
         best = max(
-            (t for t in thumbnails if t.get("url")),
+            (t for t in ytdlp_data["thumbnails"] if t.get("url")),
             key=lambda t: (t.get("width", 0) or 0),
             default=None,
         )
         if best:
             thumb_url = best["url"]
+    elif ytdlp_data.get("thumbnail"):
+        thumb_url = ytdlp_data["thumbnail"]
+
+    title = ytdlp_data.get("title") or oembed_data.get("title") or ""
+    channel = ytdlp_data.get("uploader") or ytdlp_data.get("channel") or oembed_data.get("channel") or ""
 
     return YouTubeInspectResponse(
         valid=True,
         url=url,
         video_id=video_id,
-        title=data.get("title"),
-        channel=data.get("uploader") or data.get("channel"),
+        title=title or None,
+        channel=channel or None,
         duration_sec=int(duration) if duration else None,
-        thumbnail_url=thumb_url,
-        view_count=data.get("view_count"),
+        thumbnail_url=thumb_url or None,
+        view_count=ytdlp_data.get("view_count"),
         upload_date=upload_date or None,
-        description=(data.get("description") or "")[:500] or None,
+        description=(ytdlp_data.get("description") or "")[:500] or None,
     )
 
 
@@ -614,6 +680,7 @@ async def generate_viral_clips(
 @router.get("/clips", response_model=ClipListResponse)
 async def list_clips(
     video_id: uuid.UUID | None = Query(None),
+    min_virality_score: float | None = Query(None, ge=0.0, le=10.0),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     token: TokenPayload = Depends(get_current_user),
@@ -622,6 +689,8 @@ async def list_clips(
     query = select(Clip).where(Clip.status != "deleted")
     if video_id:
         query = query.where(Clip.video_id == video_id)
+    if min_virality_score is not None:
+        query = query.where(Clip.score >= min_virality_score)
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
     result = await db.execute(

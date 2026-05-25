@@ -419,6 +419,7 @@ export function ClipsPage() {
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
   const [durations, setDurations] = useState<Set<string>>(new Set());
   const [scores, setScores] = useState<Set<string>>(new Set());
+  const [minViralityScore, setMinViralityScore] = useState(0);
   const [published, setPublished] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortMode>("newest");
   const [showFilters, setShowFilters] = useState(false);
