@@ -418,3 +418,57 @@ export const platformApi = {
   markAllRead: () => platformReq<void>("POST", "/notifications/read-all"),
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
+
+/* ─── Agent API (port 8004) ─── */
+const AGENT_BASE = "http://localhost:8004/api/v1";
+
+async function _agentFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
+  const res = await fetch(`${AGENT_BASE}${path}`, {
+    method, headers, credentials: "include",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return undefined as T;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
+    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
+    throw new ApiError(res.status, msg);
+  }
+  return data as T;
+}
+
+async function agentReq<T>(method: string, path: string, body?: unknown): Promise<T> {
+  try {
+    return await _agentFetch<T>(method, path, body);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      const newToken = await doRefresh();
+      _accessToken = newToken;
+      return _agentFetch<T>(method, path, body);
+    }
+    throw err;
+  }
+}
+
+export interface TagSuggestRequest {
+  topic: string;
+  niche?: string;
+  extra_context?: string;
+}
+
+export interface PlatformCopy {
+  description: string;
+  tags: string[];
+}
+
+export interface TagSuggestResponse {
+  primary_hashtags: string[];
+  platforms: Record<string, PlatformCopy>;
+}
+
+export const agentApi = {
+  suggestTags: (data: TagSuggestRequest) =>
+    agentReq<TagSuggestResponse>("POST", "/tags/suggest", data),
+};
