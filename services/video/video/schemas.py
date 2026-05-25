@@ -65,6 +65,8 @@ class ClipResponse(BaseModel):
     thumbnail_url: str | None
     caption_srt: str | None
     clip_metadata: dict | None = None
+    upload_attempts: int | None = None
+    upload_error: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
 

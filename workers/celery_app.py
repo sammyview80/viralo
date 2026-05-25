@@ -14,6 +14,7 @@ celery_app = Celery(
         "workers.tasks.video",
         "workers.tasks.agent",
         "workers.tasks.post",
+        "workers.tasks.notification",
     ],
 )
 
@@ -29,6 +30,7 @@ celery_app.conf.update(
         "workers.tasks.workflow.*": {"queue": "viralo.workflow.execute"},
         "workers.tasks.post.*": {"queue": "viralo.post.publish"},
         "workers.tasks.analytics.*": {"queue": "viralo.analytics.ingest"},
+        "workers.tasks.notification.*": {"queue": "viralo.notifications"},
     },
 )
 

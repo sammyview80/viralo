@@ -140,6 +140,10 @@ def _publish_progress(job_id: str, step: str, pct: int, status: str, message: st
     }))
 
 
+def _publish_clip_event(job_id: str, event: str, payload: dict) -> None:
+    redis_client.publish(f"job:{job_id}:clips", json.dumps({"event": event, **payload}))
+
+
 def _update_video(tenant_id: str, video_id: str, **kwargs) -> None:
     if not kwargs:
         return
@@ -1236,7 +1240,6 @@ def _export_clip(
     except Exception:
         pass
 
-    storage_key = f"clips/{tenant_id}/{clip_id}.mp4"
     thumb_key = f"clips/{tenant_id}/{clip_id}_thumb.jpg"
 
     srt_content = _generate_srt(captions)
@@ -1250,24 +1253,22 @@ def _export_clip(
         "platforms": content.get("platforms", {}),
     }
 
+    # Upload thumbnail synchronously (small file, fast) — video upload deferred to queue
     from shared.storage.base import get_storage
-
-    async def _upload_files() -> tuple[str, str | None]:
-        _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
-
-        async def _up_video():
-            with open(clip_path, "rb") as f:
-                return await _storage.upload(f, storage_key, "video/mp4")
-
-        async def _up_thumb():
-            if not Path(thumb_path).exists():
-                return None
-            with open(thumb_path, "rb") as f:
-                return await _storage.upload(f, thumb_key, "image/jpeg")
-
-        return await asyncio.gather(_up_video(), _up_thumb())
-
-    storage_url, thumb_url = asyncio.run(_upload_files())
+    thumb_url: str | None = None
+    if Path(thumb_path).exists():
+        try:
+            async def _up_thumb() -> str | None:
+                _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+                with open(thumb_path, "rb") as f:
+                    return await _storage.upload(f, thumb_key, "image/jpeg")
+            thumb_url = asyncio.run(_up_thumb())
+        except Exception:
+            pass
+        try:
+            Path(thumb_path).unlink(missing_ok=True)
+        except Exception:
+            pass
 
     with _get_session(tenant_id) as session:
         session.execute(
@@ -1278,8 +1279,8 @@ def _export_clip(
                    storage_url, thumbnail_url, caption_srt, metadata, created_at, updated_at)
                 VALUES
                   (:id, CAST(:tid AS uuid), CAST(:vid AS uuid), :title, :ss, :es,
-                   :sms, :ems, :dur, :plat, :score, 'ready',
-                   :url, :thumb, :srt, CAST(:meta AS jsonb), NOW(), NOW())
+                   :sms, :ems, :dur, :plat, :score, 'pending_upload',
+                   NULL, :thumb, :srt, CAST(:meta AS jsonb), NOW(), NOW())
             """),
             {
                 "id": clip_id, "tid": tenant_id, "vid": video_id,
@@ -1289,20 +1290,14 @@ def _export_clip(
                 "dur": int((clip.end - clip.start) * 1000),
                 "plat": clip.platform,
                 "score": float(clip.score),
-                "url": storage_url,
                 "thumb": thumb_url,
                 "srt": srt_content,
                 "meta": json.dumps(clip_meta),
             },
         )
 
-    try:
-        Path(clip_path).unlink(missing_ok=True)
-        Path(thumb_path).unlink(missing_ok=True)
-    except Exception:
-        pass
-
-    return clip_id
+    # clip_path kept alive — upload_clip_to_storage task will delete it after upload
+    return clip_id, clip_path
 
 
 # ── YouTube download ──────────────────────────────────────────────────────────
@@ -1623,7 +1618,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     clip_ids: list[str] = []
     cancelled = False
 
-    def _export_one(args: tuple[int, ClipResult]) -> str | None:
+    def _export_one(args: tuple[int, ClipResult]) -> tuple[str, str] | None:
         i, clip = args
         if _check_cancelled(tenant_id, video_id):
             return None
@@ -1652,9 +1647,12 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
                 executor.shutdown(wait=False, cancel_futures=True)
                 break
             try:
-                clip_id = future.result()
-                if clip_id:
+                result = future.result()
+                if result:
+                    clip_id, clip_path = result
                     clip_ids.append(clip_id)
+                    # Queue async cloud upload — returns immediately
+                    upload_clip_to_storage.delay(clip_id, clip_path, tenant_id, job_id)
             except Exception as e:
                 _publish_progress(job_id, "export", 60, "processing",
                                   f"Clip {i+1} failed: {str(e)[:120]}, continuing...")
@@ -1662,12 +1660,26 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     if cancelled:
         return
 
+    # Video is ready for viewing — uploads happen in background per clip
     _update_video(tenant_id, video_id, status="ready", pipeline_step="complete", pipeline_pct=100)
     _publish_progress(job_id, "complete", 100, "complete",
-                      f"Done! {len(clip_ids)}/{len(clips)} clips ready.")
+                      f"Done! {len(clip_ids)} clips generated, uploading to cloud...")
 
-    # Cleanup temp working directory
-    shutil.rmtree(work_dir, ignore_errors=True)
+    # Notify frontend that all clips are ready to display (with thumbnails + pending_upload status)
+    _publish_clip_event(job_id, "clips_ready", {
+        "video_id": video_id,
+        "clip_ids": clip_ids,
+        "count": len(clip_ids),
+    })
+
+    # Work dir cleaned up per-clip by upload_clip_to_storage; remove dir after all queued
+    # (uploads may still be running — only rmtree the work_dir skeleton, not clip files)
+    try:
+        for f in work_dir.iterdir():
+            if f.name == "source.mp4" or f.suffix in (".log",):
+                f.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 # ── Celery tasks ──────────────────────────────────────────────────────────────
@@ -1915,6 +1927,128 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
     _publish_progress(job_id, "complete", 100, "complete",
                       f"Generated {len(clips)} viral clips with social content")
     return clip_ids
+
+
+@celery_app.task(bind=True, name="workers.tasks.video.upload_clip_to_storage",
+                 queue="viralo.video.generate", acks_late=True, max_retries=3,
+                 default_retry_delay=30, time_limit=300, soft_time_limit=270)
+def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, job_id: str) -> None:
+    """Upload a rendered clip mp4 to cloud storage and update clip record to ready."""
+    attempt = (self.request.retries or 0) + 1
+    try:
+        with _get_session(tenant_id) as session:
+            session.execute(
+                text("""
+                    UPDATE clips
+                       SET status = 'uploading',
+                           upload_attempts = COALESCE(upload_attempts, 0) + 1,
+                           updated_at = NOW()
+                     WHERE id = CAST(:cid AS uuid)
+                """),
+                {"cid": clip_id},
+            )
+
+        storage_key = f"clips/{tenant_id}/{clip_id}.mp4"
+
+        # If tmp file is gone (worker restart) — re-export from source
+        if not Path(clip_path).exists():
+            logging.warning("upload_clip_to_storage: tmp file missing for clip %s, attempting re-export", clip_id)
+            _reexport_clip_from_source(clip_id, tenant_id, clip_path)
+
+        from shared.storage.base import get_storage
+
+        async def _do_upload() -> str:
+            _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+            with open(clip_path, "rb") as f:
+                return await _storage.upload(f, storage_key, "video/mp4")
+
+        storage_url = asyncio.run(_do_upload())
+
+        with _get_session(tenant_id) as session:
+            row = session.execute(
+                text("SELECT thumbnail_url FROM clips WHERE id = CAST(:cid AS uuid)"),
+                {"cid": clip_id},
+            ).fetchone()
+            thumbnail_url = row[0] if row else None
+
+            session.execute(
+                text("""
+                    UPDATE clips
+                       SET status = 'ready',
+                           storage_url = :url,
+                           upload_error = NULL,
+                           updated_at = NOW()
+                     WHERE id = CAST(:cid AS uuid)
+                """),
+                {"url": storage_url, "cid": clip_id},
+            )
+
+        _publish_clip_event(job_id, "clip_upload_complete", {
+            "clip_id": clip_id,
+            "media_url": storage_url,
+            "thumbnail_url": thumbnail_url,
+        })
+
+    except Exception as exc:
+        logging.exception("upload_clip_to_storage failed for clip %s (attempt %d)", clip_id, attempt)
+        if self.request.retries >= self.max_retries:
+            with _get_session(tenant_id) as session:
+                session.execute(
+                    text("""
+                        UPDATE clips
+                           SET status = 'upload_failed',
+                               upload_error = :err,
+                               updated_at = NOW()
+                         WHERE id = CAST(:cid AS uuid)
+                    """),
+                    {"err": str(exc)[:500], "cid": clip_id},
+                )
+            _publish_clip_event(job_id, "clip_upload_failed", {
+                "clip_id": clip_id,
+                "error": str(exc)[:300],
+                "attempts": attempt,
+            })
+            return
+        raise self.retry(exc=exc)
+    finally:
+        try:
+            Path(clip_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _reexport_clip_from_source(clip_id: str, tenant_id: str, out_path: str) -> None:
+    """Re-export a clip segment from the original source video when tmp file is lost."""
+    with _get_session(tenant_id) as session:
+        row = session.execute(
+            text("""
+                SELECT c.start_sec, c.end_sec, v.original_storage_key, v.id::text as vid
+                  FROM clips c
+                  JOIN videos v ON v.id = c.video_id
+                 WHERE c.id = CAST(:cid AS uuid)
+            """),
+            {"cid": clip_id},
+        ).fetchone()
+
+    if not row or not row[2]:
+        raise FileNotFoundError(f"Cannot re-export clip {clip_id}: missing source storage key")
+
+    start_sec, end_sec, storage_key, video_id = row[0], row[1], row[2], row[3]
+
+    work_dir = Path(VIDEO_TEMP_DIR) / video_id
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source_path = str(work_dir / "source_reexport.mp4")
+
+    from shared.storage.base import get_storage
+    storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+    asyncio.run(storage.download(storage_key, source_path))
+
+    duration = end_sec - start_sec
+    subprocess.run(
+        ["ffmpeg", "-y", "-ss", str(start_sec), "-i", source_path,
+         "-t", str(duration), "-c", "copy", out_path],
+        check=True, capture_output=True,
+    )
 
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_uploaded_video",

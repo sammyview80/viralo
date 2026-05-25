@@ -80,7 +80,29 @@ function ClipCard({ clip, active, onClick, delay = 0, isPosted, isScheduled, cli
             <span>{isPosted ? "Live" : "Queued"}</span>
           </div>
         )}
-        <div className="absolute inset-0 grid place-items-center"><div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-lg backdrop-blur transition group-hover:scale-105">▶</div></div>
+
+        {/* Upload state overlays */}
+        {(clip.status === "pending_upload" || clip.status === "uploading") && (
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-2 bg-black/60 backdrop-blur-[2px]">
+            <svg className="h-6 w-6 animate-spin text-white/80" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            <span className="text-[11px] font-semibold text-white/70">
+              {clip.status === "uploading" ? "Uploading…" : "Queued"}
+            </span>
+          </div>
+        )}
+        {clip.status === "upload_failed" && (
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-1.5 bg-black/70">
+            <span className="text-[22px]">⚠</span>
+            <span className="text-[11px] font-bold text-red-400">Upload failed</span>
+          </div>
+        )}
+
+        {clip.status === "ready" && (
+          <div className="absolute inset-0 grid place-items-center"><div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-lg backdrop-blur transition group-hover:scale-105">▶</div></div>
+        )}
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
           <div className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold capitalize text-white/90 backdrop-blur">{clip.platform ?? "—"}</div>
           <div className="rounded-[7px] bg-black/65 px-2 py-1 font-mono text-[11px] font-bold text-white">{dur}</div>
@@ -100,7 +122,7 @@ function ClipCard({ clip, active, onClick, delay = 0, isPosted, isScheduled, cli
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
-          <Badge variant={clip.status === "ready" ? "ready" : clip.status === "processing" ? "warn" : "muted"}>{clip.status}</Badge>
+          <Badge variant={clip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(clip.status) ? "warn" : clip.status === "upload_failed" ? "error" : clip.status === "processing" ? "warn" : "muted"}>{clip.status === "pending_upload" ? "queued" : clip.status === "upload_failed" ? "failed" : clip.status}</Badge>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{tags.length} tags</span>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
           {clipStart && clipEnd && <span className="rounded-full bg-white/[.035] px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
@@ -465,6 +487,48 @@ export function ClipsPage() {
     load();
   }, [page]);
 
+  // Subscribe to per-clip upload events from SSE (clip_upload_complete / clip_upload_failed)
+  useEffect(() => {
+    // Re-use the video progress SSE channel; job_id == video_id for clip events
+    // We listen on all active video jobs by polling clips with pending_upload status
+    const pendingIds = clips
+      .filter((c) => c.status === "pending_upload" || c.status === "uploading")
+      .map((c) => String(c.video_id));
+    if (pendingIds.length === 0) return;
+
+    const uniqueVideoIds = [...new Set(pendingIds)];
+    const sources: EventSource[] = [];
+
+    for (const videoId of uniqueVideoIds) {
+      const es = new EventSource(`/api/video/progress/${videoId}`);
+      es.addEventListener("message", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.event === "clip_upload_complete") {
+            setClips((prev) =>
+              prev.map((c) =>
+                c.id === data.clip_id
+                  ? { ...c, status: "ready", storage_url: data.media_url, thumbnail_url: data.thumbnail_url ?? c.thumbnail_url }
+                  : c
+              )
+            );
+          } else if (data.event === "clip_upload_failed") {
+            setClips((prev) =>
+              prev.map((c) =>
+                c.id === data.clip_id ? { ...c, status: "upload_failed" } : c
+              )
+            );
+          }
+        } catch {
+          // ignore malformed
+        }
+      });
+      sources.push(es);
+    }
+
+    return () => sources.forEach((es) => es.close());
+  }, [clips]);
+
   const postedClipIds = useMemo(() => buildPostedClipIds(posts), [posts]);
   const scheduledClipIds = useMemo(() => buildScheduledClipIds(posts), [posts]);
   const postsByClipId = useMemo(() => {
@@ -629,7 +693,7 @@ export function ClipsPage() {
                         <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-2">
                           <p className="flex-1 truncate text-[13px] font-semibold leading-[1.3]">{clip.title ?? "Untitled clip"}</p>
                           <div className="flex shrink-0 items-center gap-1.5">
-                            <Badge variant={clip.status === "ready" ? "ready" : clip.status === "processing" ? "warn" : "muted"}>{clip.status}</Badge>
+                            <Badge variant={clip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(clip.status) ? "warn" : clip.status === "upload_failed" ? "error" : clip.status === "processing" ? "warn" : "muted"}>{clip.status === "pending_upload" ? "queued" : clip.status === "upload_failed" ? "failed" : clip.status}</Badge>
                             {isPosted && <span className="rounded-full bg-amber-500/20 px-1.5 py-px text-[9px] font-bold text-amber-400">Live</span>}
                             {!isPosted && isScheduled && <span className="rounded-full bg-blue-500/15 px-1.5 py-px text-[9px] font-bold text-blue-400">Queued</span>}
                           </div>

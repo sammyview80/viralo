@@ -225,6 +225,8 @@ export interface ClipApiResponse {
     viral_score?: number;
     platforms?: Record<string, ClipPlatformContent>;
   } | null;
+  upload_attempts: number | null;
+  upload_error: string | null;
   created_at: string;
 }
 
