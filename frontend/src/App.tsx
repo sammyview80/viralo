@@ -53,6 +53,9 @@ export default function App() {
     return <OnboardingPage />;
   }
 
+  /* ── Project detail: /projects/:id ── */
+  if (/^\/projects\/[^/]+$/.test(path)) return <WorkspacePage page="upload" />;
+
   /* ── Workspace pages ── */
   const page = routeToPage(path);
   if (page) return <WorkspacePage page={page} />;

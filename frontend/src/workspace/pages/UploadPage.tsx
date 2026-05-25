@@ -1406,6 +1406,20 @@ export function UploadPage() {
     setView("results");
   }, []);
 
+  useEffect(() => {
+    // Support both /upload?video=ID and /projects/:id
+    const pathMatch = window.location.pathname.match(/^\/projects\/([^/]+)$/);
+    const videoId = pathMatch?.[1] ?? new URLSearchParams(window.location.search).get("video");
+    if (!videoId) return;
+    setView("processing");
+    videoApi.get(videoId)
+      .then(loadVideo)
+      .catch((err: unknown) => {
+        setUploadError(err instanceof Error ? err.message : "Could not open project");
+        setView("upload");
+      });
+  }, [loadVideo]);
+
   const handleDelete = useCallback((e: React.MouseEvent, vid: VideoResponse) => {
     e.stopPropagation();
     setDeleteTarget(vid);

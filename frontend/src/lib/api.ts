@@ -187,6 +187,7 @@ export interface VideoResponse {
   thumbnail_url: string | null;
   duration_sec: number | null;
   celery_task_id: string | null;
+  clip_config: ClipConfig | null;
   created_at: string;
 }
 
@@ -377,13 +378,26 @@ export interface NotificationListResponse {
 }
 
 /* ─── Platform API ─── */
+
+// Deduplicate concurrent listAccounts calls — both SocialConnectBanner and BulkPublishModal call this on mount
+let _accountsInflight: Promise<SocialAccount[]> | null = null;
+let _accountsCache: { data: SocialAccount[]; at: number } | null = null;
+function _listAccountsCached(): Promise<SocialAccount[]> {
+  if (_accountsCache && Date.now() - _accountsCache.at < 30_000) return Promise.resolve(_accountsCache.data);
+  if (_accountsInflight) return _accountsInflight;
+  _accountsInflight = platformReq<SocialAccount[]>("GET", "/social-accounts")
+    .then((data) => { _accountsCache = { data, at: Date.now() }; return data; })
+    .finally(() => { _accountsInflight = null; });
+  return _accountsInflight;
+}
+
 export const platformApi = {
   // Social accounts
   connectOAuth: (platform: string, code: string, redirect_uri: string, extra?: Record<string, string>) =>
     platformReq<{ account_id: string; platform: string; username: string }>(
       "POST", "/oauth/connect", { platform, code, redirect_uri, ...extra }
     ),
-  listAccounts: () => platformReq<SocialAccount[]>("GET", "/social-accounts"),
+  listAccounts: _listAccountsCached,
   deleteAccount: (id: string) => platformReq<void>("DELETE", `/social-accounts/${id}`),
 
   // Scheduling
