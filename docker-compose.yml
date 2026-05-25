@@ -103,9 +103,12 @@ services:
       dockerfile: services/video/Dockerfile
     ports:
       - "8003:8003"
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -179,9 +182,12 @@ services:
       context: .
       dockerfile: services/video/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=4 --loglevel=info
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
     depends_on:
       rabbitmq:
         condition: service_healthy
