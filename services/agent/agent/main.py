@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from shared.middleware.tenant import TenantMiddleware
 import shared.models.public.tenant  # register Tenant table in SQLAlchemy metadata
-from agent.routers import sessions, ws
+from agent.routers import sessions, tags, ws
 
 app = FastAPI(title="Viralo Agent Service", version="0.1.0")
 
@@ -15,6 +15,7 @@ app.add_middleware(
 )
 
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(tags.router, prefix="/api/v1")
 app.include_router(ws.router)
 
 
