@@ -260,7 +260,7 @@ export function SchedulerPage() {
         platformApi.getCalendar(monthKey),
         platformApi.listAccounts(),
       ]);
-      setCalendarData(cal);
+      setCalendarData(Array.isArray(cal) ? cal : []);
       setAccounts(accs);
     } catch {
       // silently handle — show empty state

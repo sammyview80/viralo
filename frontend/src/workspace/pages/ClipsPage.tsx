@@ -145,7 +145,19 @@ function PublishModal({ clipId, defaultCaption, onClose }: PublishModalProps) {
                 {loadingAccounts ? (
                   <div className="h-9 rounded-[9px] bg-white/[.04] animate-pulse" />
                 ) : accounts.length === 0 ? (
-                  <p className="text-xs text-zinc-500">No connected accounts. Connect one in Integrations.</p>
+                  <div className="flex flex-col items-center gap-3 rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 px-4 py-5 text-center">
+                    <div className="grid h-10 w-10 place-items-center rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-lg">⚡</div>
+                    <div>
+                      <p className="text-sm font-semibold text-white">No social accounts connected</p>
+                      <p className="mt-1 text-xs text-zinc-500">Connect a platform first to schedule posts.</p>
+                    </div>
+                    <a
+                      href="/integrations"
+                      className="mt-1 rounded-[9px] bg-[#ff3d6a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#ff3d6a]/85"
+                    >
+                      Connect social media →
+                    </a>
+                  </div>
                 ) : (
                   <select
                     value={selectedAccountId}
@@ -198,23 +210,25 @@ function PublishModal({ clipId, defaultCaption, onClose }: PublishModalProps) {
                 <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>
               )}
 
-              <div className="flex gap-2 pt-1">
-                <Button
-                  variant="ghost"
-                  className="flex-1"
-                  onClick={onClose}
-                  disabled={submitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={handleSchedule}
-                  disabled={submitting || loadingAccounts || accounts.length === 0}
-                >
-                  {submitting ? "Scheduling…" : "Schedule"}
-                </Button>
-              </div>
+              {accounts.length > 0 && (
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    variant="ghost"
+                    className="flex-1"
+                    onClick={onClose}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={handleSchedule}
+                    disabled={submitting || loadingAccounts}
+                  >
+                    {submitting ? "Scheduling…" : "Schedule"}
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -296,10 +310,10 @@ export function ClipsPage() {
               </div>
             )}
           </div>
-          <div className="hidden border-l border-white/[.07] bg-[#0b101a] xl:block">
-            <div className="flex h-[52px] items-center gap-3 border-b border-white/[.07] px-4"><span className="font-display text-[13px] font-bold">Clip details</span><button className="ml-auto rounded-lg border border-white/[.07] px-2 py-1 text-xs text-zinc-500">•••</button></div>
+          <div className="hidden border-l border-white/[.07] bg-[#0b101a] xl:flex xl:flex-col xl:sticky xl:top-0 xl:h-[calc(100vh-116px)] xl:overflow-y-auto">
+            <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-white/[.07] px-4"><span className="font-display text-[13px] font-bold">Clip details</span><button className="ml-auto rounded-lg border border-white/[.07] px-2 py-1 text-xs text-zinc-500">•••</button></div>
             {drawer ? (
-              <div className="p-4">
+              <div className="p-4 overflow-y-auto">
                 <div className="relative mx-auto aspect-[9/14] max-w-[220px] overflow-hidden rounded-[18px] bg-gradient-to-br from-rose-600/40 to-violet-700/40">
                   {drawer.thumbnail_url && (
                     <img src={drawer.thumbnail_url} alt={drawer.title ?? "clip"} className="absolute inset-0 h-full w-full object-cover" />

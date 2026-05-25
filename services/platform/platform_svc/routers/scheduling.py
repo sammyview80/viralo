@@ -188,7 +188,7 @@ async def get_calendar(
     month: str | None = Query(None, description="YYYY-MM format, defaults to current month"),
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
-) -> dict[str, list[Any]]:
+) -> list[dict[str, Any]]:
     """Return scheduled posts grouped by calendar day for a given month."""
     if month:
         try:
@@ -229,7 +229,7 @@ async def get_calendar(
             calendar[day_key] = []
         calendar[day_key].append(ScheduledPostResponse.model_validate(post).model_dump())
 
-    return calendar
+    return [{"date": date, "posts": posts_list} for date, posts_list in calendar.items()]
 
 
 @router.get("/optimal-time/{platform}")
