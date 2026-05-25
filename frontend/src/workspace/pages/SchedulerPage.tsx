@@ -54,13 +54,15 @@ function fmtLocal(iso: string) {
 }
 
 /* ─── Popover ─── */
-function PostPopover({ post, onClose, onCancelled }: { post: ScheduledPost; onClose: () => void; onCancelled?: (id: string) => void }) {
+function PostPopover({ post, onClose, onCancelled, onPublished }: { post: ScheduledPost; onClose: () => void; onCancelled?: (id: string) => void; onPublished?: (updated: ScheduledPost) => void }) {
   const scheduledLocal = fmtLocal(post.scheduled_at);
   const postedLocal = post.posted_at ? fmtLocal(post.posted_at) : null;
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const isPosted = post.status === "posted";
   const isFailed = post.status === "failed";
+  const canPublishNow = post.status === "scheduled" || post.status === "pending" || post.status === "failed";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
@@ -123,6 +125,25 @@ function PostPopover({ post, onClose, onCancelled }: { post: ScheduledPost; onCl
             <span className="h-2 w-2 rounded-full bg-red-400" />
             <span className="text-[11.5px] font-semibold text-red-400">Publish failed — check error above</span>
           </div>
+        )}
+
+        {canPublishNow && onPublished && (
+          <button
+            onClick={async () => {
+              setPublishing(true);
+              try {
+                const updated = await platformApi.publishNow(post.id);
+                onPublished(updated);
+                onClose();
+              } catch {
+                setPublishing(false);
+              }
+            }}
+            disabled={publishing}
+            className="mt-3 w-full rounded-[9px] bg-[#ff3d6a] py-2 text-[12.5px] font-semibold text-white transition hover:bg-[#e8304f] disabled:opacity-50"
+          >
+            {publishing ? "Queuing…" : "⚡ Publish Now"}
+          </button>
         )}
 
         {(post.status === "scheduled" || post.status === "pending" || post.status === "failed") && onCancelled && (
@@ -314,23 +335,49 @@ function ScheduleModal({
 }
 
 /* ─── Posts List View ─── */
+const STATUS_FILTERS = [
+  { id: "active", label: "Active", match: (s: string) => s === "scheduled" || s === "processing" || s === "pending" },
+  { id: "scheduled", label: "Scheduled", match: (s: string) => s === "scheduled" || s === "pending" },
+  { id: "processing", label: "Processing", match: (s: string) => s === "processing" },
+  { id: "posted", label: "Posted", match: (s: string) => s === "posted" },
+  { id: "failed", label: "Failed", match: (s: string) => s === "failed" },
+  { id: "cancelled", label: "Cancelled", match: (s: string) => s === "cancelled" },
+  { id: "all", label: "All", match: () => true },
+];
+
 function PostsListView({
-  posts, platformFilter, statusFilter, onSelect, onCancelled, loading,
+  posts, onSelect, onCancelled, loading,
 }: {
   posts: ScheduledPost[];
-  platformFilter: string;
-  statusFilter: string;
   onSelect: (p: ScheduledPost) => void;
   onCancelled: (id: string) => void;
   loading: boolean;
 }) {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const filtered = posts.filter((p) => {
-    const mp = platformFilter === "all" || p.platform === platformFilter;
-    const ms = statusFilter === "all" || p.status === statusFilter;
-    return mp && ms;
-  }).sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+  const [statusFilter, setStatusFilter] = useState<string>("active");
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [sort, setSort] = useState<"newest" | "oldest">("newest");
+
+  const statusDef = STATUS_FILTERS.find((f) => f.id === statusFilter) ?? STATUS_FILTERS[0];
+  const filtered = posts
+    .filter((p) => {
+      const mp = platformFilter === "all" || p.platform === platformFilter;
+      const ms = statusDef.match(p.status);
+      return mp && ms;
+    })
+    .sort((a, b) => {
+      const diff = new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime();
+      return sort === "newest" ? diff : -diff;
+    });
+
+  // Count per status for badges
+  const counts = STATUS_FILTERS.reduce<Record<string, number>>((acc, f) => {
+    acc[f.id] = posts.filter((p) => f.match(p.status)).length;
+    return acc;
+  }, {});
+
+  const usedPlatforms = Array.from(new Set(posts.map((p) => p.platform)));
 
   if (loading) return (
     <div className="p-6 space-y-3">
@@ -340,81 +387,149 @@ function PostsListView({
     </div>
   );
 
-  if (filtered.length === 0) return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-      <div className="text-3xl opacity-20">📭</div>
-      <p className="text-sm font-semibold text-zinc-400">No posts found</p>
-      <p className="text-xs text-zinc-600">Schedule a post to see it here.</p>
-    </div>
-  );
-
   return (
-    <div className="flex-1 overflow-y-auto p-5 space-y-2">
-      {filtered.map((post) => {
-        const isPosted = post.status === "posted";
-        const isFailed = post.status === "failed";
-        return (
-          <button key={post.id} onClick={() => onSelect(post)}
-            className="flex w-full items-center gap-4 rounded-[10px] border border-white/[.06] bg-white/[.02] px-4 py-3 text-left transition hover:border-white/[.1] hover:bg-white/[.04]">
-            <span className={cn("h-2 w-2 shrink-0 rounded-full", PLATFORM_DOT[post.platform] ?? "bg-zinc-500")} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-semibold text-zinc-200 truncate">
-                  {post.caption || <span className="text-zinc-600">No caption</span>}
+    <div className="flex flex-1 flex-col min-h-0">
+      {/* Filter bar */}
+      <div className="flex flex-col gap-2 border-b border-white/[.06] px-5 py-3">
+        {/* Status chips */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setStatusFilter(f.id)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] font-semibold capitalize transition",
+                statusFilter === f.id
+                  ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-rose-300"
+                  : "border-white/[.07] bg-white/[.02] text-zinc-500 hover:border-white/[.12] hover:text-zinc-300"
+              )}
+            >
+              {f.label}
+              {counts[f.id] > 0 && (
+                <span className={cn(
+                  "rounded-full px-1.5 py-px text-[10px] tabular-nums",
+                  statusFilter === f.id ? "bg-[#ff3d6a]/20 text-rose-300" : "bg-white/[.06] text-zinc-500"
+                )}>
+                  {counts[f.id]}
                 </span>
-                <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize", STATUS_COLORS[post.status] ?? "bg-zinc-500/20 text-zinc-300 border-zinc-500/30")}>
-                  {post.status}
-                </span>
-              </div>
-              <div className="mt-0.5 flex items-center gap-3 text-[11px] text-zinc-500">
-                <span>{PLATFORM_LABELS[post.platform] ?? post.platform}</span>
-                <span>·</span>
-                <span>Scheduled {fmtLocal(post.scheduled_at)}</span>
-                {isPosted && post.posted_at && <><span>·</span><span className="text-emerald-400">Published {fmtLocal(post.posted_at)}</span></>}
-                {isFailed && post.last_error && <><span>·</span><span className="text-red-400 truncate max-w-[200px]">{post.last_error}</span></>}
-              </div>
-            </div>
-            {isPosted && <span className="shrink-0 text-emerald-400">✓</span>}
-            {isFailed && <span className="shrink-0 text-red-400">✕</span>}
-            {(post.status === "scheduled" || post.status === "pending") && (
-              confirmingId === post.id ? (
-                <div className="flex shrink-0 gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => setConfirmingId(null)}
-                    className="rounded-[7px] border border-white/[.08] bg-white/[.03] px-2.5 py-1 text-[11px] font-semibold text-zinc-400 hover:text-white"
-                  >
-                    Keep
-                  </button>
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      setCancelling(post.id);
-                      setConfirmingId(null);
-                      try {
-                        await platformApi.cancelPost(post.id);
-                        onCancelled(post.id);
-                      } finally {
-                        setCancelling(null);
-                      }
-                    }}
-                    disabled={cancelling === post.id}
-                    className="rounded-[7px] bg-red-500/80 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                  >
-                    {cancelling === post.id ? "…" : "Confirm"}
-                  </button>
+              )}
+            </button>
+          ))}
+          {/* Sort */}
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => setSort(sort === "newest" ? "oldest" : "newest")}
+              className="flex items-center gap-1 rounded-[7px] border border-white/[.07] bg-white/[.02] px-2.5 py-1 text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 transition"
+            >
+              {sort === "newest" ? "↓ Newest" : "↑ Oldest"}
+            </button>
+          </div>
+        </div>
+        {/* Platform chips — only show if >1 platform */}
+        {usedPlatforms.length > 1 && (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setPlatformFilter("all")}
+              className={cn(
+                "rounded-full border px-3 py-0.5 text-[11px] font-semibold transition",
+                platformFilter === "all"
+                  ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-300"
+                  : "border-white/[.07] bg-white/[.02] text-zinc-600 hover:text-zinc-300"
+              )}
+            >
+              All platforms
+            </button>
+            {usedPlatforms.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPlatformFilter(p)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] font-semibold capitalize transition",
+                  platformFilter === p
+                    ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-300"
+                    : "border-white/[.07] bg-white/[.02] text-zinc-600 hover:text-zinc-300"
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", PLATFORM_DOT[p] ?? "bg-zinc-500")} />
+                {PLATFORM_LABELS[p] ?? p}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
+          <div className="text-3xl opacity-20">📭</div>
+          <p className="text-sm font-semibold text-zinc-400">No posts found</p>
+          <p className="text-xs text-zinc-600">Try a different filter or schedule a post.</p>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
+          {filtered.map((post) => {
+            const isPosted = post.status === "posted";
+            const isFailed = post.status === "failed";
+            const isProcessing = post.status === "processing";
+            const canCancel = post.status === "scheduled" || post.status === "pending" || post.status === "processing";
+            return (
+              <button key={post.id} onClick={() => onSelect(post)}
+                className="flex w-full items-center gap-4 rounded-[10px] border border-white/[.06] bg-white/[.02] px-4 py-3 text-left transition hover:border-white/[.1] hover:bg-white/[.04]">
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", PLATFORM_DOT[post.platform] ?? "bg-zinc-500")} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-semibold text-zinc-200 truncate">
+                      {post.caption || <span className="text-zinc-600">No caption</span>}
+                    </span>
+                    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize", STATUS_COLORS[post.status] ?? "bg-zinc-500/20 text-zinc-300 border-zinc-500/30")}>
+                      {isProcessing ? "⟳ Processing" : post.status}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                    <span>{PLATFORM_LABELS[post.platform] ?? post.platform}</span>
+                    <span>·</span>
+                    <span>Scheduled {fmtLocal(post.scheduled_at)}</span>
+                    {isPosted && post.posted_at && <><span>·</span><span className="text-emerald-400">Published {fmtLocal(post.posted_at)}</span></>}
+                    {isFailed && post.last_error && <><span>·</span><span className="text-red-400 truncate max-w-[240px]" title={post.last_error}>{post.last_error}</span></>}
+                  </div>
                 </div>
-              ) : (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmingId(post.id); }}
-                  className="shrink-0 rounded-[7px] border border-red-500/20 bg-red-500/5 px-2.5 py-1 text-[11px] font-semibold text-red-400 transition hover:bg-red-500/10"
-                >
-                  Cancel
-                </button>
-              )
-            )}
-          </button>
-        );
-      })}
+                {isPosted && <span className="shrink-0 text-emerald-400 text-sm">✓</span>}
+                {isFailed && <span className="shrink-0 text-red-400 text-sm">✕</span>}
+                {isProcessing && <span className="shrink-0 text-amber-400 text-xs animate-pulse">●</span>}
+                {canCancel && (
+                  confirmingId === post.id ? (
+                    <div className="flex shrink-0 gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setConfirmingId(null)}
+                        className="rounded-[7px] border border-white/[.08] bg-white/[.03] px-2.5 py-1 text-[11px] font-semibold text-zinc-400 hover:text-white"
+                      >Keep</button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setCancelling(post.id);
+                          setConfirmingId(null);
+                          try {
+                            await platformApi.cancelPost(post.id);
+                            onCancelled(post.id);
+                          } finally {
+                            setCancelling(null);
+                          }
+                        }}
+                        disabled={cancelling === post.id}
+                        className="rounded-[7px] bg-red-500/80 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                      >{cancelling === post.id ? "…" : "Confirm"}</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmingId(post.id); }}
+                      className="shrink-0 rounded-[7px] border border-red-500/20 bg-red-500/5 px-2.5 py-1 text-[11px] font-semibold text-red-400 transition hover:bg-red-500/10"
+                    >Cancel</button>
+                  )
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -556,8 +671,6 @@ export function SchedulerPage() {
         {activeTab === "posts" && (
           <PostsListView
             posts={calendarData.flatMap((cd) => cd.posts)}
-            platformFilter={platformFilter}
-            statusFilter={statusFilter}
             onSelect={setSelectedPost}
             onCancelled={(id) => setCalendarData((prev) =>
               prev.map((cd) => ({ ...cd, posts: cd.posts.filter((p) => p.id !== id) }))
@@ -756,6 +869,16 @@ export function SchedulerPage() {
             setCalendarData((prev) =>
               prev.map((cd) => ({ ...cd, posts: cd.posts.filter((p) => p.id !== id) }))
             );
+            setSelectedPost(null);
+          }}
+          onPublished={(updated) => {
+            setCalendarData((prev) =>
+              prev.map((cd) => ({
+                ...cd,
+                posts: cd.posts.map((p) => (p.id === updated.id ? updated : p)),
+              }))
+            );
+            setSelectedPost(null);
           }}
         />
       )}

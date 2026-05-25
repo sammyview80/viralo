@@ -54,7 +54,7 @@ class ScheduledPostUpdate(BaseModel):
 
 class ScheduledPostResponse(BaseModel):
     id: uuid.UUID
-    clip_id: uuid.UUID
+    clip_id: uuid.UUID | None
     social_account_id: uuid.UUID
     platform: str
     status: str

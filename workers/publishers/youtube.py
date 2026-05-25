@@ -8,8 +8,8 @@ log = logging.getLogger(__name__)
 
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 YOUTUBE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
-CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
+CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID") or os.getenv("GOOGLE_CLIENT_ID", "")
+CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET") or os.getenv("GOOGLE_CLIENT_SECRET", "")
 
 
 class YouTubePublisher(BasePublisher):

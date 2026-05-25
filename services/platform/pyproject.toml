@@ -13,6 +13,10 @@ dependencies = [
     "viralo-shared",
     "celery[rabbitmq]>=5.4",
     "redis>=5.2",
+    "requests>=2.32",
+    "google-api-python-client>=2.0",
+    "google-auth-oauthlib>=1.0",
+    "cryptography>=42.0",
 ]
 
 [build-system]

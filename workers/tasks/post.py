@@ -58,15 +58,14 @@ def _encrypt_token(plain: str) -> str:
 def _insert_notification(session, tenant_id: str, title: str, body: str, post_id: str) -> None:
     session.execute(
         text("""
-            INSERT INTO notifications (id, tenant_id, title, body, entity_type, entity_id, created_at)
-            VALUES (:id, CAST(:tid AS uuid), :title, :body, 'scheduled_post', CAST(:eid AS uuid), NOW())
+            INSERT INTO notifications (id, tenant_id, title, body, created_at)
+            VALUES (:id, CAST(:tid AS uuid), :title, :body, NOW())
         """),
         {
             "id": str(uuid.uuid4()),
             "tid": tenant_id,
             "title": title,
             "body": body,
-            "eid": post_id,
         },
     )
 

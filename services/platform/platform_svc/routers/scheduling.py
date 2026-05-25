@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.deps import get_current_user, get_tenant_db
@@ -59,6 +59,13 @@ def _build_query(
 # Endpoints
 # ---------------------------------------------------------------------------
 
+async def _resolve_clip_storage_url(db: AsyncSession, clip_id: uuid.UUID) -> str | None:
+    """Fetch storage_url from clips table for a given clip_id."""
+    row = await db.execute(text("SELECT storage_url FROM clips WHERE id = CAST(:cid AS uuid)"), {"cid": str(clip_id)})
+    r = row.fetchone()
+    return r[0] if r else None
+
+
 @router.post("/scheduled-posts", response_model=ScheduledPostResponse, status_code=status.HTTP_201_CREATED)
 async def create_scheduled_post(
     body: ScheduledPostCreate,
@@ -66,6 +73,7 @@ async def create_scheduled_post(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Schedule a clip for posting to a connected social account."""
+    clip_storage_url = await _resolve_clip_storage_url(db, body.clip_id)
     post = ScheduledPost(
         id=uuid.uuid4(),
         clip_id=body.clip_id,
@@ -75,10 +83,55 @@ async def create_scheduled_post(
         scheduled_at=body.scheduled_at,
         caption=body.caption,
         hashtags=body.hashtags,
+        clip_storage_url=clip_storage_url,
     )
     db.add(post)
     await db.commit()
     await db.refresh(post)
+    return ScheduledPostResponse.model_validate(post)
+
+
+@router.post("/scheduled-posts/{post_id}/publish-now", response_model=ScheduledPostResponse)
+async def publish_post_now(
+    post_id: uuid.UUID,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Immediately enqueue a scheduled post for publishing (bypasses scheduled_at)."""
+    import os
+    from celery import Celery
+
+    result = await db.execute(
+        select(ScheduledPost).where(
+            ScheduledPost.id == post_id,
+            ScheduledPost.status.in_(["scheduled", "pending", "failed"]),
+        )
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Post not found or not in a publishable state (must be scheduled/pending/failed).",
+        )
+
+    # Ensure clip_storage_url is set
+    if not post.clip_storage_url and post.clip_id:
+        post.clip_storage_url = await _resolve_clip_storage_url(db, post.clip_id)
+
+    post.status = "processing"
+    post.scheduled_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(post)
+
+    # Enqueue directly — don't wait for beat
+    broker_url = os.getenv("CELERY_BROKER_URL", os.getenv("RABBITMQ_URL", "amqp://viralo:viralo@rabbitmq:5672//"))
+    app = Celery(broker=broker_url)
+    app.send_task(
+        "workers.tasks.post.publish_post",
+        args=[str(token.tenant_id), str(post_id)],
+        queue="viralo.post.publish",
+    )
+
     return ScheduledPostResponse.model_validate(post)
 
 

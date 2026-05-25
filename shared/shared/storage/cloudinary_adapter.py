@@ -23,5 +23,16 @@ class CloudinaryAdapter(StorageAdapter):
     async def get_signed_url(self, path: str, expires_in: int = 3600) -> str:
         return cloudinary.utils.cloudinary_url(path, resource_type="video")[0]
 
+    async def download(self, path: str, dest_path: str) -> None:
+        import urllib.request
+        # path may already be a full https URL (clip_storage_url) or a public_id
+        if path.startswith("http://") or path.startswith("https://"):
+            url = path
+        else:
+            url = cloudinary.utils.cloudinary_url(path, resource_type="video")[0]
+        if not url:
+            raise ValueError(f"Could not resolve download URL for path: {path}")
+        urllib.request.urlretrieve(url, dest_path)
+
     async def delete(self, path: str) -> None:
         cloudinary.uploader.destroy(path, resource_type="video")

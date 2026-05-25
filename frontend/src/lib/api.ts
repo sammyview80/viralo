@@ -399,6 +399,7 @@ export const platformApi = {
   updatePost: (id: string, data: Partial<Pick<ScheduledPost, "scheduled_at" | "caption" | "hashtags">>) =>
     platformReq<ScheduledPost>("PATCH", `/scheduled-posts/${id}`, data),
   cancelPost: (id: string) => platformReq<void>("DELETE", `/scheduled-posts/${id}`),
+  publishNow: (id: string) => platformReq<ScheduledPost>("POST", `/scheduled-posts/${id}/publish-now`),
   getCalendar: (month: string) =>
     platformReq<CalendarDay[]>("GET", `/calendar?month=${month}`),
   optimalTime: (platform: string) =>

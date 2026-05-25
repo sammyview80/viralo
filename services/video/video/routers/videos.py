@@ -435,6 +435,15 @@ async def delete_video(
     temp_dir = Path(os.getenv("VIDEO_TEMP_DIR", "/tmp/viralo-video")) / str(video_id)
     shutil.rmtree(temp_dir, ignore_errors=True)
 
+    # Nullify clip_id on scheduled posts to avoid FK violation when deleting clips
+    clip_ids = [str(c.id) for c in clips]
+    if clip_ids:
+        from sqlalchemy import text as sa_text
+        placeholders = ", ".join(f"CAST('{cid}' AS uuid)" for cid in clip_ids)
+        await db.execute(
+            sa_text(f"UPDATE scheduled_posts SET clip_id = NULL WHERE clip_id IN ({placeholders})")
+        )
+
     # Hard delete clips from DB, soft delete video
     for clip in clips:
         await db.delete(clip)
