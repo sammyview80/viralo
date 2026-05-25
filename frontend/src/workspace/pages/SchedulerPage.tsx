@@ -54,9 +54,10 @@ function fmtLocal(iso: string) {
 }
 
 /* ─── Popover ─── */
-function PostPopover({ post, onClose }: { post: ScheduledPost; onClose: () => void }) {
+function PostPopover({ post, onClose, onCancelled }: { post: ScheduledPost; onClose: () => void; onCancelled?: (id: string) => void }) {
   const scheduledLocal = fmtLocal(post.scheduled_at);
   const postedLocal = post.posted_at ? fmtLocal(post.posted_at) : null;
+  const [cancelling, setCancelling] = useState(false);
   const isPosted = post.status === "posted";
   const isFailed = post.status === "failed";
 
@@ -121,6 +122,25 @@ function PostPopover({ post, onClose }: { post: ScheduledPost; onClose: () => vo
             <span className="h-2 w-2 rounded-full bg-red-400" />
             <span className="text-[11.5px] font-semibold text-red-400">Publish failed — check error above</span>
           </div>
+        )}
+
+        {(post.status === "scheduled" || post.status === "pending" || post.status === "failed") && onCancelled && (
+          <button
+            onClick={async () => {
+              setCancelling(true);
+              try {
+                await platformApi.cancelPost(post.id);
+                onCancelled(post.id);
+                onClose();
+              } catch {
+                setCancelling(false);
+              }
+            }}
+            disabled={cancelling}
+            className="mt-3 w-full rounded-[9px] border border-red-500/20 bg-red-500/5 py-2 text-[12.5px] font-semibold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
+          >
+            {cancelling ? "Cancelling…" : "Cancel scheduled post"}
+          </button>
         )}
       </div>
     </div>
@@ -273,14 +293,16 @@ function ScheduleModal({
 
 /* ─── Posts List View ─── */
 function PostsListView({
-  posts, platformFilter, statusFilter, onSelect, loading,
+  posts, platformFilter, statusFilter, onSelect, onCancelled, loading,
 }: {
   posts: ScheduledPost[];
   platformFilter: string;
   statusFilter: string;
   onSelect: (p: ScheduledPost) => void;
+  onCancelled: (id: string) => void;
   loading: boolean;
 }) {
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const filtered = posts.filter((p) => {
     const mp = platformFilter === "all" || p.platform === platformFilter;
     const ms = statusFilter === "all" || p.status === statusFilter;
@@ -331,6 +353,24 @@ function PostsListView({
             </div>
             {isPosted && <span className="shrink-0 text-emerald-400">✓</span>}
             {isFailed && <span className="shrink-0 text-red-400">✕</span>}
+            {(post.status === "scheduled" || post.status === "pending") && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setCancelling(post.id);
+                  try {
+                    await platformApi.cancelPost(post.id);
+                    onCancelled(post.id);
+                  } finally {
+                    setCancelling(null);
+                  }
+                }}
+                disabled={cancelling === post.id}
+                className="shrink-0 rounded-[7px] border border-red-500/20 bg-red-500/5 px-2.5 py-1 text-[11px] font-semibold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
+              >
+                {cancelling === post.id ? "…" : "Cancel"}
+              </button>
+            )}
           </button>
         );
       })}
@@ -478,6 +518,9 @@ export function SchedulerPage() {
             platformFilter={platformFilter}
             statusFilter={statusFilter}
             onSelect={setSelectedPost}
+            onCancelled={(id) => setCalendarData((prev) =>
+              prev.map((cd) => ({ ...cd, posts: cd.posts.filter((p) => p.id !== id) }))
+            )}
             loading={loading}
           />
         )}
@@ -665,7 +708,15 @@ export function SchedulerPage() {
 
       {/* Post detail popover */}
       {selectedPost && (
-        <PostPopover post={selectedPost} onClose={() => setSelectedPost(null)} />
+        <PostPopover
+          post={selectedPost}
+          onClose={() => setSelectedPost(null)}
+          onCancelled={(id) => {
+            setCalendarData((prev) =>
+              prev.map((cd) => ({ ...cd, posts: cd.posts.filter((p) => p.id !== id) }))
+            );
+          }}
+        />
       )}
 
       {/* Schedule modal */}
