@@ -232,6 +232,20 @@ services:
       redis:
         condition: service_healthy
 
+  celery-notification:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/platform/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.notifications --concurrency=4 --loglevel=info
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   celery-beat:
     <<: *service-defaults
     build:

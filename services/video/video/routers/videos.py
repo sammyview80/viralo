@@ -245,7 +245,8 @@ async def video_progress(
 ):
     async def event_generator():
         pubsub = redis.pubsub()
-        await pubsub.subscribe(f"job:{job_id}:progress")
+        # Subscribe to both progress events and per-clip upload events
+        await pubsub.subscribe(f"job:{job_id}:progress", f"job:{job_id}:clips")
         try:
             timeout = 600  # 10 minutes
             elapsed = 0
@@ -265,7 +266,8 @@ async def video_progress(
                     yield f"data: {data}\n\n"
                     try:
                         parsed = json.loads(data)
-                        if parsed.get("status") in ("complete", "failed"):
+                        # Only close stream on terminal progress status, not on clip events
+                        if parsed.get("status") in ("complete", "failed") and "event" not in parsed:
                             break
                     except json.JSONDecodeError:
                         pass
@@ -276,7 +278,7 @@ async def video_progress(
         except Exception:
             pass
         finally:
-            await pubsub.unsubscribe(f"job:{job_id}:progress")
+            await pubsub.unsubscribe(f"job:{job_id}:progress", f"job:{job_id}:clips")
             await pubsub.aclose()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

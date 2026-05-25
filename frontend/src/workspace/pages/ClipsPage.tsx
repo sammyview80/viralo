@@ -369,9 +369,11 @@ const PLATFORM_OPTIONS = [
   { id: "facebook",  label: "Facebook",    match: (c: ClipApiResponse) => c.platform === "facebook" },
 ];
 const STATUS_OPTIONS = [
-  { id: "ready",      label: "Ready",      match: (c: ClipApiResponse) => c.status === "ready" },
-  { id: "processing", label: "Processing", match: (c: ClipApiResponse) => c.status === "processing" },
-  { id: "failed",     label: "Failed",     match: (c: ClipApiResponse) => c.status === "failed" },
+  { id: "ready",          label: "Ready",      match: (c: ClipApiResponse) => c.status === "ready" },
+  { id: "pending_upload", label: "Queued",     match: (c: ClipApiResponse) => c.status === "pending_upload" },
+  { id: "uploading",      label: "Uploading",  match: (c: ClipApiResponse) => c.status === "uploading" },
+  { id: "upload_failed",  label: "Failed",     match: (c: ClipApiResponse) => c.status === "upload_failed" || c.status === "failed" },
+  { id: "processing",     label: "Processing", match: (c: ClipApiResponse) => c.status === "processing" },
 ];
 const DURATION_OPTIONS = [
   { id: "short",  label: "< 30s",    match: (c: ClipApiResponse) => (c.duration_ms ?? 0) < 30_000 },
@@ -790,7 +792,7 @@ export function ClipsPage() {
                       <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <h2 className="min-w-0 text-[16px] font-bold leading-[1.25] tracking-[-.01em] text-white line-clamp-3">{drawer.clip_metadata?.ai_title ?? drawer.title ?? "Untitled clip"}</h2>
-                          <Badge variant={drawer.status === "ready" ? "ready" : drawer.status === "processing" ? "warn" : "muted"}>{drawer.status}</Badge>
+                          <Badge variant={drawer.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(drawer.status) ? "warn" : drawer.status === "upload_failed" ? "error" : drawer.status === "processing" ? "warn" : "muted"}>{drawer.status === "pending_upload" ? "queued" : drawer.status === "upload_failed" ? "failed" : drawer.status}</Badge>
                         </div>
                         {primaryDescription && <p className="line-clamp-3 text-[12px] leading-5 text-zinc-400">{primaryDescription}</p>}
                       </div>
