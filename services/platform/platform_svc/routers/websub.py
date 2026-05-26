@@ -164,6 +164,58 @@ async def add_channel(
     return {"channel_id": req.channel_id, "status": "subscribing"}
 
 
+@router.get("/websub/channels/{channel_id}/videos")
+async def channel_recent_videos(
+    channel_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    """Fetch recent videos for a channel via YouTube public RSS feed (no API key needed)."""
+    import httpx
+    feed_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(feed_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/atom+xml,application/xml,text/xml,*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        ns = {
+            "atom": "http://www.w3.org/2005/Atom",
+            "yt": "http://www.youtube.com/xml/schemas/2015",
+            "media": "http://search.yahoo.com/mrss/",
+        }
+        videos = []
+        for entry in root.findall("atom:entry", ns):
+            vid_id = entry.findtext("yt:videoId", namespaces=ns) or ""
+            title = entry.findtext("atom:title", namespaces=ns) or ""
+            published = entry.findtext("atom:published", namespaces=ns) or ""
+            link_el = entry.find("atom:link", ns)
+            url = link_el.get("href", f"https://www.youtube.com/watch?v={vid_id}") if link_el is not None else ""
+            thumb = f"https://i.ytimg.com/vi/{vid_id}/mqdefault.jpg" if vid_id else ""
+            # view count from media:group/media:community
+            views = None
+            community = entry.find("media:group/media:community", ns)
+            if community is not None:
+                stats = community.find("media:statistics", ns)
+                if stats is not None:
+                    views = stats.get("views")
+            videos.append({
+                "video_id": vid_id,
+                "title": title,
+                "published": published,
+                "url": url,
+                "thumbnail": thumb,
+                "views": views,
+            })
+        return {"channel_id": channel_id, "videos": videos}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"YouTube RSS error: {e.response.status_code}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.delete("/websub/channels/{channel_id}", status_code=204)
 async def remove_channel(
     channel_id: str,
