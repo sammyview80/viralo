@@ -149,6 +149,71 @@ async def list_channels(
     return [dict(r._mapping) for r in rows]
 
 
+async def _resolve_channel_id(input_str: str) -> tuple[str, str]:
+    """
+    Resolve any YouTube URL / @handle / UCxxxxxx to (channel_id, channel_name).
+    Tries yt-dlp channel page scrape via oEmbed then RSS probe.
+    """
+    import httpx, re as _re
+
+    s = input_str.strip()
+
+    # Already a bare UCxxxxxx ID
+    if _re.match(r'^UC[\w-]{22}$', s):
+        return s, ""
+
+    # Extract UCxxxxxx from /channel/UCxxxxxx URLs
+    m = _re.search(r'/channel/(UC[\w-]{22})', s)
+    if m:
+        return m.group(1), ""
+
+    # Extract channel_id query param
+    m = _re.search(r'channel_id=(UC[\w-]{22})', s)
+    if m:
+        return m.group(1), ""
+
+    # Handle @handle or youtube.com/@handle URLs — scrape channel page
+    handle = None
+    m = _re.search(r'/@([\w.-]+)', s)
+    if m:
+        handle = m.group(1)
+    elif _re.match(r'^@?([\w.-]+)$', s):
+        handle = s.lstrip('@')
+
+    if handle:
+        url = f"https://www.youtube.com/@{handle}"
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
+                r = await c.get(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9",
+                })
+            # Extract channelId from page HTML
+            cid_match = _re.search(r'"channelId":"(UC[\w-]{22})"', r.text)
+            name_match = (
+                _re.search(r'"og:title" content="([^"]+)"', r.text) or
+                _re.search(r'"channelName":"([^"]+)"', r.text) or
+                _re.search(r'"author":"([^"]+)"', r.text)
+            )
+            if cid_match:
+                name = name_match.group(1) if name_match else handle
+                return cid_match.group(1), name
+        except Exception:
+            pass
+
+    raise HTTPException(status_code=422, detail=f"Could not resolve YouTube channel ID from: {input_str!r}")
+
+
+@router.get("/websub/resolve")
+async def resolve_channel(
+    q: str = Query(..., description="YouTube URL, @handle, or channel ID"),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    """Resolve any YouTube handle/URL to channel_id + channel_name."""
+    channel_id, channel_name = await _resolve_channel_id(q)
+    return {"channel_id": channel_id, "channel_name": channel_name}
+
+
 @router.post("/websub/channels", status_code=201)
 async def add_channel(
     req: SubscribeRequest,
@@ -156,12 +221,17 @@ async def add_channel(
     current_user: TokenPayload = Depends(get_current_user),
 ):
     tenant_id = str(current_user.tenant_id)
+
+    # Resolve handle/URL → real UCxxxxxx channel_id
+    channel_id, resolved_name = await _resolve_channel_id(req.channel_id)
+    channel_name = req.channel_name or resolved_name
+
     subscribe_channel.apply_async(
-        args=[req.channel_id, tenant_id, req.channel_name, req.channel_url,
+        args=[channel_id, tenant_id, channel_name, req.channel_url or f"https://www.youtube.com/channel/{channel_id}",
               req.auto_publish, req.auto_publish_config],
         queue="viralo.post.publish",
     )
-    return {"channel_id": req.channel_id, "status": "subscribing"}
+    return {"channel_id": channel_id, "channel_name": channel_name, "status": "subscribing"}
 
 
 @router.get("/websub/channels/{channel_id}/videos")

@@ -475,8 +475,10 @@ export interface ChannelVideo {
 
 export const channelsApi = {
   list: () => platformReq<ChannelSubscription[]>("GET", "/websub/channels"),
+  resolve: (q: string) =>
+    platformReq<{ channel_id: string; channel_name: string }>("GET", `/websub/resolve?q=${encodeURIComponent(q)}`),
   subscribe: (body: { channel_id: string; channel_name?: string; channel_url?: string; auto_publish?: boolean }) =>
-    platformReq<{ channel_id: string; status: string }>("POST", "/websub/channels", body),
+    platformReq<{ channel_id: string; channel_name: string; status: string }>("POST", "/websub/channels", body),
   unsubscribe: (channelId: string) => platformReq<void>("DELETE", `/websub/channels/${channelId}`),
   recentVideos: (channelId: string) =>
     platformReq<{ channel_id: string; videos: ChannelVideo[] }>("GET", `/websub/channels/${channelId}/videos`),

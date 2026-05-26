@@ -66,10 +66,26 @@ interface AddFormProps {
 
 function AddForm({ onCancel, onSuccess }: AddFormProps) {
   const [urlInput, setUrlInput] = useState("");
-  const [nameInput, setNameInput] = useState("");
   const [autoPublish, setAutoPublish] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [resolved, setResolved] = useState<{ channel_id: string; channel_name: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  async function handleResolve() {
+    if (!urlInput.trim()) return;
+    setResolving(true);
+    setErr(null);
+    setResolved(null);
+    try {
+      const r = await channelsApi.resolve(urlInput.trim());
+      setResolved(r);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Could not resolve channel");
+    } finally {
+      setResolving(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,10 +93,8 @@ function AddForm({ onCancel, onSuccess }: AddFormProps) {
     setLoading(true);
     setErr(null);
     try {
-      const channel_id = extractChannelId(urlInput);
       await channelsApi.subscribe({
-        channel_id,
-        channel_name: nameInput.trim() || undefined,
+        channel_id: urlInput.trim(),
         channel_url: urlInput.trim(),
         auto_publish: autoPublish,
       });
@@ -96,30 +110,36 @@ function AddForm({ onCancel, onSuccess }: AddFormProps) {
     <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-5 mb-6">
       <h3 className="text-sm font-semibold text-white mb-4">Subscribe to Channel</h3>
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Input
-          value={urlInput}
-          onChange={(e) => setUrlInput(e.target.value)}
-          placeholder="https://youtube.com/@MrBeast or UCxxxxxx"
-          className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-        />
-        <Input
-          value={nameInput}
-          onChange={(e) => setNameInput(e.target.value)}
-          placeholder="Channel name (optional)"
-          className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-        />
-        <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={autoPublish}
-            onChange={(e) => setAutoPublish(e.target.checked)}
-            className="accent-blue-500 w-4 h-4"
+        <div className="flex gap-2">
+          <Input
+            value={urlInput}
+            onChange={(e) => { setUrlInput(e.target.value); setResolved(null); }}
+            onBlur={handleResolve}
+            placeholder="https://youtube.com/@MrBeast or UCxxxxxx"
+            className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1"
           />
+          <Button type="button" variant="ghost" size="sm" onClick={handleResolve}
+            disabled={resolving || !urlInput.trim()}
+            className="text-zinc-400 hover:text-white border border-zinc-700 px-3">
+            {resolving ? "…" : "Verify"}
+          </Button>
+        </div>
+        {resolved && (
+          <div className="flex items-center gap-2 rounded-lg bg-green-900/20 border border-green-800/50 px-3 py-2">
+            <YoutubeIcon />
+            <div>
+              <p className="text-sm font-medium text-white">{resolved.channel_name || resolved.channel_id}</p>
+              <p className="text-xs text-zinc-500">{resolved.channel_id}</p>
+            </div>
+          </div>
+        )}
+        <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer select-none">
+          <input type="checkbox" checked={autoPublish} onChange={(e) => setAutoPublish(e.target.checked)} className="accent-blue-500 w-4 h-4" />
           Auto-publish clips
         </label>
         {err && <p className="text-xs text-red-400">{err}</p>}
         <div className="flex gap-2 pt-1">
-          <Button type="submit" disabled={loading} size="sm" className="bg-white text-zinc-900 hover:bg-zinc-200">
+          <Button type="submit" disabled={loading || resolving} size="sm" className="bg-white text-zinc-900 hover:bg-zinc-200">
             {loading ? "Subscribing…" : "Subscribe"}
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={onCancel} className="text-zinc-400 hover:text-white">
