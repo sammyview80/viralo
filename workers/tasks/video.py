@@ -41,7 +41,7 @@ GROQ_MAX_AUDIO_MB = 24
 VIDEO_CRF = 18          # visually lossless (default 23 is lossy)
 AUDIO_BITRATE = 192_000  # 192kbps vs 128kbps
 CAPTION_BURN_MAX_SECONDS = 120
-CAPTION_LEAD_SEC = 0.15  # Whisper timestamps lag ~150ms behind actual pronunciation
+CAPTION_LEAD_SEC = 0.25  # Whisper/Groq timestamps lag ~250ms behind actual pronunciation
 
 REFRAME_PRESETS = {
     "9:16":  (1080, 1920, "9:16"),
@@ -451,6 +451,174 @@ def _call_llm_json(
 
 # ── Stage 4: AI clip scoring via Groq LLaMA ───────────────────────────────────
 
+def _audio_energy_signals(video_path: str, duration: float, top_n: int = 15) -> list[dict]:
+    """Extract RMS energy peaks from audio using PyAV. Returns top-N timestamp dicts."""
+    try:
+        import av as _av
+        import array as _array
+        import math
+
+        window_sec = 2.0
+        hop_sec = 0.5
+        energies: list[tuple[float, float]] = []  # (timestamp, rms)
+
+        with _av.open(video_path) as container:
+            audio_stream = next((s for s in container.streams if s.type == "audio"), None)
+            if not audio_stream:
+                return []
+
+            samples_by_sec: dict[int, list[float]] = {}
+            for frame in container.decode(audio_stream):
+                t = float(frame.pts * frame.time_base)
+                bucket = int(t / hop_sec)
+                planes = frame.to_ndarray()
+                # flatten multi-channel to mono by averaging
+                mono = planes.mean(axis=0) if planes.ndim > 1 else planes[0]
+                rms = math.sqrt(max(float((mono.astype(float) ** 2).mean()), 1e-10))
+                samples_by_sec.setdefault(bucket, []).append(rms)
+
+        if not samples_by_sec:
+            return []
+
+        # Compute windowed RMS
+        window_buckets = int(window_sec / hop_sec)
+        buckets = sorted(samples_by_sec.keys())
+        for i, b in enumerate(buckets):
+            window = []
+            for wb in range(b, b + window_buckets):
+                window.extend(samples_by_sec.get(wb, []))
+            if window:
+                rms_avg = sum(window) / len(window)
+                ts = b * hop_sec
+                energies.append((ts, rms_avg))
+
+        if not energies:
+            return []
+
+        # Normalize 0-1
+        max_e = max(e for _, e in energies) or 1.0
+        min_e = min(e for _, e in energies)
+        rng = max_e - min_e or 1.0
+
+        normalized = [(ts, (e - min_e) / rng) for ts, e in energies]
+
+        # Find local peaks (higher than neighbours on both sides within 3s)
+        gap_buckets = int(3.0 / hop_sec)
+        peaks: list[tuple[float, float]] = []
+        for i, (ts, val) in enumerate(normalized):
+            window_vals = [v for _, v in normalized[max(0, i - gap_buckets): i + gap_buckets + 1]]
+            if val >= max(window_vals) * 0.95 and val > 0.3:
+                peaks.append((ts, val))
+
+        # Deduplicate — keep highest within 5s
+        deduped: list[tuple[float, float]] = []
+        for ts, val in sorted(peaks, key=lambda x: -x[1]):
+            if not any(abs(ts - kept_ts) < 5.0 for kept_ts, _ in deduped):
+                deduped.append((ts, val))
+            if len(deduped) >= top_n:
+                break
+
+        return [
+            {
+                "timestamp_sec": round(ts, 1),
+                "signal_type": "audio_energy_peak",
+                "score": round(5.0 + val * 4.5, 2),  # maps 0-1 → 5.0-9.5
+                "trigger_words": f"[high energy audio peak at {int(ts//60)}:{int(ts%60):02d}]",
+                "stop_scroll_reason": "Audio energy spike — loud moment, reaction, or climax",
+            }
+            for ts, val in sorted(deduped, key=lambda x: x[0])
+        ]
+    except Exception as e:
+        logging.warning("_audio_energy_signals failed: %s", e)
+        return []
+
+
+def _speech_rate_signals(words: list[WordTimestamp], top_n: int = 10) -> list[dict]:
+    """Detect speech rate spikes (fast speech) and dramatic pauses using word timestamps."""
+    if len(words) < 20:
+        return []
+
+    window_sec = 5.0
+    hop_sec = 1.0
+    duration = words[-1].end
+    results: list[tuple[float, float, str]] = []  # (ts, score, type)
+
+    # Sliding window: words-per-second
+    t = 0.0
+    while t + window_sec <= duration:
+        window_words = [w for w in words if t <= w.start < t + window_sec]
+        wps = len(window_words) / window_sec
+        results.append((t + window_sec / 2, wps, "speech_rate"))
+        t += hop_sec
+
+    if not results:
+        return []
+
+    # Normalize wps to score
+    max_wps = max(r[1] for r in results) or 1.0
+    rate_signals = [
+        {
+            "timestamp_sec": round(ts, 1),
+            "signal_type": "speech_rate_peak",
+            "score": round(5.5 + (wps / max_wps) * 3.5, 2),  # 5.5–9.0
+            "trigger_words": f"[fast speech burst: {wps:.1f} words/sec]",
+            "stop_scroll_reason": "Rapid speech burst — excitement, argument, or climax",
+        }
+        for ts, wps, _ in results
+        if wps > max_wps * 0.75
+    ]
+
+    # Detect dramatic pauses (silence > 1.5s mid-video = before big reveal)
+    pause_signals = []
+    for i in range(len(words) - 1):
+        gap = words[i + 1].start - words[i].end
+        if gap > 1.5 and 10 < words[i].start < duration - 10:
+            score = min(9.0, 5.0 + gap * 1.2)
+            pause_signals.append({
+                "timestamp_sec": round(words[i].start, 1),
+                "signal_type": "dramatic_pause",
+                "score": round(score, 2),
+                "trigger_words": f"[{gap:.1f}s silence before: \"{words[i+1].word}\"]",
+                "stop_scroll_reason": f"Dramatic {gap:.1f}s pause before statement — tension builder",
+            })
+
+    # Merge, deduplicate by 3s proximity, take top_n
+    all_signals = rate_signals + pause_signals
+    all_signals.sort(key=lambda x: -x["score"])
+    deduped: list[dict] = []
+    for sig in all_signals:
+        if not any(abs(sig["timestamp_sec"] - k["timestamp_sec"]) < 3.0 for k in deduped):
+            deduped.append(sig)
+        if len(deduped) >= top_n:
+            break
+    return deduped
+
+
+def _youtube_chapter_signals(chapters: list[dict]) -> list[dict]:
+    """Convert YouTube chapters to viral signals — chapter boundaries = natural clip points."""
+    if not chapters:
+        return []
+    signals = []
+    for i, ch in enumerate(chapters):
+        ts = float(ch.get("start_time", 0))
+        title = ch.get("title", "")
+        # Chapters near start get hook bonus; chapters with exciting titles score higher
+        excitement_words = {"CRAZY", "INSANE", "EPIC", "SHOCKING", "FAIL", "WIN", "CLUTCH",
+                            "FUNNY", "BEST", "WORST", "OMG", "WTF", "??", "!!"}
+        excitement_bonus = 1.5 if any(w in title.upper() for w in excitement_words) else 0.0
+        # Earlier chapters often have better retention
+        position_bonus = max(0, 1.0 - i * 0.1)
+        score = min(9.5, 6.5 + excitement_bonus + position_bonus)
+        signals.append({
+            "timestamp_sec": round(ts, 1),
+            "signal_type": "youtube_chapter",
+            "score": round(score, 2),
+            "trigger_words": f"[Chapter: {title}]",
+            "stop_scroll_reason": f"YouTube chapter start: '{title}' — pre-validated segment boundary",
+        })
+    return signals
+
+
 def _build_timed_transcript(words: list[WordTimestamp]) -> str:
     """Build M:SS-stamped transcript lines for LLM input."""
     if not words:
@@ -469,6 +637,79 @@ def _build_timed_transcript(words: list[WordTimestamp]) -> str:
     return "\n".join(lines)
 
 
+_CONTENT_TYPE_SIGNALS: dict[str, str] = {
+    "entertainment": """\
+- Explosive reactions (screaming, shock, disbelief)
+- Unexpected plot twists or outcomes
+- Funniest or most chaotic moments
+- Crowd or audience reactions
+- Iconic catchphrases or repeated memes
+- High-energy climax moments
+- "Did he just do that?" moments""",
+    "gaming": """\
+- Clutch plays / near-death moments
+- Rage moments or controller throws
+- Insane skill shots or record breaks
+- Funny bugs or unexpected game behavior
+- Streamer screaming or losing composure
+- Unexpected win or loss at the last second""",
+    "vlog": """\
+- Surprising reveals or confessions
+- Funny mishaps or bloopers
+- Genuine emotional reactions
+- Unexpected encounters
+- Strong personal opinion statements
+- "You won't believe this" moments""",
+    "interview": """\
+- Controversial or bold opinion dropped
+- Uncomfortable question and authentic answer
+- Jaw-dropping personal revelation
+- Disagreement or pushback moments
+- Memorable one-liner or quotable quote
+- Emotional or vulnerable moment""",
+    "educational": """\
+- "Mind-blowing" fact or statistic
+- Common myth busted
+- Counter-intuitive insight
+- Practical tip with immediate value
+- Strong hook: "Most people don't know..."
+- Surprising before/after comparison""",
+    "tutorial": """\
+- Before/after transformation reveal
+- Single trick that changes everything
+- Mistake everyone makes + the fix
+- Fastest shortcut nobody knows
+- Satisfying result moment""",
+    "opinion": """\
+- Most provocative take
+- Direct callout or challenge
+- Passionate rant peak
+- Memorable phrase/slogan
+- Bold prediction or bet""",
+    "news": """\
+- Most shocking headline fact
+- Emotional eyewitness account
+- "This changes everything" moment
+- Surprising statistic or data point
+- Controversy or conflict peak""",
+    "other": """\
+- Strong hook / pattern interrupt
+- Emotional peak (any emotion)
+- Surprising or unexpected moment
+- Quotable one-liner
+- Story climax or turning point""",
+}
+
+_SCORE_CALIBRATION = """\
+Score calibration (BE GENEROUS — these clips are competing for attention on TikTok/Reels):
+- 9-10: Stops scrolling guaranteed. Instantly shareable. Strong hook AND payoff.
+- 7-8:  High engagement expected. Clear emotional peak or surprising moment.
+- 5-6:  Good content, would perform well with the right audience.
+- 3-4:  Decent but missing a strong hook or payoff.
+- 1-2:  Flat, no hook, no reaction, no value.
+Most clips from engaging videos should score 6-9. Reserve <5 only for truly flat sections."""
+
+
 def _ai_score_clips(
     words: list[WordTimestamp],
     duration: float,
@@ -478,6 +719,10 @@ def _ai_score_clips(
     min_score_10: float,
     topic_focus: str = "",
     platforms: list[str] = None,
+    content_type: str = "other",
+    key_moments: list[dict] = None,
+    source_path: str = "",
+    chapters: list[dict] = None,
 ) -> list[ClipResult]:
     if platforms is None:
         platforms = ["tiktok", "reels", "shorts"]
@@ -485,77 +730,125 @@ def _ai_score_clips(
         return []
 
     transcript = _build_timed_transcript(words)
-    topic_line = f"Topic focus: {topic_focus}\n" if topic_focus else ""
     platforms_str = ", ".join(platforms)
 
-    # Step 1 — identify viral signal moments in the transcript
-    analysis_prompt = f"""You are an expert viral content analyst for TikTok, Reels, and Shorts.
+    context_lines = []
+    if topic_focus:
+        context_lines.append(f"Topic: {topic_focus}")
+    context_lines.append(f"Content type: {content_type}")
+    context_lines.append(f"Target platforms: {platforms_str}")
+    context_block = "\n".join(context_lines)
 
-{topic_line}Full transcript with timestamps (M:SS):
+    signals_for_type = _CONTENT_TYPE_SIGNALS.get(content_type, _CONTENT_TYPE_SIGNALS["other"])
+
+    # Seed from metadata key_moments if available
+    key_moments_hint = ""
+    if key_moments:
+        km_lines = "\n".join(
+            f"  - t={m.get('timestamp_sec', 0):.0f}s: {m.get('description', '')}"
+            for m in key_moments[:10]
+        )
+        key_moments_hint = f"\nPre-identified key moments (use as starting points):\n{km_lines}\n"
+
+    # Step 1 — identify viral signal moments in the transcript
+    analysis_prompt = f"""You are an expert viral content analyst specializing in {content_type} content for TikTok, Reels, and Shorts.
+
+{context_block}
+{key_moments_hint}
+Full transcript with timestamps (M:SS):
 {transcript}
 
-Analyze this transcript and identify ALL moments with high viral potential.
+Analyze this transcript and identify ALL moments with HIGH viral potential for {platforms_str}.
 
-Viral signals to look for:
-- Strong hooks / pattern interrupts (surprising opening statements)
-- Shocking facts, statistics, or revelations
-- Emotional peaks (anger, joy, fear, inspiration, humor)
-- Controversy or bold opinions
-- Relatable pain points or "aha" moments
-- Quotable one-liners or memorable phrases
-- Story climaxes or turning points
-- Call-to-action moments
+Viral signals to prioritize for {content_type} content:
+{signals_for_type}
 
-For each viral signal found, output:
+{_SCORE_CALIBRATION}
+
+For EACH viral signal found, output:
 - timestamp (seconds from start)
-- signal type (hook/shock/emotion/controversy/insight/quote/climax)
-- virality score (0-10)
+- signal type
+- virality score (0-10) — be generous, calibrate to the scale above
 - the exact words that make it viral
+- why this will stop scrollers
 
-Return JSON:
+Return JSON with ALL signals found (aim for at least {max(num_clips * 2, 8)} signals):
 {{
   "signals": [
     {{
       "timestamp_sec": <number>,
       "signal_type": "<type>",
       "score": <0.0-10.0>,
-      "trigger_words": "<exact quote>"
+      "trigger_words": "<exact quote from transcript>",
+      "stop_scroll_reason": "<1 sentence why viewers stop here>"
     }}
   ]
 }}"""
 
     try:
-        signals_data = _call_llm_json(
-            [{"role": "user", "content": analysis_prompt}],
-            temperature=0.2, max_tokens=2000,
-        )
-        signals = signals_data.get("signals", [])
+        try:
+            signals_data = _call_llm_json(
+                [{"role": "user", "content": analysis_prompt}],
+                temperature=0.3, max_tokens=3000,
+            )
+            signals = signals_data.get("signals", [])
+        except Exception as e1:
+            logging.warning("_ai_score_clips step-1 LLM failed (%s) — using evenly-spaced fallback signals", e1)
+            signals = []
 
         if not signals:
-            # fallback to single-step if signal detection failed
-            signals = [{"timestamp_sec": i * (duration / max(num_clips, 1)), "score": 5.0} for i in range(num_clips)]
+            signals = [{"timestamp_sec": i * (duration / max(num_clips, 1)), "score": 6.0} for i in range(num_clips)]
+
+        # Augment with multimodal signals — audio energy, speech rate, YT chapters
+        extra_signals: list[dict] = []
+        if source_path:
+            extra_signals += _audio_energy_signals(source_path, duration, top_n=12)
+            extra_signals += _speech_rate_signals(words, top_n=8)
+        if chapters:
+            extra_signals += _youtube_chapter_signals(chapters)
+
+        # Merge: deduplicate by 2s proximity — prefer higher score
+        for extra in extra_signals:
+            ts_extra = extra["timestamp_sec"]
+            close = next((s for s in signals if abs(s.get("timestamp_sec", 0) - ts_extra) < 2.0), None)
+            if close:
+                # Boost existing signal score if extra signal confirms it
+                close["score"] = min(10.0, round((close["score"] + extra["score"]) / 2 + 0.5, 2))
+                close["stop_scroll_reason"] = (
+                    close.get("stop_scroll_reason", "") + f" | {extra.get('stop_scroll_reason', '')}"
+                )
+            else:
+                signals.append(extra)
+
+        logging.info("_ai_score_clips: %d LLM signals + %d multimodal → %d total",
+                     len(signals) - len(extra_signals), len(extra_signals), len(signals))
 
         # Step 2 — build clips around viral signals
         signals_str = "\n".join(
-            f"- t={s.get('timestamp_sec', 0):.1f}s  score={s.get('score', 5)}/10  type={s.get('signal_type', '?')}  quote: {s.get('trigger_words', '')}"
+            f"- t={s.get('timestamp_sec', 0):.1f}s  score={s.get('score', 5)}/10  [{s.get('signal_type', '?')}]  \"{s.get('trigger_words', '')}\"  → {s.get('stop_scroll_reason', '')}"
             for s in sorted(signals, key=lambda x: x.get("score", 0), reverse=True)
         )
 
-        clip_prompt = f"""You are a viral video editor. Using the viral signals identified below, create exactly {num_clips} non-overlapping clips optimized for {platforms_str}.
+        clip_prompt = f"""You are a viral video editor specializing in {content_type} content for {platforms_str}.
 
-Viral signals found (sorted by score):
+{context_block}
+
+Viral signals found (sorted by score, highest first):
 {signals_str}
 
 Full transcript:
 {transcript}
 
-Rules:
-- Create EXACTLY {num_clips} clips — use top signals first, fill remaining with next-best moments
+{_SCORE_CALIBRATION}
+
+Create EXACTLY {num_clips} non-overlapping clips. Rules:
+- Use top-scoring signals first — fill remaining slots with next-best
 - Each clip MUST be {min_dur}–{max_dur} seconds long
-- Start each clip a few seconds BEFORE the viral signal so it builds context
-- End after the payoff/punchline
+- Start 2-4s BEFORE the viral moment to build context/tension
+- End AFTER the payoff, punchline, or reaction peak
 - No overlapping clips
-- Score reflects the viral signal strength
+- Score = virality strength of this clip on {platforms_str} (be generous per calibration scale)
+- Title: punchy, curiosity-driven, matches platform energy
 
 Return ONLY JSON:
 {{
@@ -564,30 +857,54 @@ Return ONLY JSON:
       "start_seconds": <number>,
       "end_seconds": <number>,
       "score": <0.0-10.0>,
-      "title": "<STRICT MAX 100 CHARS — count before writing, shorten if over>",
+      "title": "<punchy title, MAX 100 CHARS>",
       "reason": "<why this goes viral, max 12 words>",
-      "platform": "<best from: {platforms_str}>"
+      "platform": "<best fit from: {platforms_str}>"
     }}
   ]
 }}"""
 
-        data = _call_llm_json(
-            [{"role": "user", "content": clip_prompt}],
-            temperature=0.2, max_tokens=max(2000, num_clips * 350),
-        )
+        try:
+            data = _call_llm_json(
+                [{"role": "user", "content": clip_prompt}],
+                temperature=0.25, max_tokens=max(2000, num_clips * 400),
+            )
+            raw_clips = data.get("clips", [])
+        except Exception as e2:
+            logging.warning("_ai_score_clips step-2 LLM failed (%s) — building clips directly from signals", e2)
+            raw_clips = []
+
+        # If LLM step-2 failed or returned nothing, build clips directly from top signals
+        if not raw_clips:
+            raw_clips = []
+            used_signals = sorted(signals, key=lambda s: s.get("score", 0), reverse=True)
+            for sig in used_signals:
+                ts = float(sig.get("timestamp_sec", 0))
+                start = max(0.0, ts - 3.0)  # 3s lead-in
+                end = min(duration, start + min(max_dur, 30))
+                if end - start >= min_dur:
+                    raw_clips.append({
+                        "start_seconds": start,
+                        "end_seconds": end,
+                        "score": sig.get("score", 6.0),
+                        "title": sig.get("trigger_words", f"Moment at {int(ts//60)}:{int(ts%60):02d}")[:100],
+                        "reason": sig.get("stop_scroll_reason", "")[:80],
+                        "platform": platforms[0],
+                    })
+                if len(raw_clips) >= num_clips * 2:
+                    break
+            logging.info("_ai_score_clips: built %d clips from signals directly", len(raw_clips))
+
         clips = []
-        for c in data.get("clips", []):
+        for c in raw_clips:
             start = float(c.get("start_seconds", 0))
             end = float(c.get("end_seconds", 0))
-            # Clamp end to video duration
             if end > duration:
                 end = duration
             clip_dur = end - start
-            # Clamp to requested duration window — adjust end if slightly over
             if end - start > max_dur:
                 end = start + max_dur
                 clip_dur = max_dur
-            # Skip if still under min or start is invalid
             if clip_dur < min_dur or start < 0:
                 continue
             score = round(float(c.get("score", 5.0)), 2)
@@ -605,7 +922,6 @@ Return ONLY JSON:
 
         clips.sort(key=lambda c: c.score, reverse=True)
         clips = [c for c in clips if c.score >= min_score_10]
-        # Remove overlapping clips — keep higher score, greedy
         deduped: list[ClipResult] = []
         for clip in clips:
             overlaps = any(
@@ -619,7 +935,8 @@ Return ONLY JSON:
         deduped.sort(key=lambda c: c.start)
         return deduped
 
-    except Exception:
+    except Exception as e:
+        logging.exception("_ai_score_clips failed: %s", e)
         return []
 
 
@@ -919,6 +1236,67 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     return img
 
 
+def _render_clip_streamcopy(
+    source_path: str,
+    clip: ClipResult,
+    output_path: str,
+    target_width: int,
+    target_height: int,
+    crop_mode: Optional[str],
+    meta: VideoMeta,
+) -> None:
+    """Fast path: ffmpeg stream-copy + optional crop/scale. Zero re-encode quality loss."""
+    src_w, src_h = meta.width, meta.height
+    duration = clip.end - clip.start
+
+    # Build vf (video filter) for crop + scale if needed
+    vf_parts = []
+    if crop_mode == "9:16" and src_w > src_h:
+        # Landscape → portrait: crop to centre 9:16 pillar
+        crop_h = src_h
+        crop_w = int(src_h * 9 / 16) & ~1
+        x_off = (src_w - crop_w) // 2
+        vf_parts.append(f"crop={crop_w}:{crop_h}:{x_off}:0")
+    elif crop_mode == "16:9" and src_h > src_w:
+        crop_w = src_w
+        crop_h = int(src_w * 9 / 16) & ~1
+        y_off = (src_h - crop_h) // 2
+        vf_parts.append(f"crop={crop_w}:{crop_h}:0:{y_off}")
+    elif crop_mode == "1:1":
+        side = min(src_w, src_h) & ~1
+        vf_parts.append(f"crop={side}:{side}:{(src_w-side)//2}:{(src_h-side)//2}")
+
+    if target_width != src_w or target_height != src_h:
+        vf_parts.append(f"scale={target_width}:{target_height}:flags=lanczos")
+
+    # Always re-encode — most compatible across all source codecs/containers.
+    # CRF 18 = visually lossless H.264; AAC 192k audio (avoids stream-copy codec mismatch).
+    # -map 0:a:0? = optional audio (won't fail if source has no audio track).
+    vf_str = ",".join(vf_parts) if vf_parts else "null"
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(max(0.0, clip.start)),
+        "-i", source_path,
+        "-t", str(max(1.0, duration)),
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+        "-vf", vf_str,
+        "-c:v", "libx264",
+        "-crf", "17",
+        "-preset", "slow",
+        "-profile:v", "high",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if result.returncode != 0 or not Path(output_path).exists() or Path(output_path).stat().st_size < 1000:
+        raise RuntimeError(f"ffmpeg render failed: {result.stderr[-600:]}")
+
+
 def _render_clip(
     source_path: str,
     clip: ClipResult,
@@ -1210,7 +1588,7 @@ def _export_clip(
         target_w, target_h, crop_mode = meta.width, meta.height, None
 
     # Apply output quality cap
-    quality_tier = cfg.get("output_quality", "1080p")
+    quality_tier = cfg.get("output_quality", "source")
     cap = QUALITY_CAP.get(quality_tier)
     if cap is not None:
         long_edge = max(target_w, target_h)
@@ -1219,23 +1597,35 @@ def _export_clip(
             target_w = int(target_w * scale) & ~1  # keep even
             target_h = int(target_h * scale) & ~1
 
-    burn_captions = cfg.get("add_captions", True)
+    burn_captions = cfg.get("add_captions", False)
     style = cfg.get("caption_style", "capcut")
     if style not in CAPTION_STYLE_CFG:
         style = "capcut"
 
-    _render_clip(
-        source_path=source_path,
-        clip=clip,
-        output_path=clip_path,
-        captions=captions,
-        style=style,
-        target_width=target_w,
-        target_height=target_h,
-        crop_mode=crop_mode,
-        meta=meta,
-        burn_captions=burn_captions,
-    )
+    if not burn_captions:
+        # Fast path: stream-copy, no frame decode/re-encode quality loss
+        _render_clip_streamcopy(
+            source_path=source_path,
+            clip=clip,
+            output_path=clip_path,
+            target_width=target_w,
+            target_height=target_h,
+            crop_mode=crop_mode,
+            meta=meta,
+        )
+    else:
+        _render_clip(
+            source_path=source_path,
+            clip=clip,
+            output_path=clip_path,
+            captions=captions,
+            style=style,
+            target_width=target_w,
+            target_height=target_h,
+            crop_mode=crop_mode,
+            meta=meta,
+            burn_captions=burn_captions,
+        )
 
     try:
         _generate_thumbnail(source_path, clip, thumb_path)
@@ -1303,6 +1693,21 @@ def _export_clip(
 
 
 # ── YouTube download ──────────────────────────────────────────────────────────
+
+def _ytdlp_fetch_json_worker(url: str, timeout: int = 20) -> dict:
+    """Lightweight yt-dlp --dump-json call for chapter/metadata extraction. Non-fatal."""
+    base = _ytdlp_base_flags(proxy=None)
+    cmd = ["yt-dlp", "--no-download", "--dump-json", "--no-playlist"] + base + [
+        "--extractor-args", "youtube:player_client=tv_embedded", url
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode == 0 and result.stdout.strip():
+            return json.loads(result.stdout.strip().splitlines()[0])
+    except Exception as e:
+        logging.warning("_ytdlp_fetch_json_worker failed: %s", e)
+    return {}
+
 
 def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
     """Return {title, thumbnail_url} for a YouTube URL.
@@ -1377,7 +1782,7 @@ def _is_429(stderr: str) -> bool:
     return "429" in stderr or "Too Many Requests" in stderr
 
 
-def _download_youtube(url: str, out_path: str, quality: str = "1080p") -> None:
+def _download_youtube(url: str, out_path: str, quality: str = "source") -> None:
     import time, random
     errors = []
     proxies = _ytdlp_proxies()
@@ -1388,68 +1793,59 @@ def _download_youtube(url: str, out_path: str, quality: str = "1080p") -> None:
         return proxies[attempt % len(proxies)]
 
     if quality == "source":
-        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        # bestvideo+bestaudio (any codec — VP9/AV1 carry 4K on YouTube), remux to mp4
+        fmt = "bestvideo+bestaudio/best"
+        fmt_fallback = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
     else:
         cap = {"1080p": 1080, "720p": 720, "480p": 480}.get(quality, 1080)
-        fmt = (
-            f"bestvideo[height<={cap}][ext=mp4]+bestaudio[ext=m4a]"
-            f"/best[height<={cap}][ext=mp4]/best[ext=mp4]/best"
-        )
+        fmt = f"bestvideo[height<={cap}]+bestaudio/best[height<={cap}]"
+        fmt_fallback = f"bestvideo[height<={cap}][ext=mp4]+bestaudio[ext=m4a]/best[height<={cap}][ext=mp4]/best"
 
-    def _build_strategies(proxy: str | None) -> list[list[str]]:
+    def _client_args(proxy: str | None) -> list[list[str]]:
+        """Return ordered strategy list — best quality first, fallbacks after."""
         base = _ytdlp_base_flags(proxy)
         return [
-            # android client — best compat, bypasses some throttling
-            ["yt-dlp"] + base + [
-                "--js-runtimes", "node",
-                "--extractor-args", "youtube:player_client=android",
-                "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url,
-            ],
-            # mweb client — different IP treatment
-            ["yt-dlp"] + base + [
-                "--js-runtimes", "node",
-                "--extractor-args", "youtube:player_client=mweb",
-                "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
-            ],
-            # tv_embedded client — rarely rate-limited
-            ["yt-dlp"] + base + [
-                "--extractor-args", "youtube:player_client=tv_embedded",
-                "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_path, url,
-            ],
-            # plain fallback with mobile UA
-            ["yt-dlp"] + base + [
-                "-f", "best[ext=mp4]/best", "--merge-output-format", "mp4",
-                "--user-agent", "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36",
-                "-o", out_path, url,
-            ],
+            # Best: any codec (VP9/AV1 for 4K), remux to mp4
+            ["yt-dlp"] + base + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # Android client — sometimes unlocks higher res streams
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # mp4-only fallback (no VP9/AV1 — caps at 1080p on most videos)
+            ["yt-dlp"] + base + ["-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
+            # Last resort: mweb client, best available
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=mweb",
+                                  "-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
         ]
 
-    # Build initial strategy list using first proxy (or no proxy)
-    ytdlp_strategies = _build_strategies(_pick_proxy(0))
+    # Strategy order: no-proxy with cookies first, then rotate through proxies on 429
+    # Tagged as (cmd, proxy_label)
+    ytdlp_strategies: list[tuple[list[str], str]] = [
+        (cmd, "direct") for cmd in _client_args(None)
+    ]
+    proxy_idx = 0
 
-    for attempt, cmd in enumerate(ytdlp_strategies):
-        proxy_label = f" via {_pick_proxy(attempt)}" if proxies else ""
+    for attempt, (cmd, label) in enumerate(ytdlp_strategies):
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             if result.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
                 return
             stderr = result.stderr or ""
-            errors.append(f"yt-dlp strategy {attempt+1}{proxy_label}: {stderr[:200]}")
-            if _is_429(stderr):
-                wait = min(30, (2 ** attempt) + random.uniform(1, 3))
-                next_proxy = _pick_proxy(attempt + 1)
-                proxy_msg = f" (rotating to proxy {next_proxy})" if next_proxy and next_proxy != _pick_proxy(attempt) else ""
-                logging.warning("YouTube 429 on strategy %d%s, waiting %.1fs%s",
-                                attempt + 1, proxy_label, wait, proxy_msg)
+            errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
+            if _is_429(stderr) and proxies:
+                # Switch to next proxy, append proxy-based strategies after current position
+                proxy = proxies[proxy_idx % len(proxies)]
+                proxy_idx += 1
+                wait = min(30, (2 ** (proxy_idx - 1)) + random.uniform(1, 3))
+                logging.warning("YouTube 429 on strategy %d (%s), rotating to proxy %s, waiting %.1fs",
+                                attempt + 1, label, proxy, wait)
                 time.sleep(wait)
-                # Rebuild remaining strategies with the next proxy
-                if proxies and len(proxies) > 1:
-                    remaining = _build_strategies(_pick_proxy(attempt + 1))[attempt + 1:]
-                    ytdlp_strategies[attempt + 1:] = remaining
+                # Insert remaining proxy strategies right after current point
+                remaining = [(c, proxy) for c in _client_args(proxy)]
+                ytdlp_strategies[attempt + 1:attempt + 1] = remaining
         except subprocess.TimeoutExpired:
-            errors.append(f"yt-dlp strategy {attempt+1}{proxy_label}: timeout")
+            errors.append(f"yt-dlp strategy {attempt+1} ({label}): timeout")
         except Exception as e:
-            errors.append(f"yt-dlp strategy {attempt+1}{proxy_label}: {e}")
+            errors.append(f"yt-dlp strategy {attempt+1} ({label}): {e}")
 
     # pytubefix as final fallback (different HTTP stack, avoids some rate-limits)
     try:
@@ -1557,8 +1953,10 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     # min_score is 0-1 in our config; ClipForge uses 0-10 scale
     min_score_01 = float(cfg.get("min_score", 0.5))
     min_score_10 = min_score_01 * 10  # e.g. 0.5 → 5.0; default keeps 7.5 floor in AI prompt
+    vid_meta: dict = {}  # populated after transcription
+    yt_chapters: list[dict] = []  # populated from yt-dlp metadata if YouTube
 
-    output_quality = cfg.get("output_quality", "1080p")
+    output_quality = cfg.get("output_quality", "source")
     if output_quality == "source":
         _publish_progress(job_id, "metadata", 5, "processing",
                           "Full resolution selected — export will take longer than usual.")
@@ -1587,6 +1985,13 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         if yt_url:
             _publish_progress(job_id, "transcribe", 20, "processing",
                               "Checking YouTube for existing captions...")
+            # Fetch chapters from yt-dlp metadata for signal augmentation
+            try:
+                _yt_info = _ytdlp_fetch_json_worker(yt_url)
+                yt_chapters = _yt_info.get("chapters") or []
+                logging.info("Fetched %d YouTube chapters for signal augmentation", len(yt_chapters))
+            except Exception:
+                yt_chapters = []
             words = _fetch_youtube_captions(yt_url, language)
             if words:
                 _publish_progress(job_id, "transcribe", 35, "processing",
@@ -1614,7 +2019,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         # Generate AI metadata from full transcript
         if words:
             _publish_progress(job_id, "transcribe", 37, "processing", "Generating video metadata from transcript...")
-            vid_meta = _ai_generate_video_metadata(words, meta.duration, topic_focus)
+            vid_meta = _ai_generate_video_metadata(words, meta.duration, topic_focus) or {}
             if vid_meta:
                 _update_video(tenant_id, video_id, metadata=json.dumps(vid_meta))
                 _save_step_artifact(tenant_id, video_id, "video_metadata", vid_meta)
@@ -1626,11 +2031,22 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     _publish_progress(job_id, "scoring", 40, "processing", "Step 1: AI analyzing transcript for viral signals...")
     _update_video(tenant_id, video_id, pipeline_step="scoring", pipeline_pct=40)
 
+    # Extract content_type and key_moments from metadata for richer scoring
+    _content_type = "other"
+    _key_moments: list[dict] = []
+    if vid_meta:
+        _content_type = vid_meta.get("content_type", "other") or "other"
+        _key_moments = vid_meta.get("key_moments", []) or []
+
     clips = _ai_score_clips(
         words, meta.duration, num_clips, min_dur, max_dur,
         min_score_10=min_score_10,
         topic_focus=topic_focus,
         platforms=platforms,
+        content_type=_content_type,
+        key_moments=_key_moments,
+        source_path=source_path,
+        chapters=yt_chapters,
     )
 
     # Fill remaining slots with heuristic clips if AI returned fewer than requested
@@ -1807,6 +2223,8 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
     # ── Step 1: Load or generate transcript ───────────────────────────────────
     words: list[WordTimestamp] = []
     transcript_source = "none"
+    yt_chapters: list[dict] = []
+    source_path: str | None = None
 
     with _get_session(tenant_id) as session:
         tr_row = session.execute(
@@ -1833,6 +2251,11 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
         if yt_url:
             _publish_progress(job_id, "transcribe", 10, "processing",
                               "Fetching YouTube captions...")
+            try:
+                _yt_info = _ytdlp_fetch_json_worker(yt_url)
+                yt_chapters = _yt_info.get("chapters") or []
+            except Exception:
+                yt_chapters = []
             words = _fetch_youtube_captions(yt_url, language)
             if words:
                 transcript_source = "youtube_captions"
@@ -1914,6 +2337,8 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
         min_score_10=min_score_10,
         topic_focus=topic_focus,
         platforms=platforms,
+        source_path=source_path or "",
+        chapters=yt_chapters,
     )
 
     # Heuristic fill if AI returned fewer than requested
@@ -2061,6 +2486,40 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
             "thumbnail_url": thumbnail_url,
         })
 
+        # If all clips for this video are now ready/failed, delete the source from storage
+        if video_id:
+            try:
+                with _get_session(tenant_id) as session:
+                    counts = session.execute(
+                        text("""
+                            SELECT
+                                COUNT(*) FILTER (WHERE status IN ('pending_upload','uploading')) AS pending,
+                                COUNT(*) FILTER (WHERE status IN ('ready','upload_failed')) AS done
+                              FROM clips WHERE video_id = CAST(:vid AS uuid)
+                        """),
+                        {"vid": video_id},
+                    ).fetchone()
+                if counts and counts.pending == 0 and counts.done > 0:
+                    # All uploads settled — delete source video from cloud storage to save space
+                    with _get_session(tenant_id) as session:
+                        src_key_row = session.execute(
+                            text("SELECT original_storage_key FROM videos WHERE id = CAST(:vid AS uuid)"),
+                            {"vid": video_id},
+                        ).fetchone()
+                    if src_key_row and src_key_row.original_storage_key:
+                        import asyncio as _asyncio2
+                        from shared.storage.base import get_storage as _get_storage2
+                        async def _del_source():
+                            st = _get_storage2(os.getenv("STORAGE_PROVIDER", "local"))
+                            try:
+                                await st.delete(src_key_row.original_storage_key)
+                            except Exception:
+                                pass
+                        _asyncio2.run(_del_source())
+                        logging.info("Deleted source %s after all clips uploaded", src_key_row.original_storage_key)
+            except Exception as e:
+                logging.warning("Source cleanup check failed for video %s: %s", video_id, e)
+
     except Exception as exc:
         logging.exception("upload_clip_to_storage failed for clip %s (attempt %d)", clip_id, attempt)
         if self.request.retries >= self.max_retries:
@@ -2187,7 +2646,7 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         if meta.get("title") or meta.get("thumbnail_url"):
             _update_video(tenant_id, video_id, **{k: v for k, v in meta.items() if v})
 
-        _download_youtube(url, out_path, quality=cfg.get("output_quality", "1080p"))
+        _download_youtube(url, out_path, quality=cfg.get("output_quality", "source"))
         _publish_progress(job_id, "download", 15, "processing", "Download complete, processing...")
         run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url)
     except Exception as exc:

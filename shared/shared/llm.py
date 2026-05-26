@@ -362,6 +362,47 @@ def call_llm_json(
             last_err = e
             continue
 
+    # All providers rate-limited — wait for shortest dead-cache TTL then retry once
+    import time
+    with _probe_cache_lock:
+        dead_expires = [exp for (alive, exp) in _probe_cache.values() if not alive]
+    if dead_expires:
+        wait = max(0.0, min(dead_expires) - time.monotonic())
+        if wait > 0:
+            log.warning("[LLM] All providers dead — waiting %.1fs for cache expiry then retrying", wait)
+            time.sleep(wait + 0.5)
+            # Retry once after wait
+            for p in _get_providers():
+                api_key, base_url = _resolve_provider(p)
+                if not api_key:
+                    continue
+                model = p["model_large"] if prefer_large else p["model_small"]
+                name = p["name"]
+                if not _probe_cached(name, api_key, base_url, model, p["json_mode"]):
+                    continue
+                client = _make_client(api_key, base_url)
+                log.info(f"[LLM] Retry provider: {name} / {model}")
+                try:
+                    kwargs: dict = {
+                        "model": model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                    }
+                    if p["json_mode"]:
+                        kwargs["response_format"] = {"type": "json_object"}
+                    resp = client.chat.completions.create(**kwargs)
+                    content = (resp.choices[0].message.content or "").strip()
+                    result = _parse_json(content)
+                    log.info(f"[LLM] {name} retry succeeded")
+                    return result
+                except Exception as e:
+                    err_str = str(e)
+                    if "429" in err_str or "rate_limit" in err_str.lower():
+                        _invalidate_provider_cache(name)
+                    last_err = e
+                    continue
+
     raise RuntimeError(
         f"All free LLM providers exhausted. Tried: {', '.join(attempts) or 'none configured'}. "
         f"Last error: {last_err}"

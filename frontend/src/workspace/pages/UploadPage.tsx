@@ -31,7 +31,7 @@ export const DEFAULT_CONFIG: ClipConfig = {
   min_score: 0.5,
   platforms: ["tiktok","reels","shorts"],
   topic_focus: null,
-  add_captions: true,
+  add_captions: false,
   caption_style: "capcut",
   aspect_ratio: "9:16",
   duration_min: 20,
@@ -700,6 +700,14 @@ function SocialConnectBanner() {
 }
 
 /* ─── Processing view (SSE + polling fallback) ─── */
+type LiveEvent = {
+  id: string;
+  kind: "clip_ready" | "clip_uploading" | "clips_ready" | "info";
+  label: string;
+  thumbnail?: string;
+  ts: number;
+};
+
 function ProcessingView({
   video,
   onDone,
@@ -712,11 +720,16 @@ function ProcessingView({
   const [current, setCurrent] = useState(video);
   const [liveMsg, setLiveMsg] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>(video.error_message ?? "");
+  const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const doneRef = useRef(false);
-  const sseActiveRef = useRef(false); // true while SSE connection is healthy
+  const sseActiveRef = useRef(false);
+  const clipCountRef = useRef(0);
 
   const isTerminal = (v: VideoResponse) =>
     v.status === "done" || v.status === "ready" || v.status === "failed" || v.pipeline_step === "complete";
+
+  const pushEvent = (ev: Omit<LiveEvent, "id" | "ts">) =>
+    setLiveEvents((prev) => [{ ...ev, id: Math.random().toString(36).slice(2), ts: Date.now() }, ...prev].slice(0, 20));
 
   // SSE — primary real-time progress channel
   useEffect(() => {
@@ -732,9 +745,38 @@ function ProcessingView({
       try {
         const d = JSON.parse(e.data);
         if (d.type === "keepalive") return;
+
+        // Pipeline progress
         if (d.message) setLiveMsg(d.message);
         if (d.pct != null) setCurrent((prev) => ({ ...prev, pipeline_pct: d.pct, pipeline_step: d.step ?? prev.pipeline_step }));
         if (d.status === "failed" && d.message) setErrorMsg(d.message);
+
+        // Clip upload events
+        if (d.event === "clip_upload_complete") {
+          clipCountRef.current += 1;
+          pushEvent({
+            kind: "clip_ready",
+            label: `Clip ${clipCountRef.current} uploaded`,
+            thumbnail: d.thumbnail_url ?? undefined,
+          });
+        }
+        if (d.event === "clips_ready") {
+          pushEvent({ kind: "clips_ready", label: `${d.count ?? ""} clips ready — uploading to cloud…` });
+        }
+        // Step transitions worth surfacing
+        if (d.step && d.step !== "keepalive") {
+          const stepLabels: Record<string, string> = {
+            download: "Downloading video…",
+            upload: "Uploading to storage…",
+            transcribe: "Transcribing speech…",
+            scoring: "Finding viral moments…",
+            export: "Rendering clips…",
+            captions: "Burning captions…",
+            complete: "All done!",
+          };
+          if (stepLabels[d.step]) pushEvent({ kind: "info", label: stepLabels[d.step] });
+        }
+
         if (d.status === "complete" || d.status === "failed") {
           es.close();
           sseActiveRef.current = false;
@@ -825,7 +867,8 @@ function ProcessingView({
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="flex gap-4 items-start">
+      <div className="flex-1 space-y-2">
         {PROC_STEPS.map((step, i) => {
           const done = overallPct === 100 ? true : i < stepIdx;
           const active = !done && i === stepIdx;
@@ -870,6 +913,69 @@ function ProcessingView({
             </div>
           );
         })}
+      </div>
+
+      {/* Live SSE event feed */}
+      {liveEvents.length > 0 && (
+      <div className="w-72 shrink-0">
+        <div className="overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0a0f1a]">
+          {/* Header */}
+          <div className="flex items-center gap-2 border-b border-white/[.06] px-3.5 py-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff3d6a] opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#ff3d6a]" />
+            </span>
+            <span className="text-[11px] font-semibold uppercase tracking-[.08em] text-zinc-500">Live</span>
+          </div>
+
+          {/* Events list */}
+          <div className="divide-y divide-white/[.04]">
+            {liveEvents.map((ev) => (
+              <div
+                key={ev.id}
+                className="flex items-center gap-3 px-3.5 py-2.5"
+                style={{ animation: "fadeUp .2s ease" }}
+              >
+                {/* Icon or thumbnail */}
+                {ev.thumbnail ? (
+                  <img
+                    src={ev.thumbnail}
+                    alt=""
+                    className="h-8 w-[46px] flex-none rounded-[5px] object-cover"
+                  />
+                ) : (
+                  <div className={cn(
+                    "grid h-7 w-7 flex-none place-items-center rounded-[6px] border text-[11px]",
+                    ev.kind === "clip_ready"    ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-300"
+                  : ev.kind === "clips_ready"   ? "border-[#ff3d6a]/20 bg-[#ff3d6a]/10 text-[#ff3d6a]"
+                  : "border-white/[.07] bg-white/[.03] text-zinc-500"
+                  )}>
+                    {ev.kind === "clip_ready"   ? "✓"
+                   : ev.kind === "clips_ready"  ? "✦"
+                   : "›"}
+                  </div>
+                )}
+
+                {/* Label */}
+                <span className={cn(
+                  "flex-1 text-[12px] leading-snug",
+                  ev.kind === "clip_ready"   ? "font-medium text-emerald-300"
+                : ev.kind === "clips_ready"  ? "font-semibold text-white"
+                : "text-zinc-400"
+                )}>
+                  {ev.label}
+                </span>
+
+                {/* Time ago */}
+                <span className="flex-none font-mono text-[10px] text-zinc-700">
+                  {Math.round((Date.now() - ev.ts) / 1000)}s ago
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      )}
       </div>
     </div>
   );
