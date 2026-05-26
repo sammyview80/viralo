@@ -15,6 +15,7 @@ celery_app = Celery(
         "workers.tasks.agent",
         "workers.tasks.post",
         "workers.tasks.notification",
+        "workers.tasks.websub",
     ],
 )
 
@@ -37,6 +38,10 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "process-due-posts": {
         "task": "workers.tasks.post.process_due_posts",
-        "schedule": 60.0,  # every 60 seconds
+        "schedule": 60.0,
+    },
+    "renew-websub-subscriptions": {
+        "task": "workers.tasks.websub.renew_websub_subscriptions",
+        "schedule": crontab(hour=2, minute=0, day_of_week="*/3"),  # every 3 days at 02:00 UTC
     },
 }

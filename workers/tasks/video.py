@@ -1269,9 +1269,18 @@ def _render_clip_streamcopy(
     if target_width != src_w or target_height != src_h:
         vf_parts.append(f"scale={target_width}:{target_height}:flags=lanczos")
 
-    # Always re-encode — most compatible across all source codecs/containers.
-    # CRF 18 = visually lossless H.264; AAC 192k audio (avoids stream-copy codec mismatch).
-    # -map 0:a:0? = optional audio (won't fail if source has no audio track).
+    # Cap output at 1080p long-edge — social platforms don't serve beyond 1080p,
+    # and 4K AV1 decode at clip time is too slow (~0.4 fps on ARM containers).
+    long_edge = max(src_w, src_h)
+    if long_edge > 1080:
+        scale_factor = 1080 / long_edge
+        scaled_w = int(src_w * scale_factor) & ~1
+        scaled_h = int(src_h * scale_factor) & ~1
+        if vf_parts:
+            vf_parts.append(f"scale={scaled_w}:{scaled_h}:flags=lanczos")
+        else:
+            vf_parts.append(f"scale={scaled_w}:{scaled_h}:flags=lanczos")
+
     vf_str = ",".join(vf_parts) if vf_parts else "null"
     cmd = [
         "ffmpeg", "-y",
@@ -1282,8 +1291,8 @@ def _render_clip_streamcopy(
         "-map", "0:a:0?",
         "-vf", vf_str,
         "-c:v", "libx264",
-        "-crf", "17",
-        "-preset", "slow",
+        "-crf", "18",
+        "-preset", "veryfast",
         "-profile:v", "high",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
@@ -1292,7 +1301,7 @@ def _render_clip_streamcopy(
         output_path,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0 or not Path(output_path).exists() or Path(output_path).stat().st_size < 1000:
         raise RuntimeError(f"ffmpeg render failed: {result.stderr[-600:]}")
 
@@ -1772,7 +1781,12 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> lis
     if use_cookies and not proxy:
         cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
         if cookies_file and Path(cookies_file).exists():
-            flags += ["--cookies", cookies_file]
+            # Copy to writable temp path — source file is mounted read-only
+            writable_cookies = "/tmp/yt-cookies-rw.txt"
+            if not Path(writable_cookies).exists():
+                import shutil as _shutil
+                _shutil.copy2(cookies_file, writable_cookies)
+            flags += ["--cookies", writable_cookies]
     if proxy:
         flags += ["--proxy", proxy]
     return flags
@@ -1805,14 +1819,17 @@ def _download_youtube(url: str, out_path: str, quality: str = "source") -> None:
         """Return ordered strategy list — best quality first, fallbacks after."""
         base = _ytdlp_base_flags(proxy)
         return [
-            # Best: any codec (VP9/AV1 for 4K), remux to mp4
+            # android_testsuite: bypasses bot detection, unlocks 4K AV1/VP9 streams
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_testsuite",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # Default client with best format
             ["yt-dlp"] + base + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Android client — sometimes unlocks higher res streams
+            # android client — different quota bucket
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # mp4-only fallback (no VP9/AV1 — caps at 1080p on most videos)
+            # mp4-only fallback (H.264 only — caps at 1080p on most videos)
             ["yt-dlp"] + base + ["-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Last resort: mweb client, best available
+            # Last resort: mweb client
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=mweb",
                                   "-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
         ]
