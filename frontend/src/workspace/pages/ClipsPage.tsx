@@ -550,7 +550,8 @@ export function ClipsPage() {
 
       sseSourcesRef.current.set(videoId, es);
     }
-  }, [clips.map((c) => `${c.id}:${c.status}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useMemo(() => clips.map((c) => `${c.id}:${c.status}`).join(","), [clips])]);
 
   // Cleanup on unmount
   useEffect(() => {

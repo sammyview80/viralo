@@ -133,48 +133,52 @@ export const onboarding = {
   skip:     ()                                  => req<FinalizeResponse>("POST", "/onboarding/skip"),
 };
 
-/* ─── Video service (port 8003) ─── */
-const VIDEO_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+/* ─── Generic service client factory — one per microservice ─── */
+function createServiceClient(getBase: () => string) {
+  async function _fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
 
-async function _videoFetch<T>(method: string, path: string, body?: unknown | FormData): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
-
-  let fetchBody: BodyInit | undefined;
-  if (body instanceof FormData) {
-    fetchBody = body; // browser sets multipart Content-Type with boundary
-  } else if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    fetchBody = JSON.stringify(body);
-  }
-
-  const res = await fetch(`${VIDEO_BASE}${path}`, {
-    method, headers, credentials: "include", body: fetchBody,
-  });
-
-  if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
-    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
-    throw new ApiError(res.status, msg);
-  }
-  return data as T;
-}
-
-async function videoReq<T>(method: string, path: string, body?: unknown | FormData): Promise<T> {
-  try {
-    return await _videoFetch<T>(method, path, body);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      const newToken = await doRefresh();
-      _accessToken = newToken;
-      return _videoFetch<T>(method, path, body);
+    let fetchBody: BodyInit | undefined;
+    if (body instanceof FormData) {
+      fetchBody = body;
+    } else if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      fetchBody = JSON.stringify(body);
     }
-    throw err;
+
+    const res = await fetch(`${getBase()}${path}`, {
+      method, headers, credentials: "include", body: fetchBody,
+    });
+
+    if (res.status === 204) return undefined as T;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
+      const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
+      throw new ApiError(res.status, msg);
+    }
+    return data as T;
   }
+
+  async function serviceReq<T>(method: string, path: string, body?: unknown): Promise<T> {
+    try {
+      return await _fetch<T>(method, path, body);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        const newToken = await doRefresh();
+        _accessToken = newToken;
+        return _fetch<T>(method, path, body);
+      }
+      throw err;
+    }
+  }
+
+  return serviceReq;
 }
+
+/* ─── Video service (port 8003) ─── */
+const videoReq = createServiceClient(() => import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1");
 
 export interface VideoResponse {
   id: string;
@@ -296,37 +300,7 @@ export const videoApi = {
 };
 
 /* ─── Platform service (port 8006) ─── */
-const PLATFORM_BASE = import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1";
-
-async function _platformFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
-  const res = await fetch(`${PLATFORM_BASE}${path}`, {
-    method, headers, credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
-    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
-    throw new ApiError(res.status, msg);
-  }
-  return data as T;
-}
-
-async function platformReq<T>(method: string, path: string, body?: unknown): Promise<T> {
-  try {
-    return await _platformFetch<T>(method, path, body);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      const newToken = await doRefresh();
-      _accessToken = newToken;
-      return _platformFetch<T>(method, path, body);
-    }
-    throw err;
-  }
-}
+const platformReq = createServiceClient(() => import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1");
 
 /* ─── Platform types ─── */
 export interface SocialAccount {
@@ -486,37 +460,7 @@ export const notificationApi = {
 };
 
 /* ─── Agent API (via nginx) ─── */
-const AGENT_BASE = import.meta.env.VITE_AGENT_BASE ?? "http://localhost:8004/api/v1";
-
-async function _agentFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
-  const res = await fetch(`${AGENT_BASE}${path}`, {
-    method, headers, credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
-    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
-    throw new ApiError(res.status, msg);
-  }
-  return data as T;
-}
-
-async function agentReq<T>(method: string, path: string, body?: unknown): Promise<T> {
-  try {
-    return await _agentFetch<T>(method, path, body);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      const newToken = await doRefresh();
-      _accessToken = newToken;
-      return _agentFetch<T>(method, path, body);
-    }
-    throw err;
-  }
-}
+const agentReq = createServiceClient(() => import.meta.env.VITE_AGENT_BASE ?? "http://localhost:8004/api/v1");
 
 export interface TagSuggestRequest {
   topic: string;

@@ -1,35 +1,27 @@
-import { useState, useEffect } from "react";
 import { notificationApi, token } from "@/lib/api";
 import type { AppNotification as Notification } from "@/lib/api";
+import { createStore } from "@/lib/store";
 
 const PLATFORM_BASE = import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1";
-
-type Listener = () => void;
-const listeners = new Set<Listener>();
 
 interface Toast {
   id: string;
   notification: Notification;
 }
 
-interface State {
+interface NotificationState {
   notifications: Notification[];
   unreadCount: number;
   open: boolean;
   toasts: Toast[];
 }
 
-let state: State = {
+const { setState, getState, useStore } = createStore<NotificationState>({
   notifications: [],
   unreadCount: 0,
   open: false,
   toasts: [],
-};
-
-function setState(next: Partial<State>) {
-  state = { ...state, ...next };
-  listeners.forEach((l) => l());
-}
+});
 
 export async function fetchUnreadCount() {
   try {
@@ -52,9 +44,10 @@ export async function fetchNotifications() {
 export async function markRead(id: string) {
   try {
     await notificationApi.markRead(id);
+    const { notifications, unreadCount } = getState();
     setState({
-      notifications: state.notifications.map((n) => n.id === id ? { ...n, is_read: true } : n),
-      unreadCount: Math.max(0, state.unreadCount - 1),
+      notifications: notifications.map((n) => n.id === id ? { ...n, is_read: true } : n),
+      unreadCount: Math.max(0, unreadCount - 1),
     });
   } catch {
     // ignore
@@ -65,7 +58,7 @@ export async function markAllRead() {
   try {
     await notificationApi.markAllRead();
     setState({
-      notifications: state.notifications.map((n) => ({ ...n, is_read: true })),
+      notifications: getState().notifications.map((n) => ({ ...n, is_read: true })),
       unreadCount: 0,
     });
   } catch {
@@ -76,7 +69,7 @@ export async function markAllRead() {
 export async function deleteNotification(id: string) {
   try {
     await notificationApi.delete(id);
-    setState({ notifications: state.notifications.filter((n) => n.id !== id) });
+    setState({ notifications: getState().notifications.filter((n) => n.id !== id) });
   } catch {
     // ignore
   }
@@ -88,14 +81,15 @@ export function setOpen(open: boolean) {
 }
 
 export function addToast(notification: Notification) {
-  const toasts = state.toasts.length >= 3
-    ? [...state.toasts.slice(1), { id: notification.id, notification }]
-    : [...state.toasts, { id: notification.id, notification }];
-  setState({ toasts });
+  const { toasts } = getState();
+  const next = toasts.length >= 3
+    ? [...toasts.slice(1), { id: notification.id, notification }]
+    : [...toasts, { id: notification.id, notification }];
+  setState({ toasts: next });
 }
 
 export function removeToast(id: string) {
-  setState({ toasts: state.toasts.filter((t) => t.id !== id) });
+  setState({ toasts: getState().toasts.filter((t) => t.id !== id) });
 }
 
 let _sseCleanup: (() => void) | null = null;
@@ -140,10 +134,8 @@ export function connectSSE(): () => void {
         buffer = chunks.pop() ?? "";
         for (const chunk of chunks) {
           const lines = chunk.split("\n");
-          let eventType = "";
           let dataStr = "";
           for (const line of lines) {
-            if (line.startsWith("event:")) eventType = line.slice(6).trim();
             if (line.startsWith("data:")) dataStr = line.slice(5).trim();
           }
           if (!dataStr) continue;
@@ -151,7 +143,7 @@ export function connectSSE(): () => void {
             const notification = JSON.parse(dataStr) as Notification;
             if (!notification.id || (notification as { type?: string }).type === "keepalive") continue;
             addToast(notification);
-            setState({ unreadCount: state.unreadCount + 1 });
+            setState({ unreadCount: getState().unreadCount + 1 });
           } catch {
             // ignore malformed
           }
@@ -178,14 +170,8 @@ export function connectSSE(): () => void {
 }
 
 export function useNotificationStore() {
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const rerender = () => tick((n) => n + 1);
-    listeners.add(rerender);
-    return () => { listeners.delete(rerender); };
-  }, []);
   return {
-    ...state,
+    ...useStore(),
     fetchUnreadCount,
     fetchNotifications,
     markRead,

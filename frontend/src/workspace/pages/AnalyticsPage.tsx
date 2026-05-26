@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Shell } from "../Shell";
 import { platformApi, AnalyticsOverview, PostAnalytics } from "@/lib/api";
+import { useQuery } from "@/lib/query";
 import { Pagination } from "../components/Pagination";
 
 type Period = "7d" | "30d" | "90d";
@@ -81,37 +82,22 @@ const PAGE_SIZE = 10;
 
 export function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>("30d");
-  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
-  const [posts, setPosts] = useState<PostAnalytics[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [loadingOverview, setLoadingOverview] = useState(true);
-  const [loadingPosts, setLoadingPosts] = useState(true);
-  const [errorOverview, setErrorOverview] = useState<string | null>(null);
-  const [errorPosts, setErrorPosts] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLoadingOverview(true);
-    setErrorOverview(null);
-    platformApi
-      .analyticsOverview(period)
-      .then(setOverview)
-      .catch((e: Error) => setErrorOverview(e.message))
-      .finally(() => setLoadingOverview(false));
-  }, [period]);
+  const { data: overview, loading: loadingOverview, error: errorOverview } = useQuery(
+    `analytics:overview:${period}`,
+    () => platformApi.analyticsOverview(period),
+    { ttl: 60_000 },
+  );
 
-  useEffect(() => {
-    setLoadingPosts(true);
-    setErrorPosts(null);
-    platformApi
-      .analyticsPosts(page, PAGE_SIZE)
-      .then((res) => {
-        setPosts(res.items);
-        setTotal(res.total);
-      })
-      .catch((e: Error) => setErrorPosts(e.message))
-      .finally(() => setLoadingPosts(false));
-  }, [page]);
+  const { data: postsPage, loading: loadingPosts, error: errorPosts } = useQuery(
+    `analytics:posts:${page}`,
+    () => platformApi.analyticsPosts(page, PAGE_SIZE),
+    { ttl: 60_000 },
+  );
+
+  const posts = postsPage?.items ?? [];
+  const total = postsPage?.total ?? 0;
 
   const isEmpty = !loadingPosts && !errorPosts && posts.length === 0 && !loadingOverview && overview !== null && overview.posts_count === 0;
 
