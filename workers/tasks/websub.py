@@ -6,6 +6,7 @@ WebSub (PubSubHubbub) tasks.
 """
 import hashlib
 import hmac
+import json
 import logging
 import os
 import uuid
@@ -96,11 +97,15 @@ def subscribe_channel(channel_id: str, tenant_id: str, channel_name: str = "", c
     """Subscribe to a channel and store in DB. Called when user adds a channel."""
     ok = _subscribe(channel_id)
     now = datetime.now(timezone.utc)
+    try:
+        tid = uuid.UUID(tenant_id) if tenant_id else uuid.uuid4()
+    except ValueError:
+        tid = uuid.uuid4()
 
     with Session(engine) as db:
         existing = db.execute(
             text("SELECT id FROM channel_subscriptions WHERE channel_id = :cid AND tenant_id = :tid"),
-            {"cid": channel_id, "tid": uuid.UUID(tenant_id)},
+            {"cid": channel_id, "tid": tid},
         ).fetchone()
 
         if existing:
@@ -113,9 +118,9 @@ def subscribe_channel(channel_id: str, tenant_id: str, channel_name: str = "", c
                     WHERE channel_id = :cid AND tenant_id = :tid
                 """),
                 {
-                    "cid": channel_id, "tid": uuid.UUID(tenant_id),
+                    "cid": channel_id, "tid": tid,
                     "now": now, "expires": now + timedelta(seconds=LEASE_SECONDS),
-                    "ap": auto_publish, "cfg": auto_publish_config or {},
+                    "ap": auto_publish, "cfg": json.dumps(auto_publish_config or {}),
                 },
             )
         else:
@@ -131,9 +136,9 @@ def subscribe_channel(channel_id: str, tenant_id: str, channel_name: str = "", c
                          :now, :expires, :now, :now)
                 """),
                 {
-                    "id": uuid.uuid4(), "tid": uuid.UUID(tenant_id),
+                    "id": uuid.uuid4(), "tid": tid,
                     "cid": channel_id, "name": channel_name, "url": channel_url,
-                    "ap": auto_publish, "cfg": auto_publish_config or {},
+                    "ap": auto_publish, "cfg": json.dumps(auto_publish_config or {}),
                     "now": now, "expires": now + timedelta(seconds=LEASE_SECONDS),
                 },
             )
@@ -212,7 +217,7 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
             "channel_id": channel_id,
         }
         process_youtube_video.apply_async(
-            args=[video_url, str(tenant_id), job_id, cfg],
+            args=[str(tenant_id), job_id, video_url, cfg],
             queue="viralo.video.generate",
         )
         # Update delivery with job_id
