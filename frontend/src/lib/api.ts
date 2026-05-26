@@ -450,6 +450,27 @@ export const platformApi = {
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
 
+export interface ChannelSubscription {
+  id: string;
+  channel_id: string;
+  channel_name: string | null;
+  channel_url: string | null;
+  auto_publish: boolean;
+  active: boolean;
+  subscribed_at: string | null;
+  lease_expires_at: string | null;
+  last_video_id: string | null;
+  last_notified_at: string | null;
+  created_at: string;
+}
+
+export const channelsApi = {
+  list: () => platformReq<ChannelSubscription[]>("GET", "/websub/channels"),
+  subscribe: (body: { channel_id: string; channel_name?: string; channel_url?: string; auto_publish?: boolean }) =>
+    platformReq<{ channel_id: string; status: string }>("POST", "/websub/channels", body),
+  unsubscribe: (channelId: string) => platformReq<void>("DELETE", `/websub/channels/${channelId}`),
+};
+
 export const notificationApi = {
   list: (unread?: boolean, page = 1) =>
     platformReq<NotificationListResponse | AppNotification[]>("GET", `/notifications?page=${page}&per_page=20${unread ? "&unread=true" : ""}`)

@@ -5,6 +5,7 @@ import type { PageKey } from "@/workspace/types";
 const AnalyticsPage    = lazy(() => import("@/workspace/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
 const BrainstormPage   = lazy(() => import("@/workspace/pages/BrainstormPage").then((m) => ({ default: m.BrainstormPage })));
 const ClipsPage        = lazy(() => import("@/workspace/pages/ClipsPage").then((m) => ({ default: m.ClipsPage })));
+const ChannelsPage     = lazy(() => import("@/workspace/pages/ChannelsPage"));
 const IntegrationsPage = lazy(() => import("@/workspace/pages/IntegrationsPage").then((m) => ({ default: m.IntegrationsPage })));
 const OnboardingPage   = lazy(() => import("@/workspace/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 const ProjectsPage     = lazy(() => import("@/workspace/pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
@@ -24,6 +25,7 @@ const pages: Record<PageKey, React.ReactNode> = {
   workflows:    <WorkflowsPage />,
   scheduler:    <SchedulerPage />,
   integrations: <IntegrationsPage />,
+  channels:     <ChannelsPage />,
   onboarding:   <OnboardingPage />,
   analytics:    <AnalyticsPage />,
   trending:     <TrendingPage />,
