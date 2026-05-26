@@ -3,6 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Shell } from "../Shell";
 import { channelsApi, type ChannelSubscription, type ChannelVideo } from "@/lib/api";
+import { navigate } from "@/lib/router";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 function extractChannelId(input: string): string {
   if (/^UC[\w-]{22}$/.test(input.trim())) return input.trim();
@@ -273,34 +281,53 @@ function ChannelCard({ channel, onUnsubscribe }: ChannelCardProps) {
           ) : (
             <div className="divide-y divide-zinc-800/60 max-h-80 overflow-y-auto">
               {videos.map((v) => (
-                <a
-                  key={v.video_id}
-                  href={v.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex gap-3 p-3 hover:bg-zinc-800/40 transition-colors group/video"
-                >
-                  <div className="relative flex-shrink-0 w-24 h-[54px] rounded overflow-hidden bg-zinc-800">
-                    <img
-                      src={v.thumbnail}
-                      alt={v.title}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/video:opacity-100 transition-opacity bg-black/40">
-                      <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5"><path d="M8 5v14l11-7z"/></svg>
+                <DropdownMenu key={v.video_id}>
+                  <DropdownMenuTrigger asChild>
+                    <div className="flex gap-3 p-3 hover:bg-zinc-800/40 transition-colors group/video cursor-pointer">
+                      <div className="relative flex-shrink-0 w-24 h-[54px] rounded overflow-hidden bg-zinc-800">
+                        <img src={v.thumbnail} alt={v.title} className="w-full h-full object-cover" loading="lazy" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/video:opacity-100 transition-opacity bg-black/50">
+                          <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5"><path d="M8 5v14l11-7z"/></svg>
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0 py-0.5">
+                        <p className="text-xs text-zinc-200 font-medium line-clamp-2 leading-tight group-hover/video:text-white">
+                          {v.title}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] text-zinc-500">{formatDate(v.published)}</span>
+                          {v.views && <span className="text-[10px] text-zinc-500">{formatViews(v.views)}</span>}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 flex items-center opacity-0 group-hover/video:opacity-100 transition-opacity">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-zinc-500">
+                          <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+                        </svg>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex-1 min-w-0 py-0.5">
-                    <p className="text-xs text-zinc-200 font-medium line-clamp-2 leading-tight group-hover/video:text-white">
-                      {v.title}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className="text-[10px] text-zinc-500">{formatDate(v.published)}</span>
-                      {v.views && <span className="text-[10px] text-zinc-500">{formatViews(v.views)}</span>}
-                    </div>
-                  </div>
-                </a>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44 bg-zinc-900 border-zinc-700 text-zinc-200">
+                    <DropdownMenuItem
+                      className="gap-2 cursor-pointer hover:bg-zinc-800 focus:bg-zinc-800 text-[#ff3d6a] focus:text-[#ff3d6a]"
+                      onClick={() => navigate(`/studio?type=youtube&url=${encodeURIComponent(v.url)}`)}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                      </svg>
+                      Clip it
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-zinc-700" />
+                    <DropdownMenuItem
+                      className="gap-2 cursor-pointer hover:bg-zinc-800 focus:bg-zinc-800"
+                      onClick={() => window.open(v.url, "_blank")}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>
+                      </svg>
+                      Open in YouTube
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ))}
             </div>
           )}
