@@ -189,7 +189,11 @@ async def _resolve_channel_id(input_str: str) -> tuple[str, str]:
                     "Accept-Language": "en-US,en;q=0.9",
                 })
             # Extract channelId from page HTML
-            cid_match = _re.search(r'"channelId":"(UC[\w-]{22})"', r.text)
+            cid_match = (
+                _re.search(r'"externalId":"(UC[\w-]{22})"', r.text) or
+                _re.search(r'"channelId":"(UC[\w-]{22})"', r.text) or
+                _re.search(r'"browseId":"(UC[\w-]{22})"', r.text)
+            )
             name_match = (
                 _re.search(r'"og:title" content="([^"]+)"', r.text) or
                 _re.search(r'"channelName":"([^"]+)"', r.text) or
