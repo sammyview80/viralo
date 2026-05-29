@@ -43,6 +43,8 @@ AUDIO_BITRATE = 256_000  # 256kbps — high fidelity AAC
 CAPTION_BURN_MAX_SECONDS = 120
 CAPTION_LEAD_SEC = 0.10  # Whisper/Groq word timestamps lag ~100ms; shift captions earlier
 MAX_VIDEO_DURATION_SEC = 1800  # 30 minutes — reject longer videos before download
+# Tenants in this set bypass the duration limit (comma-separated emails in env)
+_UNLIMITED_EMAILS = {e.strip().lower() for e in os.getenv("UNLIMITED_DURATION_EMAILS", "aman@viralo.com").split(",") if e.strip()}
 
 REFRAME_PRESETS = {
     "9:16":  (1080, 1920, "9:16"),
@@ -134,6 +136,19 @@ class VideoMeta:
 
 
 # ── DB / Redis helpers ────────────────────────────────────────────────────────
+
+def _is_unlimited(tenant_id: str) -> bool:
+    """Return True if this tenant has no duration limit."""
+    try:
+        with Session(engine) as s:
+            row = s.execute(
+                text("SELECT email FROM users WHERE id = CAST(:tid AS uuid) LIMIT 1"),
+                {"tid": str(tenant_id)},
+            ).fetchone()
+        return bool(row and row[0] and row[0].lower() in _UNLIMITED_EMAILS)
+    except Exception:
+        return False
+
 
 @contextmanager
 def _get_session(tenant_id: str):
@@ -1715,7 +1730,7 @@ def _render_clip_streamcopy(
             output_path,
         ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
     out_ok = Path(output_path).exists() and Path(output_path).stat().st_size >= 1000
     if result.returncode != 0 or not out_ok:
         err = result.stderr
@@ -1786,7 +1801,7 @@ def _render_clip_ffmpeg_captions(
     ]
 
     try:
-        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
+        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=240)
         if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
             err = r1.stderr
             excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
@@ -1958,17 +1973,14 @@ def _render_clip(
 
 
 def _generate_thumbnail(source_path: str, clip: ClipResult, output_path: str) -> None:
-    import av
     midpoint = clip.start + (clip.end - clip.start) / 2
-    with av.open(source_path) as src:
-        v_stream = next((s for s in src.streams if s.type == "video"), None)
-        if not v_stream:
-            return
-        src.seek(int(midpoint * 1_000_000))
-        for frame in src.decode(v_stream):
-            img = frame.to_image()
-            img.save(output_path, "JPEG", quality=95, subsampling=0)
-            break
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-ss", str(midpoint), "-i", source_path,
+         "-vframes", "1", "-q:v", "2", "-f", "image2", output_path],
+        capture_output=True, timeout=30,
+    )
+    if result.returncode != 0 or not Path(output_path).exists():
+        raise RuntimeError(f"Thumbnail failed: {result.stderr[-200:]}")
 
 
 # ── Stage 7b: AI content generation (title + per-platform copy) ───────────────
@@ -3540,7 +3552,7 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         # Enforce max duration before running the full pipeline
         try:
             probe = _probe_video(source)
-            if probe.duration > MAX_VIDEO_DURATION_SEC:
+            if probe.duration > MAX_VIDEO_DURATION_SEC and not _is_unlimited(tenant_id):
                 mins = int(probe.duration // 60)
                 raise ValueError(
                     f"Video is {mins} minutes long. Maximum supported length is "
@@ -3554,19 +3566,37 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         run_video_pipeline(tenant_id, video_id, source, job_id, cfg)
     except SoftTimeLimitExceeded:
         import gc
-        msg = "Processing timed out after 20 minutes — video may be too long or complex."
+        msg = "Processing timed out (20 min limit). Try a shorter video or lower clip count."
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
         _publish_progress(job_id, "failed", 0, "failed", msg)
         gc.collect()
         raise
     except (FileNotFoundError, ValueError) as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise
+        msg = str(exc)[:400]
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        raise  # non-retryable
+    except subprocess.TimeoutExpired:
+        msg = "Rendering timed out. Try fewer clips or a lower quality setting."
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        raise self.retry(exc=RuntimeError(msg), countdown=60, max_retries=1)
+    except RuntimeError as exc:
+        err = str(exc)
+        if "ffmpeg" in err.lower() or "render" in err.lower():
+            msg = "Video rendering failed. Try a different quality setting."
+        else:
+            msg = f"Processing error: {err[:200]}"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        raise self.retry(exc=exc, countdown=min(30 * (2 ** retry_n), 300), max_retries=2)
     except Exception as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise self.retry(exc=exc, countdown=30)
+        msg = f"Unexpected error: {str(exc)[:150]}"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        raise self.retry(exc=exc, countdown=min(60 * (2 ** retry_n), 600), max_retries=2)
 
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_youtube_video",
@@ -3596,7 +3626,7 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
                 "Live and upcoming streams are not supported. Please use a recorded video."
             )
         yt_duration = yt_info.get("duration")
-        if yt_duration and yt_duration > MAX_VIDEO_DURATION_SEC:
+        if yt_duration and yt_duration > MAX_VIDEO_DURATION_SEC and not _is_unlimited(tenant_id):
             mins = int(yt_duration // 60)
             raise ValueError(
                 f"Video is {mins} minutes long. Maximum supported length is "
@@ -3616,20 +3646,42 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url, yt_meta=meta)
     except SoftTimeLimitExceeded:
         import gc
-        msg = "Processing timed out after 20 minutes — video may be too long or complex."
+        msg = "Processing timed out (20 min limit). Try a shorter video or lower clip count."
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
         _publish_progress(job_id, "failed", 0, "failed", msg)
         gc.collect()
         raise
     except ValueError as exc:
-        # Non-retryable (bad input: too long, invalid URL, etc.)
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise
+        msg = str(exc)[:400]
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        raise  # non-retryable — bad input
+    except subprocess.TimeoutExpired:
+        msg = "Video download or rendering timed out. The video may be too large or the server is busy."
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        raise self.retry(exc=RuntimeError(msg), countdown=60, max_retries=2)
+    except RuntimeError as exc:
+        err = str(exc)
+        if "429" in err or "rate" in err.lower():
+            msg = "AI providers are busy right now. Retrying automatically..."
+        elif "download" in err.lower() or "yt-dlp" in err.lower():
+            msg = "Failed to download video. The URL may be private, geo-blocked, or unsupported."
+        elif "ffmpeg" in err.lower() or "render" in err.lower():
+            msg = "Video rendering failed. Try a shorter clip duration or lower quality setting."
+        else:
+            msg = f"Processing error: {err[:200]}"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        raise self.retry(exc=exc, countdown=min(30 * (2 ** retry_n), 300), max_retries=2)
     except Exception as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise self.retry(exc=exc, countdown=30)
+        err = str(exc)[:300]
+        msg = f"Unexpected error during processing. Our team has been notified. ({err[:120]})"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        raise self.retry(exc=exc, countdown=min(60 * (2 ** retry_n), 600), max_retries=2)
 
 
 @celery_app.task(
