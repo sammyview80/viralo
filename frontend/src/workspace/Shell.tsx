@@ -9,6 +9,7 @@ import { NotificationBell } from "./components/NotificationBell";
 import { ToastContainer } from "./components/ToastContainer";
 import { connectSSE, fetchUnreadCount } from "@/stores/notifications";
 import { Icons } from "@/components/icons";
+import { ViraloLogo, ViraloIcon } from "@/components/ViraloLogo";
 
 type ActiveKey = PageKey | "dashboard";
 
@@ -33,17 +34,7 @@ function Sidebar({ active, collapsed, onCollapse }: { active: ActiveKey; collaps
     >
       {/* Brand */}
       <div className="flex h-[62px] flex-none items-center gap-2.5 px-3.5">
-        <div className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[9px] bg-gradient-to-br from-[#ff4d78] to-[#ff8040] shadow-[0_4px_14px_rgba(255,61,106,.18),inset_0_1px_0_rgba(255,255,255,.2)]">
-          <Icons.Bolt size={15} className="text-white" />
-        </div>
-        <span
-          className={cn(
-            "font-display text-[16px] font-bold tracking-[-0.01em] transition-[opacity,width] duration-300",
-            collapsed ? "w-0 overflow-hidden opacity-0 pointer-events-none" : "w-20 opacity-100"
-          )}
-        >
-          viralo
-        </span>
+        <ViraloLogo size={30} wordmark collapsed={collapsed} textSize="text-[16px]" />
         {!collapsed && (
           <button
             onClick={onCollapse}
@@ -70,7 +61,7 @@ function Sidebar({ active, collapsed, onCollapse }: { active: ActiveKey; collaps
           )}
         >
           <span className={cn("flex-none transition-opacity", active === "dashboard" ? "opacity-100" : "opacity-75")}>
-            <Icons.Bolt size={17} />
+            <ViraloIcon size={17} />
           </span>
           <span className={cn("transition-[opacity,width] duration-300", collapsed ? "w-0 overflow-hidden opacity-0 pointer-events-none" : "flex-1 opacity-100")}>
             Dashboard
@@ -220,8 +211,8 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
         className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-white/[.055] bg-[#080b12]/82 px-3 backdrop-blur-xl transition-[padding-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] sm:px-4 lg:pl-[calc(var(--sidebar-width)+28px)] lg:pr-7"
       >
         <div className="flex min-w-0 items-center gap-2 text-[12px] text-zinc-500 lg:gap-1.5">
-          <div className="grid h-7 w-7 flex-none place-items-center rounded-[9px] bg-gradient-to-br from-[#ff4d78] to-[#ff8040] shadow-[0_4px_14px_rgba(255,61,106,.18),inset_0_1px_0_rgba(255,255,255,.2)] lg:hidden">
-            <Icons.Bolt size={13} className="text-white" />
+          <div className="lg:hidden">
+            <ViraloIcon size={28} />
           </div>
           <span className="cursor-pointer" onClick={() => {}}>Viralo</span>
           <Icons.ChevronR size={11} className="hidden sm:block" />
