@@ -1082,19 +1082,6 @@ Return JSON with ALL signals found (aim for at least {max(num_clips * 2, 8)} sig
                 num_clips=num_clips,
                 signals_for_type=signals_for_type,
             )
-            if not signals:
-                # Fall back to original single-agent call
-                logging.info("_ai_score_clips: multi-agent returned nothing — falling back to single-agent Stage 1")
-                try:
-                    signals_data = _call_llm_json(
-                        [{"role": "user", "content": analysis_prompt}],
-                        temperature=_stage1_temp, max_tokens=3000,
-                    )
-                    signals = signals_data.get("signals", [])
-                except Exception as e1:
-                    logging.warning("_ai_score_clips step-1 LLM failed (%s) — using evenly-spaced fallback signals", e1)
-                    signals = []
-
         if not signals:
             signals = [{"timestamp_sec": i * (duration / max(num_clips, 1)), "score": 6.0} for i in range(num_clips)]
 
@@ -2045,7 +2032,7 @@ Return JSON:
 Content type: {content_type}
 {topic_ctx}{clip_ctx}
 Transcript excerpt:
-{transcript_snippet[:2000]}
+{transcript_snippet[:400]}
 
 RESEARCH TASK — Think like a trending content analyst:
 1. What topics, people, events, or themes appear in this clip?
@@ -2091,7 +2078,7 @@ Return JSON:
 Content type: {content_type}
 {topic_ctx}{clip_ctx}
 Transcript excerpt:
-{transcript_snippet[:2000]}
+{transcript_snippet[:400]}
 
 Title rules:
 - Under 80 characters
@@ -2398,22 +2385,8 @@ def _export_clip(
             crop_mode=crop_mode,
             meta=meta,
         )
-    elif codec_safe:
-        # PyAV caption-burn path (h264/hevc only — frame-accurate, styled captions)
-        _render_clip(
-            source_path=source_path,
-            clip=clip,
-            output_path=clip_path,
-            captions=captions,
-            style=style,
-            target_width=target_w,
-            target_height=target_h,
-            crop_mode=crop_mode,
-            meta=meta,
-            burn_captions=burn_captions,
-        )
     else:
-        # VP9/AV1/other: ffmpeg re-encode + subtitles filter (PyAV can't decode these)
+        # ffmpeg subprocess for all codecs — killable by Celery timeout (no C-extension blocking)
         _render_clip_ffmpeg_captions(
             source_path=source_path,
             clip=clip,
@@ -2831,6 +2804,14 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         _publish_progress(job_id, "metadata", 5, "processing",
                           "Full resolution selected — export will take longer than usual.")
 
+    # Dedup: skip re-processing if this source was already successfully processed within 24h
+    import hashlib as _hashlib
+    _url_key = f"pipeline:done:{tenant_id}:{_hashlib.md5((source_path or video_id).encode()).hexdigest()}"
+    _cached = redis_client.get(_url_key)
+    if _cached:
+        logging.info("run_video_pipeline: cache hit for %s — skipping re-process", video_id)
+        return json.loads(_cached)
+
     # Step 1: Probe (10%)
     _publish_progress(job_id, "metadata", 10, "processing", "Probing video...")
     meta = _probe_video(source_path)
@@ -3038,6 +3019,9 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         "clip_ids": clip_ids,
         "count": len(clip_ids),
     })
+
+    # Cache successful result to prevent re-processing same source within 24h
+    redis_client.setex(_url_key, 86400, json.dumps(clip_ids))
 
     # Work dir cleaned up per-clip by upload_clip_to_storage; remove dir after all queued
     # (uploads may still be running — only rmtree the work_dir skeleton, not clip files)

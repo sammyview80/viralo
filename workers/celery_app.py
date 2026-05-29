@@ -30,6 +30,10 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,  # each worker takes 1 task at a time — prevents one worker hoarding queue
     task_acks_late=True,           # ack only after task completes — safe redelivery on worker crash
     task_routes={
+        "workers.tasks.video.generate_viral_clips": {"queue": "viralo.video.ai"},
+        "workers.tasks.video.process_uploaded_video": {"queue": "viralo.video.pipeline"},
+        "workers.tasks.video.process_youtube_video": {"queue": "viralo.video.pipeline"},
+        "workers.tasks.video.upload_clip_to_storage": {"queue": "viralo.video.upload"},
         "workers.tasks.video.*": {"queue": "viralo.video.generate"},
         "workers.tasks.agent.*": {"queue": "viralo.agent.run"},
         "workers.tasks.workflow.*": {"queue": "viralo.workflow.execute"},

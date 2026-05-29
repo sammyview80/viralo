@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import io
 import json
 import os
@@ -201,7 +202,9 @@ async def inspect_youtube(
     # If YouTube returns 429, skip gracefully — oEmbed data is enough to start
     ytdlp_data: dict = {}
     try:
-        ytdlp_data = _ytdlp_fetch_json(url, timeout=20)
+        ytdlp_data = await asyncio.get_event_loop().run_in_executor(
+            None, functools.partial(_ytdlp_fetch_json, url, 20)
+        )
     except Exception:
         pass  # 429 or timeout — non-fatal, oEmbed covers the critical fields
 
@@ -297,7 +300,6 @@ async def upload_video(
     )
     db.add(video)
     await db.commit()
-    await db.refresh(video)
 
     celery_app = _get_celery()
     task = celery_app.send_task(
@@ -333,7 +335,6 @@ async def import_youtube(
     )
     db.add(video)
     await db.commit()
-    await db.refresh(video)
 
     celery_app = _get_celery()
     task = celery_app.send_task(
@@ -475,7 +476,6 @@ async def update_video(
         video.topic = body.topic
 
     await db.commit()
-    await db.refresh(video)
     return VideoResponse.model_validate(video)
 
 
@@ -534,7 +534,6 @@ async def fetch_video_metadata(
         video.thumbnail_url = thumb_url
 
     await db.commit()
-    await db.refresh(video)
     return VideoResponse.model_validate(video)
 
 
@@ -628,7 +627,6 @@ async def cancel_video(
     video.status = "cancelled"
     video.pipeline_step = "cancelled"
     await db.commit()
-    await db.refresh(video)
     return VideoResponse.model_validate(video)
 
 
@@ -944,7 +942,6 @@ async def patch_clip(
         meta["platform_copy"] = body.platform_copy
     clip.clip_metadata = meta
     await db.commit()
-    await db.refresh(clip)
     return ClipResponse.model_validate(clip)
 
 
@@ -969,7 +966,6 @@ async def retry_clip_upload(
     clip.status = "pending_upload"
     clip.upload_error = None
     await db.commit()
-    await db.refresh(clip)
 
     # Re-dispatch upload task — will attempt re-export from source if tmp file is gone
     clip_path = f"/tmp/viralo-video/{token.tenant_id}/clip_{clip_id}.mp4"

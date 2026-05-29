@@ -521,7 +521,7 @@ export const channelsApi = {
     platformReq<{ channel_id: string; videos: ChannelVideo[] }>("GET", `/websub/channels/${channelId}/videos`),
   topVideos: (channelId: string, order: "viewCount" | "date" | "rating" = "viewCount") =>
     platformReq<{ channel_id: string; videos: ChannelVideo[]; order: string }>(
-      "GET", `/websub/channels/${channelId}/top-videos?order=${order}&max_results=25`
+      "GET", `/websub/channels/${channelId}/top-videos?order=${order}&max_results=10`
     ),
 };
 
