@@ -208,6 +208,14 @@ async def inspect_youtube(
     except Exception:
         pass  # 429 or timeout — non-fatal, oEmbed covers the critical fields
 
+    if ytdlp_data.get("is_live") or ytdlp_data.get("live_status") in ("is_live", "is_upcoming"):
+        return YouTubeInspectResponse(
+            valid=False,
+            url=url,
+            video_id=video_id,
+            error="Live and upcoming streams are not supported. Please use a recorded video.",
+        )
+
     duration = ytdlp_data.get("duration")
     upload_raw = ytdlp_data.get("upload_date", "")
     upload_date = (
