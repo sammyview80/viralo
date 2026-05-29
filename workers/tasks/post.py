@@ -18,7 +18,16 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://viralo:viralo@postgres:5432/viralo")
 SYNC_DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
-engine = create_engine(SYNC_DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(
+    SYNC_DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=5,
+    pool_recycle=3600,
+    pool_timeout=30,
+)
+import atexit as _atexit
+_atexit.register(lambda: engine.dispose())
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -55,19 +64,72 @@ def _encrypt_token(plain: str) -> str:
     return Fernet(key.encode()).encrypt(plain.encode()).decode()
 
 
-def _insert_notification(session, tenant_id: str, title: str, body: str, post_id: str) -> None:
+def _platform_live_url(platform: str, platform_post_id: str | None) -> str | None:
+    """Return the public URL for a live post, or None if unknown."""
+    if not platform_post_id:
+        return None
+    p = platform.lower()
+    if p in ("youtube", "shorts"):
+        return f"https://www.youtube.com/shorts/{platform_post_id}"
+    if p == "tiktok":
+        return f"https://www.tiktok.com/@/video/{platform_post_id}"
+    if p in ("instagram", "reels"):
+        return f"https://www.instagram.com/reel/{platform_post_id}/"
+    if p in ("twitter", "x"):
+        return f"https://twitter.com/i/web/status/{platform_post_id}"
+    if p == "facebook":
+        return f"https://www.facebook.com/{platform_post_id}"
+    return None
+
+
+def _insert_notification(
+    session,
+    tenant_id: str,
+    title: str,
+    body: str,
+    post_id: str,
+    notification_type: str = "post",
+    action_url: str | None = None,
+) -> None:
+    url = action_url or f"/workspace/scheduler?post={post_id}"
     session.execute(
         text("""
-            INSERT INTO notifications (id, tenant_id, title, body, created_at)
-            VALUES (:id, CAST(:tid AS uuid), :title, :body, NOW())
+            INSERT INTO notifications (id, tenant_id, type, title, body, action_url, created_at)
+            VALUES (:id, CAST(:tid AS uuid), :type, :title, :body, :action_url, NOW())
         """),
         {
             "id": str(uuid.uuid4()),
             "tid": tenant_id,
+            "type": notification_type,
             "title": title,
             "body": body,
+            "action_url": url,
         },
     )
+
+
+def _try_insert_notification(
+    tenant_id: str,
+    title: str,
+    body: str,
+    post_id: str,
+    notification_type: str = "post",
+    action_url: str | None = None,
+) -> None:
+    """Best-effort notification; never roll back publish status updates."""
+    try:
+        with _get_session(tenant_id) as session:
+            _insert_notification(
+                session,
+                tenant_id,
+                title=title,
+                body=body,
+                post_id=post_id,
+                notification_type=notification_type,
+                action_url=action_url,
+            )
+    except Exception:
+        logger.exception("failed to insert notification for post %s", post_id)
 
 
 # ── Beat task: scan for due posts ─────────────────────────────────────────────
@@ -282,13 +344,15 @@ def publish_post(self, tenant_id: str, post_id: str):
                     """),
                     {"ppid": result.platform_post_id, "pid": post_id},
                 )
-                _insert_notification(
-                    session,
-                    tenant_id,
-                    title="Post is live!",
-                    body=f"Your {platform} post is live!",
-                    post_id=post_id,
-                )
+            live_url = _platform_live_url(platform, result.platform_post_id)
+            _try_insert_notification(
+                tenant_id,
+                title="Post is live!",
+                body=f"Your {platform} post is live! Click to view.",
+                post_id=post_id,
+                notification_type="post_published",
+                action_url=live_url or f"/workspace/scheduler?post={post_id}",
+            )
 
 
         elif result.retry_after_seconds is not None:
@@ -316,6 +380,7 @@ def publish_post(self, tenant_id: str, post_id: str):
             _handle_publish_failure(
                 tenant_id, post_id, platform, retry_count,
                 error=result.error or "Publisher returned failure",
+                clip_id=str(clip_id) if clip_id else None,
             )
 
     except Exception as exc:
@@ -363,6 +428,7 @@ def publish_post(self, tenant_id: str, post_id: str):
             _handle_publish_failure(
                 tenant_id, post_id, platform_name, current_retries + 1,
                 error=str(exc)[:1000], already_incremented=True,
+                clip_id=str(clip_id) if clip_id else None,
             )
 
     finally:
@@ -380,6 +446,7 @@ def _handle_publish_failure(
     retry_count: int,
     error: str,
     already_incremented: bool = False,
+    clip_id: str | None = None,
 ) -> None:
     """Increment retry_count and mark failed if >= 3, insert notification."""
     new_count = retry_count if already_incremented else retry_count + 1
@@ -397,11 +464,13 @@ def _handle_publish_failure(
             """),
             {"rc": new_count, "err": error[:1000], "status": status, "pid": post_id},
         )
-        if status == "failed":
-            _insert_notification(
-                session,
-                tenant_id,
-                title="Post failed",
-                body=f"Post failed on {platform}: {error[:200]}",
-                post_id=post_id,
-            )
+    if status == "failed":
+        failed_url = f"/clips?clip={clip_id}" if clip_id else f"/workspace/scheduler?post={post_id}"
+        _try_insert_notification(
+            tenant_id,
+            title="Post failed",
+            body=f"Post failed on {platform}: {error[:200]}",
+            post_id=post_id,
+            notification_type="post_failed",
+            action_url=failed_url,
+        )

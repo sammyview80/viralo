@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.deps import get_current_user, get_tenant_db
 from shared.schemas.auth import TokenPayload
-from platform_svc.models import ScheduledPost
+from platform_svc.models import ScheduledPost, SocialAccount
 from platform_svc.schemas import (
     ScheduledPostCreate,
     ScheduledPostListResponse,
@@ -38,12 +38,16 @@ OPTIMAL_TIMES: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 def _build_query(
+    tenant_id: uuid.UUID,
     platform: str | None,
     post_status: str | None,
     from_dt: datetime | None,
     to_dt: datetime | None,
 ):
-    q = select(ScheduledPost).where(ScheduledPost.status != "deleted")
+    q = select(ScheduledPost).where(
+        ScheduledPost.tenant_id == tenant_id,
+        ScheduledPost.status != "deleted",
+    )
     if platform:
         q = q.where(ScheduledPost.platform == platform)
     if post_status:
@@ -59,9 +63,12 @@ def _build_query(
 # Endpoints
 # ---------------------------------------------------------------------------
 
-async def _resolve_clip_storage_url(db: AsyncSession, clip_id: uuid.UUID) -> str | None:
-    """Fetch storage_url from clips table for a given clip_id."""
-    row = await db.execute(text("SELECT storage_url FROM clips WHERE id = CAST(:cid AS uuid)"), {"cid": str(clip_id)})
+async def _resolve_clip_storage_url(db: AsyncSession, clip_id: uuid.UUID, tenant_id: uuid.UUID) -> str | None:
+    """Fetch storage_url from clips table for a tenant-owned clip_id."""
+    row = await db.execute(
+        text("SELECT storage_url FROM clips WHERE id = CAST(:cid AS uuid) AND tenant_id = CAST(:tenant_id AS uuid)"),
+        {"cid": str(clip_id), "tenant_id": str(tenant_id)},
+    )
     r = row.fetchone()
     return r[0] if r else None
 
@@ -72,10 +79,26 @@ async def create_scheduled_post(
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """Schedule a clip for posting to a connected social account."""
-    clip_storage_url = await _resolve_clip_storage_url(db, body.clip_id)
+    """Schedule a tenant-owned clip for posting to a tenant-owned social account."""
+    tenant_id = uuid.UUID(token.tenant_id)
+
+    account_result = await db.execute(
+        select(SocialAccount).where(
+            SocialAccount.id == body.social_account_id,
+            SocialAccount.tenant_id == tenant_id,
+            SocialAccount.is_active == True,
+        )
+    )
+    if not account_result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Social account not found.")
+
+    clip_storage_url = await _resolve_clip_storage_url(db, body.clip_id, tenant_id)
+    if not clip_storage_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
+
     post = ScheduledPost(
         id=uuid.uuid4(),
+        tenant_id=tenant_id,
         clip_id=body.clip_id,
         social_account_id=body.social_account_id,
         platform=body.platform.lower(),
@@ -104,6 +127,7 @@ async def publish_post_now(
     result = await db.execute(
         select(ScheduledPost).where(
             ScheduledPost.id == post_id,
+            ScheduledPost.tenant_id == uuid.UUID(token.tenant_id),
             ScheduledPost.status.in_(["scheduled", "pending", "failed"]),
         )
     )
@@ -116,7 +140,7 @@ async def publish_post_now(
 
     # Ensure clip_storage_url is set
     if not post.clip_storage_url and post.clip_id:
-        post.clip_storage_url = await _resolve_clip_storage_url(db, post.clip_id)
+        post.clip_storage_url = await _resolve_clip_storage_url(db, post.clip_id, uuid.UUID(token.tenant_id))
 
     post.status = "processing"
     post.scheduled_at = datetime.now(timezone.utc)
@@ -147,7 +171,7 @@ async def list_scheduled_posts(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """List scheduled posts with optional filters and pagination."""
-    base_q = _build_query(platform, post_status, from_dt, to_dt)
+    base_q = _build_query(uuid.UUID(token.tenant_id), platform, post_status, from_dt, to_dt)
 
     count_q = select(func.count()).select_from(base_q.subquery())
     total_result = await db.execute(count_q)
@@ -172,7 +196,7 @@ async def get_scheduled_post(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.status != "deleted")
+        select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.tenant_id == uuid.UUID(token.tenant_id), ScheduledPost.status != "deleted")
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -188,7 +212,7 @@ async def update_scheduled_post(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.status != "deleted")
+        select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.tenant_id == uuid.UUID(token.tenant_id), ScheduledPost.status != "deleted")
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -220,7 +244,7 @@ async def cancel_scheduled_post(
 ):
     """Cancel a scheduled post (sets status to cancelled)."""
     result = await db.execute(
-        select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.status != "deleted")
+        select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.tenant_id == uuid.UUID(token.tenant_id), ScheduledPost.status != "deleted")
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -265,6 +289,7 @@ async def get_calendar(
     q = (
         select(ScheduledPost)
         .where(
+            ScheduledPost.tenant_id == uuid.UUID(token.tenant_id),
             ScheduledPost.status != "deleted",
             ScheduledPost.scheduled_at >= from_dt,
             ScheduledPost.scheduled_at < to_dt,

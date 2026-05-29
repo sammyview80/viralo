@@ -1,35 +1,24 @@
-import { useState, useEffect } from "react";
 import { auth as api, token, type UserResponse } from "@/lib/api";
+import { createStore } from "@/lib/store";
 
-/* ─── Module-level reactive store ─── */
-type Listener = () => void;
-const listeners = new Set<Listener>();
-
-interface State {
+interface AuthState {
   user: UserResponse | null;
   loading: boolean;
   ready: boolean;
 }
 
-let state: State = { user: null, loading: false, ready: false };
-
-function setState(next: Partial<State>) {
-  state = { ...state, ...next };
-  listeners.forEach((l) => l());
-}
+const { setState, useStore } = createStore<AuthState>({ user: null, loading: false, ready: false });
 
 /* ─── Hydration — called once on app boot ─── */
 export async function hydrate() {
   const hasToken   = Boolean(token.get());
   const hasSession = token.hasSession();
 
-  // No stored token and no session flag → not logged in, skip network calls
   if (!hasToken && !hasSession) {
     setState({ ready: true });
     return;
   }
 
-  // Have an access token → try /me (fast path, avoids refresh round-trip)
   if (hasToken) {
     try {
       const user = await api.me();
@@ -40,14 +29,12 @@ export async function hydrate() {
     }
   }
 
-  // Access token missing or rejected — attempt refresh via httpOnly cookie
   try {
     const res = await api.refresh();
     token.set(res.access_token);
     const user = await api.me();
     setState({ user, ready: true });
   } catch {
-    // Refresh cookie also dead — full logout
     token.clear();
     setState({ user: null, ready: true });
   }
@@ -94,13 +81,6 @@ export async function logout() {
   window.location.replace("/login");
 }
 
-/* ─── React hook ─── */
 export function useAuth() {
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const rerender = () => tick((n) => n + 1);
-    listeners.add(rerender);
-    return () => { listeners.delete(rerender); };
-  }, []);
-  return state;
+  return useStore();
 }

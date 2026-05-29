@@ -3,8 +3,11 @@ import { createPortal } from "react-dom";
 import { Shell } from "../Shell";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/lib/router";
-import { videoApi, type VideoResponse } from "@/lib/api";
+import { videoApi, token as authToken, type VideoResponse } from "@/lib/api";
 import { Pagination } from "../components/Pagination";
+import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
+
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 
 /* ─── helpers ─── */
 
@@ -222,20 +225,50 @@ export function ProjectsPage() {
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
+  /* SSE subscriptions for in-progress videos — replaces 3s polling */
+  const sseRef = useRef<Map<string, EventSource>>(new Map());
   useEffect(() => {
-    const inProgress = history.filter((v) => !isTerminalStatus(v));
-    if (inProgress.length === 0) return;
-    const t = setTimeout(async () => {
-      const updates = await Promise.allSettled(inProgress.map((v) => videoApi.get(v.id)));
-      setHistory((prev) => prev.map((v) => {
-        const idx = inProgress.findIndex((p) => p.id === v.id);
-        if (idx === -1) return v;
-        const result = updates[idx];
-        return result.status === "fulfilled" ? result.value : v;
-      }));
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [history]);
+    const inProgress = history.filter((v) => !isTerminalStatus(v) && v.celery_task_id);
+    const activeIds = new Set(inProgress.map((v) => v.celery_task_id!));
+
+    for (const [tid, es] of sseRef.current) {
+      if (!activeIds.has(tid)) { es.close(); sseRef.current.delete(tid); }
+    }
+
+    const t = authToken.get() || "";
+    if (!t) return;
+
+    for (const video of inProgress) {
+      const tid = video.celery_task_id!;
+      if (sseRef.current.has(tid)) continue;
+      const es = new EventSource(`${VIDEO_SSE_BASE}/video/progress/${tid}?token=${encodeURIComponent(t)}`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "keepalive") return;
+          if (d.pct != null || d.step != null || d.status != null) {
+            setHistory((prev) => prev.map((v) =>
+              v.id === video.id
+                ? { ...v, pipeline_pct: d.pct ?? v.pipeline_pct, pipeline_step: d.step ?? v.pipeline_step,
+                    status: d.status === "complete" ? "ready" : d.status === "failed" ? "failed" : v.status }
+                : v
+            ));
+          }
+          if (d.status === "complete" || d.status === "failed") {
+            es.close(); sseRef.current.delete(tid);
+            videoApi.get(video.id).then((u) =>
+              setHistory((prev) => prev.map((v) => v.id === u.id ? u : v))
+            ).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => { es.close(); sseRef.current.delete(tid); };
+      sseRef.current.set(tid, es);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useMemo(() => history.map((v) => `${v.id}:${v.status}:${v.celery_task_id}`).join(","), [history])]);
+
+  useEffect(() => () => { for (const es of sseRef.current.values()) es.close(); sseRef.current.clear(); }, []);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -378,13 +411,17 @@ export function ProjectsPage() {
                   <button onClick={() => navigate("/studio")} className="mt-5 rounded-[12px] bg-[#ff3d6a] px-5 py-2.5 text-sm font-bold text-white">Start upload</button>
                 </div>
               ) : viewMode === "grid" ? (
-                <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                  {filtered.map((video) => {
+                <VirtualizedGrid
+                  items={filtered}
+                  keyForItem={(v) => v.id}
+                  estimateRowHeight={310}
+                  columns={[{ minWidth: 768, columns: 2 }, { minWidth: 1536, columns: 3 }]}
+                  renderItem={(video) => {
                     const isDeleting = deletingId === video.id;
                     const active = selected?.id === video.id;
                     const pct = progressFor(video);
                     return (
-                      <div key={video.id} className={cn(
+                      <div className={cn(
                         "group overflow-hidden rounded-[20px] border bg-[#111827]",
                         active ? "border-[#ff3d6a]/55 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-white/[.07]",
                         isDeleting ? "pointer-events-none opacity-50" : ""
@@ -412,61 +449,64 @@ export function ProjectsPage() {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  }}
+                />
               ) : (
                 <div className="rounded-[16px] border border-white/[.06] bg-white/[.012]">
-                  {filtered.map((video, idx) => {
-                    const active = selected?.id === video.id;
-                    const isDeleting = deletingId === video.id;
-                    const pct = progressFor(video);
-                    const isReady = isTerminalStatus(video) && video.status !== "failed";
-                    const isFailed = video.status === "failed";
-                    return (
-                      <div
-                        key={video.id}
-                        className={cn(
-                          "group relative border-l-[3px] transition",
-                          active ? "border-l-[#ff3d6a]/70 bg-[#ff3d6a]/[.035]" : "border-l-transparent hover:bg-white/[.02]",
-                          isDeleting ? "pointer-events-none opacity-50" : "",
-                          idx > 0 ? "border-t border-white/[.04]" : ""
-                        )}
-                      >
-                        <button
-                          onClick={() => navigate(`/projects/${video.id}`)}
-                          className="flex w-full items-start gap-3 px-3 py-3.5 pr-10 text-left sm:items-center sm:gap-4 sm:px-4 sm:pr-12"
+                  <VirtualizedList
+                    items={filtered}
+                    keyForItem={(v) => v.id}
+                    estimateRowHeight={88}
+                    renderItem={(video) => {
+                      const active = selected?.id === video.id;
+                      const isDeleting = deletingId === video.id;
+                      const pct = progressFor(video);
+                      const isReady = isTerminalStatus(video) && video.status !== "failed";
+                      const isFailed = video.status === "failed";
+                      return (
+                        <div
+                          className={cn(
+                            "group relative border-l-[3px] border-t border-white/[.04] transition",
+                            active ? "border-l-[#ff3d6a]/70 bg-[#ff3d6a]/[.035]" : "border-l-transparent hover:bg-white/[.02]",
+                            isDeleting ? "pointer-events-none opacity-50" : "",
+                          )}
                         >
-                          <ProjectThumb video={video} className="h-14 w-20 shrink-0 rounded-[10px]" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="truncate text-[14px] font-semibold text-white">{video.title || "Untitled"}</p>
-                              <StatusBadge video={video} />
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-                              <span>{video.source_type === "youtube" || video.source_type === "youtube_url" ? "YouTube" : "Upload"}</span>
-                              <span className="text-zinc-700">·</span>
-                              <span>{formatDuration(video.duration_sec)}</span>
-                              <span className="text-zinc-700">·</span>
-                              <span>{formatShortDate(video.created_at)}</span>
-                            </div>
-                            <div className="mt-2 flex items-center gap-2">
-                              <div className="h-1 w-16 overflow-hidden rounded-full bg-white/[.06] sm:w-24">
-                                <div className={cn("h-full rounded-full", isFailed ? "bg-red-400" : isReady ? "bg-emerald-400" : "bg-amber-300")} style={{ width: `${pct}%` }} />
+                          <button
+                            onClick={() => navigate(`/projects/${video.id}`)}
+                            className="flex w-full items-start gap-3 px-3 py-3.5 pr-10 text-left sm:items-center sm:gap-4 sm:px-4 sm:pr-12"
+                          >
+                            <ProjectThumb video={video} className="h-14 w-20 shrink-0 rounded-[10px]" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate text-[14px] font-semibold text-white">{video.title || "Untitled"}</p>
+                                <StatusBadge video={video} />
                               </div>
-                              <span className={cn("text-[10px] font-bold", isFailed ? "text-red-400" : isReady ? "text-emerald-400" : "text-amber-300")}>{pct}%</span>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                                <span>{video.source_type === "youtube" || video.source_type === "youtube_url" ? "YouTube" : "Upload"}</span>
+                                <span className="text-zinc-700">·</span>
+                                <span>{formatDuration(video.duration_sec)}</span>
+                                <span className="text-zinc-700">·</span>
+                                <span>{formatShortDate(video.created_at)}</span>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <div className="h-1 w-16 overflow-hidden rounded-full bg-white/[.06] sm:w-24">
+                                  <div className={cn("h-full rounded-full", isFailed ? "bg-red-400" : isReady ? "bg-emerald-400" : "bg-amber-300")} style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={cn("text-[10px] font-bold", isFailed ? "text-red-400" : isReady ? "text-emerald-400" : "text-amber-300")}>{pct}%</span>
+                              </div>
                             </div>
+                            <span className="hidden shrink-0 text-xs font-semibold text-zinc-600 transition group-hover:text-zinc-300 sm:block">Show clips →</span>
+                          </button>
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <RowMenu
+                              onShowDetails={() => setSelectedId(video.id)}
+                              onDelete={() => setDeleteTarget(video)}
+                            />
                           </div>
-                          <span className="hidden shrink-0 text-xs font-semibold text-zinc-600 transition group-hover:text-zinc-300 sm:block">Show clips →</span>
-                        </button>
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <RowMenu
-                            onShowDetails={() => setSelectedId(video.id)}
-                            onDelete={() => setDeleteTarget(video)}
-                          />
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    }}
+                  />
                 </div>
               )}
               <Pagination

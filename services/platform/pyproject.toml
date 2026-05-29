@@ -17,6 +17,8 @@ dependencies = [
     "google-api-python-client>=2.0",
     "google-auth-oauthlib>=1.0",
     "cryptography>=42.0",
+    "aiosmtplib>=3.0",
+    "pywebpush>=2.0",
 ]
 
 [build-system]

@@ -132,7 +132,7 @@ async def refresh_tokens(
     response: Response,
     db: AsyncSession = Depends(get_db_no_rls),
     redis: aioredis.Redis = Depends(get_redis),
-    viralo_refresh: str | None = Cookie(default=None),
+    viralo_refresh: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
 ):
     if not viralo_refresh:
         raise HTTPException(status_code=401, detail="No refresh token")
@@ -149,10 +149,16 @@ async def refresh_tokens(
     user_id = payload["sub"]
     jti = payload["jti"]
 
-    # Check if blacklisted (token reuse = possible theft)
+    # Check if blacklisted
     blacklisted = await redis.get(f"blacklist:{jti}")
     if blacklisted:
-        # Revoke all tokens for this user
+        # Grace window: concurrent tabs/requests often fire simultaneous refreshes.
+        # If we issued a new access token for this user within the last 30 s,
+        # return it instead of treating this as malicious token reuse.
+        cached = await redis.get(f"refresh_grace:{user_id}")
+        if cached:
+            return TokenResponse(access_token=cached.decode())
+        # Second use outside grace window — genuine reuse attack
         await redis.setex(
             f"user:{user_id}:tokens_revoked_at",
             REFRESH_TOKEN_DAYS * 86400,
@@ -179,6 +185,8 @@ async def refresh_tokens(
     )
     new_refresh, _ = create_refresh_token(str(user.id))
     _set_refresh_cookie(response, new_refresh)
+    # Cache new access token for 30 s to serve concurrent duplicate refresh requests
+    await redis.setex(f"refresh_grace:{user_id}", 30, access_token)
     return TokenResponse(access_token=access_token)
 
 
@@ -186,7 +194,7 @@ async def refresh_tokens(
 async def logout(
     response: Response,
     redis: aioredis.Redis = Depends(get_redis),
-    viralo_refresh: str | None = Cookie(default=None),
+    viralo_refresh: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
 ):
     if viralo_refresh:
         from jose import JWTError

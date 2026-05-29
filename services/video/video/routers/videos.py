@@ -1,23 +1,32 @@
 import asyncio
+import io
 import json
 import os
+import re
 import subprocess
 import uuid
+import zipfile
 from pathlib import Path
+from typing import Literal
 
 import aiofiles
+import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select, update
+from pydantic import BaseModel as _BaseModel
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.auth import decode_token
 from shared.deps import get_current_user, get_redis, get_tenant_db
 from shared.schemas.auth import TokenPayload
 from video.models import Clip, Video
 from video.schemas import (
+    ClipConcatRequest,
     ClipConfig,
     ClipListResponse,
+    ClipMergeAiRequest,
     ClipPatchRequest,
     ClipResponse,
     GenerateClipsRequest,
@@ -29,27 +38,66 @@ from video.schemas import (
     YouTubeInspectResponse,
 )
 
+def _ytdlp_proxies() -> list[str]:
+    import os as _os
+    proxy_list = _os.getenv("YTDLP_PROXY_LIST", "")
+    if proxy_list:
+        return [p.strip() for p in proxy_list.split(",") if p.strip()]
+    single = _os.getenv("YTDLP_PROXY", "")
+    return [single] if single else []
+
+
 def _ytdlp_fetch_json(url: str, timeout: int = 30) -> dict:
-    """Run yt-dlp --dump-json, try android extractor first then plain. Raises RuntimeError on failure."""
-    base = ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", "--no-check-certificate"]
-    strategies = [
-        base + ["--extractor-args", "youtube:player_client=android", url],
-        base + [url],
-    ]
+    """Run yt-dlp --dump-json for metadata. Raises RuntimeError on failure or 429."""
+    import os as _os
+    cookies_file = _os.getenv("YTDLP_COOKIES_FILE", "")
+    proxies = _ytdlp_proxies()
+
+    def _base(proxy: str | None) -> list[str]:
+        b = ["yt-dlp", "--no-download", "--dump-json", "--no-playlist", "--no-check-certificate"]
+        # Cookies omitted when proxy set — IP mismatch causes YouTube to invalidate the session
+        if not proxy and cookies_file and Path(cookies_file).exists():
+            b += ["--cookies", cookies_file]
+        if proxy:
+            b += ["--proxy", proxy]
+        return b
+
+    def _strategies(proxy: str | None) -> list[list[str]]:
+        b = _base(proxy)
+        return [
+            b + ["--extractor-args", "youtube:player_client=android", url],
+            b + ["--extractor-args", "youtube:player_client=tv_embedded", url],
+            b + [url],
+        ]
+
+    all_strategies: list[tuple[list[str], str | None]] = []
+    for i, strat in enumerate(_strategies(proxies[0] if proxies else None)):
+        all_strategies.append((strat, proxies[i % len(proxies)] if proxies else None))
+
     last_err = "yt-dlp returned no data"
-    for args in strategies:
+    for i, (args, proxy) in enumerate(all_strategies):
         try:
             result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            stderr = result.stderr or ""
+            if "429" in stderr or "Too Many Requests" in stderr:
+                # Rotate proxy for remaining strategies on 429
+                if proxies and len(proxies) > 1:
+                    next_proxy = proxies[(i + 1) % len(proxies)]
+                    remaining = _strategies(next_proxy)[i + 1:]
+                    all_strategies[i + 1:] = [(s, next_proxy) for s in remaining]
+                raise RuntimeError(f"YouTube rate-limited (429): {stderr[:200]}")
             if result.returncode == 0 and result.stdout.strip():
                 try:
                     return json.loads(result.stdout.strip().splitlines()[0])
                 except json.JSONDecodeError as e:
                     last_err = f"yt-dlp JSON parse error: {e}"
                     continue
-            last_err = result.stderr.strip()[:300] or last_err
+            last_err = stderr[:300] or last_err
         except subprocess.TimeoutExpired:
             last_err = "yt-dlp timed out"
             continue
+        except RuntimeError:
+            raise
         except Exception as e:
             last_err = str(e)[:300]
     raise RuntimeError(last_err)
@@ -67,9 +115,66 @@ def _get_celery():
     return celery_app
 
 
+class ClipZipRequest(_BaseModel):
+    clip_ids: list[uuid.UUID]
+    zip_name: str | None = None
+
+
+def _safe_stem(title: str | None, fallback: str) -> str:
+    raw = (title or fallback).strip()
+    return re.sub(r"[^a-z0-9_\-]", "_", raw, flags=re.IGNORECASE)[:60]
+
+
 # ---------------------------------------------------------------------------
 # Upload & import
 # ---------------------------------------------------------------------------
+
+async def _oembed_inspect(video_id: str, url: str) -> dict:
+    """Fetch YouTube metadata via oEmbed + noembed (no API key, no rate-limit).
+    Returns partial dict: title, thumbnail_url, channel. Duration/views need yt-dlp."""
+    import urllib.request as _req, urllib.parse as _uparse, asyncio as _asyncio
+
+    def _fetch_sync() -> dict:
+        result: dict = {}
+        # Primary: YouTube oEmbed
+        try:
+            oe_url = f"https://www.youtube.com/oembed?url={_uparse.quote(url, safe='')}&format=json"
+            with _req.urlopen(oe_url, timeout=8) as r:
+                d = json.loads(r.read())
+            result["title"] = d.get("title") or ""
+            result["channel"] = d.get("author_name") or ""
+            raw_thumb = d.get("thumbnail_url") or ""
+            # oEmbed gives hqdefault; try maxresdefault first
+            if raw_thumb:
+                maxres = raw_thumb.replace("/hqdefault.jpg", "/maxresdefault.jpg").replace("/hqdefault", "/maxresdefault")
+                try:
+                    with _req.urlopen(maxres, timeout=4) as tr:
+                        if tr.status == 200:
+                            raw_thumb = maxres
+                except Exception:
+                    pass
+            result["thumbnail_url"] = raw_thumb
+        except Exception:
+            pass
+
+        # Fallback thumbnail from known URL pattern if oEmbed failed
+        if not result.get("thumbnail_url"):
+            result["thumbnail_url"] = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+        # noembed for view_count (best-effort, may not have it)
+        try:
+            ne_url = f"https://noembed.com/embed?url={_uparse.quote(url, safe='')}"
+            with _req.urlopen(ne_url, timeout=6) as r:
+                ne = json.loads(r.read())
+            if not result.get("title") and ne.get("title"):
+                result["title"] = ne["title"]
+        except Exception:
+            pass
+
+        return result
+
+    return await _asyncio.get_event_loop().run_in_executor(None, _fetch_sync)
+
 
 @router.post("/video/youtube/inspect", response_model=YouTubeInspectResponse)
 async def inspect_youtube(
@@ -80,7 +185,6 @@ async def inspect_youtube(
 
     url = body.url.strip()
 
-    # Validate it's a YouTube URL
     yt_pattern = re.compile(
         r"(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})"
     )
@@ -90,42 +194,51 @@ async def inspect_youtube(
 
     video_id = match.group(1)
 
-    try:
-        data = _ytdlp_fetch_json(url)
-    except (RuntimeError, Exception) as exc:
-        msg = str(exc)[:300]
-        return YouTubeInspectResponse(valid=False, url=url, video_id=video_id, error=msg)
+    # Primary: oEmbed — fast, no auth, no rate-limit
+    oembed_data = await _oembed_inspect(video_id, url)
 
-    duration = data.get("duration")
-    upload_raw = data.get("upload_date", "")
+    # Secondary: yt-dlp for duration, view_count, upload_date, description
+    # If YouTube returns 429, skip gracefully — oEmbed data is enough to start
+    ytdlp_data: dict = {}
+    try:
+        ytdlp_data = _ytdlp_fetch_json(url, timeout=20)
+    except Exception:
+        pass  # 429 or timeout — non-fatal, oEmbed covers the critical fields
+
+    duration = ytdlp_data.get("duration")
+    upload_raw = ytdlp_data.get("upload_date", "")
     upload_date = (
         f"{upload_raw[:4]}-{upload_raw[4:6]}-{upload_raw[6:]}"
         if len(upload_raw) == 8 else upload_raw
     )
 
-    # Best thumbnail: prefer maxresdefault or largest
-    thumbnails = data.get("thumbnails", [])
-    thumb_url = data.get("thumbnail")
-    if thumbnails:
+    # yt-dlp thumbnail is higher quality if available
+    thumb_url = oembed_data.get("thumbnail_url") or ""
+    if ytdlp_data.get("thumbnails"):
         best = max(
-            (t for t in thumbnails if t.get("url")),
+            (t for t in ytdlp_data["thumbnails"] if t.get("url")),
             key=lambda t: (t.get("width", 0) or 0),
             default=None,
         )
         if best:
             thumb_url = best["url"]
+    elif ytdlp_data.get("thumbnail"):
+        thumb_url = ytdlp_data["thumbnail"]
+
+    title = ytdlp_data.get("title") or oembed_data.get("title") or ""
+    channel = ytdlp_data.get("uploader") or ytdlp_data.get("channel") or oembed_data.get("channel") or ""
 
     return YouTubeInspectResponse(
         valid=True,
         url=url,
         video_id=video_id,
-        title=data.get("title"),
-        channel=data.get("uploader") or data.get("channel"),
+        title=title or None,
+        channel=channel or None,
         duration_sec=int(duration) if duration else None,
-        thumbnail_url=thumb_url,
-        view_count=data.get("view_count"),
+        thumbnail_url=thumb_url or None,
+        view_count=ytdlp_data.get("view_count"),
         upload_date=upload_date or None,
-        description=(data.get("description") or "")[:500] or None,
+        description=(ytdlp_data.get("description") or "")[:500] or None,
     )
 
 
@@ -175,6 +288,7 @@ async def upload_video(
 
     video = Video(
         id=video_id,
+        tenant_id=tenant_id,
         title=title,
         source_type="uploaded",
         status="queued",
@@ -210,6 +324,7 @@ async def import_youtube(
 
     video = Video(
         id=video_id,
+        tenant_id=tenant_id,
         title=body.title,
         source_type="youtube_url",
         source_url=body.url,
@@ -240,16 +355,24 @@ async def import_youtube(
 @router.get("/video/progress/{job_id}")
 async def video_progress(
     job_id: str,
-    token: TokenPayload = Depends(get_current_user),
+    token: str | None = Query(None, alias="token"),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    # EventSource cannot send custom headers; accept token as query param
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
+    try:
+        decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     async def event_generator():
+        import time as _time
         pubsub = redis.pubsub()
-        await pubsub.subscribe(f"job:{job_id}:progress")
+        await pubsub.subscribe(f"job:{job_id}:progress", f"job:{job_id}:clips")
         try:
-            timeout = 600  # 10 minutes
-            elapsed = 0
-            while elapsed < timeout:
+            deadline = _time.monotonic() + 600  # 10 minutes from now
+            keepalive_at = _time.monotonic() + 15
+            while _time.monotonic() < deadline:
                 try:
                     message = await asyncio.wait_for(
                         pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
@@ -265,18 +388,18 @@ async def video_progress(
                     yield f"data: {data}\n\n"
                     try:
                         parsed = json.loads(data)
-                        if parsed.get("status") in ("complete", "failed"):
+                        if parsed.get("status") in ("complete", "failed") and "event" not in parsed:
                             break
                     except json.JSONDecodeError:
                         pass
                 else:
-                    elapsed += 1
-                    if elapsed % 15 == 0:
+                    if _time.monotonic() >= keepalive_at:
                         yield 'data: {"type":"keepalive"}\n\n'
+                        keepalive_at = _time.monotonic() + 15
         except Exception:
             pass
         finally:
-            await pubsub.unsubscribe(f"job:{job_id}:progress")
+            await pubsub.unsubscribe(f"job:{job_id}:progress", f"job:{job_id}:clips")
             await pubsub.aclose()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -294,8 +417,9 @@ async def list_videos(
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    query = select(Video).where(Video.status != "deleted")
-    count_query = select(func.count()).select_from(Video).where(Video.status != "deleted")
+    tenant_id = uuid.UUID(token.tenant_id)
+    query = select(Video).where(Video.tenant_id == tenant_id, Video.status != "deleted")
+    count_query = select(func.count()).select_from(Video).where(Video.tenant_id == tenant_id, Video.status != "deleted")
 
     if status:
         query = query.where(Video.status == status)
@@ -323,7 +447,7 @@ async def get_video(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(Video).where(Video.id == video_id, Video.status != "deleted")
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id), Video.status != "deleted")
     )
     video = result.scalar_one_or_none()
     if not video:
@@ -339,7 +463,7 @@ async def update_video(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(Video).where(Video.id == video_id, Video.status != "deleted")
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id), Video.status != "deleted")
     )
     video = result.scalar_one_or_none()
     if not video:
@@ -363,7 +487,7 @@ async def fetch_video_metadata(
 ):
     """Fetch title + thumbnail from YouTube and patch the video record."""
     result = await db.execute(
-        select(Video).where(Video.id == video_id, Video.status != "deleted")
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id), Video.status != "deleted")
     )
     video = result.scalar_one_or_none()
     if not video:
@@ -423,14 +547,14 @@ async def delete_video(
     import shutil
 
     result = await db.execute(
-        select(Video).where(Video.id == video_id, Video.status != "deleted")
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id), Video.status != "deleted")
     )
     video = result.scalar_one_or_none()
     if not video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found.")
 
     # Fetch clips before deleting so we can remove their files
-    clips_result = await db.execute(select(Clip).where(Clip.video_id == video_id))
+    clips_result = await db.execute(select(Clip).where(Clip.video_id == video_id, Clip.tenant_id == uuid.UUID(token.tenant_id)))
     clips = clips_result.scalars().all()
 
     # Delete clip storage files
@@ -455,8 +579,17 @@ async def delete_video(
         from sqlalchemy import text as sa_text
         placeholders = ", ".join(f"CAST('{cid}' AS uuid)" for cid in clip_ids)
         await db.execute(
-            sa_text(f"UPDATE scheduled_posts SET clip_id = NULL WHERE clip_id IN ({placeholders})")
+            sa_text(f"UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tenant_id AS uuid) AND clip_id IN ({placeholders})"),
+            {"tenant_id": str(token.tenant_id)},
         )
+
+    # Revoke running/queued Celery task before deleting
+    if video.celery_task_id and video.status in ("queued", "processing"):
+        try:
+            from workers.celery_app import celery_app
+            celery_app.control.revoke(video.celery_task_id, terminate=True, signal="SIGTERM")
+        except Exception:
+            pass
 
     # Hard delete clips from DB, soft delete video
     for clip in clips:
@@ -472,7 +605,7 @@ async def cancel_video(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(Video).where(Video.id == video_id, Video.status != "deleted")
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id), Video.status != "deleted")
     )
     video = result.scalar_one_or_none()
     if not video:
@@ -506,7 +639,7 @@ async def retry_video(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(Video).where(Video.id == video_id)
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id))
     )
     video = result.scalar_one_or_none()
     if not video:
@@ -561,7 +694,7 @@ async def generate_viral_clips(
     from sqlalchemy import text as sa_text
 
     result = await db.execute(
-        select(Video).where(Video.id == video_id, Video.status != "deleted")
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id), Video.status != "deleted")
     )
     video = result.scalar_one_or_none()
     if not video:
@@ -589,8 +722,8 @@ async def generate_viral_clips(
     )
 
     await db.execute(
-        sa_text("UPDATE videos SET celery_task_id = :tid WHERE id = CAST(:vid AS uuid)"),
-        {"tid": task.id, "vid": str(video_id)},
+        sa_text("UPDATE videos SET celery_task_id = :tid WHERE id = CAST(:vid AS uuid) AND tenant_id = CAST(:tenant_id AS uuid)"),
+        {"tid": task.id, "vid": str(video_id), "tenant_id": str(tenant_id)},
     )
     await db.commit()
     await db.refresh(video)
@@ -604,18 +737,23 @@ async def generate_viral_clips(
 @router.get("/clips", response_model=ClipListResponse)
 async def list_clips(
     video_id: uuid.UUID | None = Query(None),
+    min_virality_score: float | None = Query(None, ge=0.0, le=10.0),
+    sort_by: Literal["created_at", "score"] = Query("created_at"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    query = select(Clip).where(Clip.status != "deleted")
+    query = select(Clip).where(Clip.tenant_id == uuid.UUID(token.tenant_id), Clip.status != "deleted")
     if video_id:
         query = query.where(Clip.video_id == video_id)
+    if min_virality_score is not None:
+        query = query.where(Clip.score >= min_virality_score)
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+    order_col = Clip.score.desc().nulls_last() if sort_by == "score" else Clip.created_at.desc()
     result = await db.execute(
-        query.order_by(Clip.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+        query.order_by(order_col).offset((page - 1) * per_page).limit(per_page)
     )
     clips = result.scalars().all()
     return ClipListResponse(
@@ -626,6 +764,151 @@ async def list_clips(
     )
 
 
+@router.post("/clips/download-zip")
+async def download_clips_zip(
+    body: ClipZipRequest,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    if not body.clip_ids:
+        raise HTTPException(status_code=400, detail="No clip IDs provided.")
+    if len(body.clip_ids) > 50:
+        raise HTTPException(status_code=400, detail="Max 50 clips per zip.")
+
+    result = await db.execute(
+        select(Clip).where(Clip.id.in_(body.clip_ids), Clip.tenant_id == uuid.UUID(token.tenant_id), Clip.status != "deleted")
+    )
+    clips = result.scalars().all()
+
+    if not clips:
+        raise HTTPException(status_code=404, detail="No clips found.")
+
+    import tempfile
+    tmp = tempfile.SpooledTemporaryFile(max_size=50 * 1024 * 1024)  # spill to disk > 50 MB
+
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        with zipfile.ZipFile(tmp, mode="w", compression=zipfile.ZIP_STORED) as zf:
+            seen: dict[str, int] = {}
+            for i, clip in enumerate(clips):
+                if not clip.storage_url:
+                    continue
+                stem = _safe_stem(clip.title, f"clip_{i + 1}")
+                key = stem.lower()
+                if key in seen:
+                    seen[key] += 1
+                    stem = f"{stem}_{seen[key]}"
+                else:
+                    seen[key] = 0
+                filename = f"{stem}.mp4"
+
+                try:
+                    # Stream clip data in chunks — don't load entire file into memory
+                    async with client.stream("GET", clip.storage_url) as resp:
+                        resp.raise_for_status()
+                        with zf.open(filename, "w", force_zip64=True) as zentry:
+                            async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                                zentry.write(chunk)
+                except Exception:
+                    continue
+
+    tmp.seek(0)
+    zip_name = _safe_stem(body.zip_name, "clips") + ".zip"
+
+    async def _iter_and_close():
+        try:
+            while True:
+                chunk = tmp.read(1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            tmp.close()
+
+    return StreamingResponse(
+        _iter_and_close(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )
+
+
+@router.post("/clips/concat", status_code=202)
+async def concat_clips(
+    body: ClipConcatRequest,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Queue concatenation of top-2 clips into a composite."""
+    tenant_id = token.tenant_id
+
+    if body.clip_ids is not None:
+        clip_ids = [str(c) for c in body.clip_ids]
+        if len(clip_ids) != 2:
+            raise HTTPException(status_code=400, detail="Provide exactly 2 clip_ids")
+    else:
+        result = await db.execute(
+            select(Clip.id)
+            .where(
+                Clip.video_id == body.video_id,
+                Clip.tenant_id == uuid.UUID(tenant_id),
+                Clip.status == "ready",
+                Clip.score.isnot(None),
+                or_(
+                    Clip.clip_metadata["composite"].astext.is_(None),
+                    Clip.clip_metadata["composite"].astext == "false",
+                ),
+            )
+            .order_by(Clip.score.desc())
+            .limit(2)
+        )
+        rows = result.scalars().all()
+        if len(rows) < 2:
+            raise HTTPException(status_code=422, detail="Need at least 2 ready clips with scores")
+        clip_ids = [str(r) for r in rows]
+
+    celery_app = _get_celery()
+    task = celery_app.send_task(
+        "workers.tasks.video.concat_top_clips",
+        args=[tenant_id, str(body.video_id), clip_ids],
+        queue="viralo.video.generate",
+    )
+    return {"task_id": task.id, "clip_ids": clip_ids, "message": "Concatenation queued"}
+
+
+@router.post("/clips/merge-ai", status_code=202)
+async def merge_ai_clips_endpoint(
+    body: ClipMergeAiRequest,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Queue LLM-assisted merge of selected clips. Beta feature."""
+    tenant_id = token.tenant_id
+    clip_ids = [str(c) for c in body.clip_ids]
+
+    if len(clip_ids) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least 2 clip_ids to merge")
+    if len(clip_ids) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 clips per merge operation")
+
+    result = await db.execute(
+        select(func.count()).where(
+            Clip.id.in_([uuid.UUID(c) for c in clip_ids]),
+            Clip.tenant_id == uuid.UUID(tenant_id),
+            Clip.status == "ready",
+        )
+    )
+    count = result.scalar_one()
+    if count != len(clip_ids):
+        raise HTTPException(status_code=404, detail="One or more clips not found or not ready")
+
+    celery_app = _get_celery()
+    task = celery_app.send_task(
+        "workers.tasks.video.merge_ai_clips",
+        args=[tenant_id, clip_ids],
+        queue="viralo.video.generate",
+    )
+    return {"task_id": task.id, "clip_ids": clip_ids, "message": "MergeAI queued — merged clips will appear in your library when ready"}
+
+
 @router.get("/clips/{clip_id}", response_model=ClipResponse)
 async def get_clip(
     clip_id: uuid.UUID,
@@ -633,7 +916,7 @@ async def get_clip(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(Clip).where(Clip.id == clip_id, Clip.status != "deleted")
+        select(Clip).where(Clip.id == clip_id, Clip.tenant_id == uuid.UUID(token.tenant_id), Clip.status != "deleted")
     )
     clip = result.scalar_one_or_none()
     if not clip:
@@ -649,7 +932,7 @@ async def patch_clip(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(Clip).where(Clip.id == clip_id, Clip.status != "deleted")
+        select(Clip).where(Clip.id == clip_id, Clip.tenant_id == uuid.UUID(token.tenant_id), Clip.status != "deleted")
     )
     clip = result.scalar_one_or_none()
     if not clip:
@@ -665,6 +948,41 @@ async def patch_clip(
     return ClipResponse.model_validate(clip)
 
 
+@router.post("/clips/{clip_id}/retry-upload", response_model=ClipResponse, status_code=status.HTTP_202_ACCEPTED)
+async def retry_clip_upload(
+    clip_id: uuid.UUID,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Re-queue an upload_failed clip for upload."""
+    result = await db.execute(
+        select(Clip).where(
+            Clip.id == clip_id,
+            Clip.tenant_id == uuid.UUID(token.tenant_id),
+            Clip.status.in_(["upload_failed", "failed"]),
+        )
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found or not in failed state.")
+
+    clip.status = "pending_upload"
+    clip.upload_error = None
+    await db.commit()
+    await db.refresh(clip)
+
+    # Re-dispatch upload task — will attempt re-export from source if tmp file is gone
+    clip_path = f"/tmp/viralo-video/{token.tenant_id}/clip_{clip_id}.mp4"
+    job_id = str(clip.video_id)
+    celery_app = _get_celery()
+    celery_app.send_task(
+        "workers.tasks.video.upload_clip_to_storage",
+        args=[str(clip_id), clip_path, token.tenant_id, job_id],
+        queue="viralo.video.generate",
+    )
+    return clip
+
+
 @router.delete("/clips/{clip_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_clip(
     clip_id: uuid.UUID,
@@ -672,10 +990,12 @@ async def delete_clip(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     result = await db.execute(
-        select(Clip).where(Clip.id == clip_id, Clip.status != "deleted")
+        select(Clip).where(Clip.id == clip_id, Clip.tenant_id == uuid.UUID(token.tenant_id), Clip.status != "deleted")
     )
     clip = result.scalar_one_or_none()
     if not clip:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
     clip.status = "deleted"
     await db.commit()
+
+

@@ -380,50 +380,6 @@ def upgrade() -> None:
     op.create_index("ix_workflow_edges_tenant_id_workflow_id", "workflow_edges", ["tenant_id", "workflow_id"])
     _apply_rls("workflow_edges")
 
-    # social_accounts
-    op.create_table(
-        "social_accounts",
-        sa.Column("id", UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("platform", sa.String(20), nullable=False),
-        sa.Column("platform_user_id", sa.String(255), nullable=True),
-        sa.Column("username", sa.String(255), nullable=True),
-        sa.Column("access_token_enc", sa.Text, nullable=True),
-        sa.Column("refresh_token_enc", sa.Text, nullable=True),
-        sa.Column("token_expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("is_active", sa.Boolean, nullable=True, server_default="true"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
-    )
-    op.create_index("ix_social_accounts_tenant_id_platform", "social_accounts", ["tenant_id", "platform"])
-    _apply_rls("social_accounts")
-
-    # scheduled_posts
-    op.create_table(
-        "scheduled_posts",
-        sa.Column("id", UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("clip_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("social_account_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("platform", sa.String(20), nullable=False),
-        sa.Column("scheduled_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
-        sa.Column("caption", sa.Text, nullable=True),
-        sa.Column("hashtags", ARRAY(sa.Text), nullable=True),
-        sa.Column("platform_post_id", sa.String(255), nullable=True),
-        sa.Column("retry_count", sa.SmallInteger, nullable=True, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
-        sa.ForeignKeyConstraint(["clip_id"], ["clips.id"]),
-    )
-    op.create_index("ix_scheduled_posts_scheduled_at", "scheduled_posts", ["scheduled_at"])
-    op.create_index("ix_scheduled_posts_tenant_id_scheduled_at", "scheduled_posts", ["tenant_id", "scheduled_at"])
-    _apply_rls("scheduled_posts")
-
     # node_credentials
     op.create_table(
         "node_credentials",
@@ -440,39 +396,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_node_credentials_tenant_id_credential_type", "node_credentials", ["tenant_id", "credential_type"])
     _apply_rls("node_credentials")
-
-    # analytics_events
-    op.create_table(
-        "analytics_events",
-        sa.Column("id", UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("event_type", sa.String(50), nullable=False),
-        sa.Column("entity_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("entity_type", sa.String(50), nullable=True),
-        sa.Column("payload", JSONB, nullable=True),
-        sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
-    )
-    op.create_index("ix_analytics_events_tenant_id_occurred_at", "analytics_events", ["tenant_id", sa.text("occurred_at DESC")])
-    op.create_index("ix_analytics_events_tenant_id_event_type", "analytics_events", ["tenant_id", "event_type"])
-    _apply_rls("analytics_events")
-
-    # notifications
-    op.create_table(
-        "notifications",
-        sa.Column("id", UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("title", sa.String(255), nullable=False),
-        sa.Column("body", sa.Text, nullable=True),
-        sa.Column("type", sa.String(50), nullable=True),
-        sa.Column("is_read", sa.Boolean, nullable=True, server_default="false"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
-    )
-    op.create_index("ix_notifications_tenant_id_is_read_created_at", "notifications", ["tenant_id", "is_read", sa.text("created_at DESC")])
-    _apply_rls("notifications")
 
     # tenant_config
     op.create_table(
@@ -494,11 +417,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Tenant tables (reverse order)
     op.drop_table("tenant_config")
-    op.drop_table("notifications")
-    op.drop_table("analytics_events")
     op.drop_table("node_credentials")
-    op.drop_table("scheduled_posts")
-    op.drop_table("social_accounts")
     op.drop_table("workflow_edges")
     op.drop_table("workflow_node_instances")
     op.drop_table("workflows")

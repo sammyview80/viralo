@@ -66,7 +66,22 @@ export function UniversalClipCard({
   const [playing, setPlaying] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  async function handleRetryUpload() {
+    setRetrying(true);
+    try {
+      const { videoApi } = await import("@/lib/api");
+      const updated = await videoApi.retryClipUpload(localClip.id);
+      setLocalClip(updated);
+      onClipChange?.(updated);
+    } catch {
+      // stays in failed state — user can try again
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   useEffect(() => setLocalClip(clip), [clip]);
 
@@ -159,6 +174,32 @@ export function UniversalClipCard({
           </div>
         )}
 
+        {/* Upload in-progress / failed overlays */}
+        {(localClip.status === "pending_upload" || localClip.status === "uploading") && (
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-2 bg-black/60 backdrop-blur-[2px]">
+            <svg className="h-6 w-6 animate-spin text-white/80" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            <span className="text-[11px] font-semibold text-white/70">
+              {localClip.status === "uploading" ? "Uploading…" : "Queued"}
+            </span>
+          </div>
+        )}
+        {localClip.status === "upload_failed" && (
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-2 bg-black/70">
+            <span className="text-[22px]">⚠</span>
+            <span className="text-[11px] font-bold text-red-400">Upload failed</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleRetryUpload(); }}
+              disabled={retrying}
+              className="mt-0.5 rounded-[8px] border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-50"
+            >
+              {retrying ? "Retrying…" : "↻ Retry Upload"}
+            </button>
+          </div>
+        )}
+
         {hasVideo && (
           <button onClick={togglePlay} className="absolute inset-0 grid place-items-center">
             {!playing && <div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-lg backdrop-blur transition group-hover:scale-105">▶</div>}
@@ -184,7 +225,7 @@ export function UniversalClipCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
-          <Badge variant={localClip.status === "ready" ? "ready" : localClip.status === "processing" ? "warn" : "muted"}>{localClip.status}</Badge>
+          <Badge variant={localClip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(localClip.status) ? "warn" : localClip.status === "upload_failed" ? "error" : localClip.status === "processing" ? "warn" : "muted"}>{localClip.status === "pending_upload" ? "queued" : localClip.status === "upload_failed" ? "failed" : localClip.status}</Badge>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{tags.length} tags</span>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{new Date(localClip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
           {clipStart && clipEnd && <span className="rounded-full bg-white/[.035] px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}

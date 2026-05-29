@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { cn } from "@/lib/utils";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { cn, safeFilename, downloadBlob, downloadUrl, stripSrtTimecodes } from "@/lib/utils";
 import { Shell } from "../Shell";
 import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
 import { VirtualizedGrid } from "../components/VirtualizedCollection";
-import { videoApi, platformApi, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount } from "@/lib/api";
+import { videoApi, platformApi, token as authToken, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount, type ScheduledPost } from "@/lib/api";
+
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 
 /* ─── Types ─── */
 type Source = "file" | "yt";
@@ -29,7 +31,7 @@ export const DEFAULT_CONFIG: ClipConfig = {
   min_score: 0.5,
   platforms: ["tiktok","reels","shorts"],
   topic_focus: null,
-  add_captions: true,
+  add_captions: false,
   caption_style: "capcut",
   aspect_ratio: "9:16",
   duration_min: 20,
@@ -51,158 +53,167 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
     set({ platforms: cur.includes(id) ? cur.filter((p) => p !== id) : [...cur, id] });
   };
 
-  const labelCls = "mb-1.5 block text-[11px] font-semibold uppercase tracking-[.08em] text-zinc-500";
-  const inputCls = "w-full rounded-[8px] border border-white/[.07] bg-[#0b101a] px-3 py-2 text-[13px] text-zinc-200 outline-none focus:border-[#ff3d6a]/50 transition";
-  const chipBase = "rounded-[7px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer";
-  const chipOn  = "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-[#ff3d6a]";
-  const chipOff = "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12] hover:text-zinc-200";
+  const selectedPlatforms = config.platforms ?? [];
+  const virality = Math.round((config.min_score ?? 0.5) * 10);
+  const durationLabel = `${config.duration_min ?? 20}-${config.duration_max ?? 60}s`;
+  const labelCls = "mb-2 block text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500";
+  const inputCls = "w-full rounded-[11px] border border-white/[.08] bg-[#0a0f18] px-3.5 py-3 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#ff3d6a]/55 focus:shadow-[0_0_0_3px_rgba(255,61,106,.09)]";
+  const chipBase = "rounded-[10px] border px-3 py-2 text-[12px] font-semibold transition cursor-pointer";
+  const chipOn  = "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.13] text-[#ff5f86] shadow-[inset_0_1px_0_rgba(255,255,255,.05)]";
+  const chipOff = "border-white/[.08] bg-white/[.035] text-zinc-400 hover:border-white/[.15] hover:bg-white/[.06] hover:text-zinc-200";
 
   return (
-    <div className="space-y-6 rounded-[16px] border border-white/[.07] bg-[#0d1219] p-5">
-
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <span className="text-[13px] font-bold text-white">Clip settings</span>
-      </div>
-
-      {/* Platforms */}
-      <div>
-        <label className={labelCls}>Platforms</label>
-        <div className="flex flex-wrap gap-1.5">
-          {PLATFORM_OPTIONS.map((p) => {
-            const active = (config.platforms ?? []).includes(p.id);
-            return (
-              <button key={p.id} type="button" onClick={() => togglePlat(p.id)}
-                className={cn(chipBase, active ? chipOn : chipOff)}>
-                {p.label}
-              </button>
-            );
-          })}
+    <section className="overflow-hidden rounded-[22px] border border-white/[.08] bg-[#0b111a] shadow-[0_24px_70px_rgba(0,0,0,.22)]">
+      <div className="border-b border-white/[.07] bg-[radial-gradient(circle_at_0%_0%,rgba(255,61,106,.16),transparent_35%),linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015))] p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center rounded-[10px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[14px] text-[#ff668a]">⚙</span>
+              <div>
+                <h3 className="font-display text-[17px] font-bold text-white">Clip recipe</h3>
+                <p className="mt-0.5 text-[12px] text-zinc-500">Tune output once. Viralo uses these rules for every generated clip.</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-300">
+            <span className="rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1">{selectedPlatforms.length} platforms</span>
+            <span className="rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1">{durationLabel}</span>
+            <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[#ff6c90]">≥ {virality}/10</span>
+          </div>
         </div>
       </div>
 
-      <div className="h-px bg-white/[.05]" />
-
-      {/* Aspect ratio + Language */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="space-y-5 p-4 sm:p-5">
         <div>
-          <label className={labelCls}>Aspect ratio</label>
-          <div className="flex gap-1.5">
-            {ASPECT_OPTIONS.map((r) => (
-              <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
-                className={cn(chipBase, "flex-1 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
-                {r}
+          <label className={labelCls}>Destinations</label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {PLATFORM_OPTIONS.map((p) => {
+              const active = selectedPlatforms.includes(p.id);
+              return (
+                <button key={p.id} type="button" onClick={() => togglePlat(p.id)}
+                  className={cn("flex items-center justify-center gap-2", chipBase, active ? chipOn : chipOff)}>
+                  <span className={cn("text-[13px]", active ? "text-[#ff7a9a]" : "text-zinc-500")}>{p.ltr}</span>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11.5px] text-zinc-600">Select every platform you plan to publish on so framing and captions stay safe.</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_1.2fr]">
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Aspect ratio</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {ASPECT_OPTIONS.map((r) => (
+                <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
+                  className={cn(chipBase, "px-2 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Language</label>
+            <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
+              className={inputCls}>
+              {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
+            </select>
+          </div>
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Target length</label>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <input type="number" min={5} max={config.duration_max} value={config.duration_min}
+                onChange={(e) => set({ duration_min: Number(e.target.value) })}
+                className={inputCls} />
+              <span className="text-zinc-600 text-sm">to</span>
+              <input type="number" min={config.duration_min} max={300} value={config.duration_max}
+                onChange={(e) => set({ duration_max: Number(e.target.value) })}
+                className={inputCls} />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <div className="mb-2 flex items-center justify-between">
+              <label className={cn(labelCls, "mb-0")}>Max clips</label>
+              <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[12px] font-bold text-[#ff5f86]">{config.max_clips}</span>
+            </div>
+            <input type="range" min={1} max={20} value={config.max_clips}
+              onChange={(e) => set({ max_clips: Number(e.target.value) })}
+              className="w-full accent-[#ff3d6a]" />
+            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1 focused clip</span><span>20 batch clips</span></div>
+          </div>
+
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <div className="mb-2 flex items-center justify-between">
+              <label className={cn(labelCls, "mb-0")}>Minimum viral score</label>
+              <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[12px] font-bold text-[#ff5f86]">{virality}/10</span>
+            </div>
+            <input type="range" min={0} max={10} step={1} value={virality}
+              onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
+              className="w-full accent-[#ff3d6a]" />
+            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any usable</span><span>Balanced</span><span>Viral only</span></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_.9fr]">
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-zinc-600">optional</span></label>
+            <input type="text" placeholder="e.g. controversial moment, product demo, founder story…"
+              value={config.topic_focus ?? ""}
+              onChange={(e) => set({ topic_focus: e.target.value || null })}
+              className={inputCls} />
+            <p className="mt-2 text-[11.5px] text-zinc-600">Use this to bias clip selection without changing the source video.</p>
+          </div>
+
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[13px] font-bold text-zinc-100">Auto captions</div>
+                <div className="mt-0.5 text-[11.5px] text-zinc-500">Burn readable subtitles into every clip.</div>
+              </div>
+              <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
+                aria-pressed={!!config.add_captions}
+                className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+                  config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+                  config.add_captions ? "left-[calc(100%-24px)]" : "left-1")} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {config.add_captions && (
+          <div className="rounded-[14px] border border-[#ff3d6a]/18 bg-[#ff3d6a]/[.04] p-3.5">
+            <label className={labelCls}>Caption style</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {CAPTION_STYLES.map((s) => (
+                <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
+                  className={cn("rounded-[11px] border px-3 py-2.5 text-left transition",
+                    config.caption_style === s.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
+                  <div className={cn("text-[12px] font-bold", config.caption_style === s.id ? "text-[#ff5f86]" : "text-zinc-200")}>{s.label}</div>
+                  <div className="mt-0.5 text-[10.5px] leading-4 text-zinc-500">{s.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+          <label className={labelCls}>Output quality</label>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {(["source","1080p","720p","480p"] as const).map((q) => (
+              <button key={q} type="button" onClick={() => set({ output_quality: q })}
+                className={cn(chipBase, "text-center", config.output_quality === q ? chipOn : chipOff)}>
+                {q === "source" ? "Full res" : q}
               </button>
             ))}
           </div>
         </div>
-        <div>
-          <label className={labelCls}>Language</label>
-          <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
-            className={inputCls}>
-            {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
-          </select>
-        </div>
       </div>
-
-      {/* Duration */}
-      <div>
-        <label className={labelCls}>Duration (sec)</label>
-        <div className="flex items-center gap-2">
-          <input type="number" min={5} max={config.duration_max} value={config.duration_min}
-            onChange={(e) => set({ duration_min: Number(e.target.value) })}
-            className={inputCls} />
-          <span className="text-zinc-600 text-sm">–</span>
-          <input type="number" min={config.duration_min} max={300} value={config.duration_max}
-            onChange={(e) => set({ duration_max: Number(e.target.value) })}
-            className={inputCls} />
-        </div>
-      </div>
-
-      {/* Max clips */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className={cn(labelCls, "mb-0")}>Max clips</label>
-          <span className="text-[12px] font-semibold text-[#ff3d6a]">{config.max_clips}</span>
-        </div>
-        <input type="range" min={1} max={20} value={config.max_clips}
-          onChange={(e) => set({ max_clips: Number(e.target.value) })}
-          className="w-full accent-[#ff3d6a]" />
-        <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1</span><span>20</span></div>
-      </div>
-
-      {/* Virality score */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className={cn(labelCls, "mb-0")}>Min virality score</label>
-          <span className="text-[12px] font-semibold text-[#ff3d6a]">{Math.round((config.min_score ?? 0.5) * 10)}/10</span>
-        </div>
-        <input type="range" min={0} max={10} step={1} value={Math.round((config.min_score ?? 0.5) * 10)}
-          onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
-          className="w-full accent-[#ff3d6a]" />
-        <div className="mt-1 flex justify-between text-[10px] text-zinc-600">
-          <span>Any</span><span>Balanced</span><span>Viral only</span>
-        </div>
-      </div>
-
-      <div className="h-px bg-white/[.05]" />
-
-      {/* Topic focus */}
-      <div>
-        <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-zinc-600">— optional</span></label>
-        <input type="text" placeholder="e.g. fitness tips, product demo…"
-          value={config.topic_focus ?? ""}
-          onChange={(e) => set({ topic_focus: e.target.value || null })}
-          className={inputCls} />
-      </div>
-
-      {/* Auto captions */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[13px] font-semibold text-zinc-200">Auto captions</div>
-          <div className="text-[11px] text-zinc-500">Burn subtitles into clips</div>
-        </div>
-        <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
-          className={cn("relative h-6 w-11 rounded-full transition-colors duration-200 shrink-0",
-            config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.12]")}>
-          <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
-            config.add_captions ? "left-[calc(100%-22px)]" : "left-0.5")} />
-        </button>
-      </div>
-
-      {/* Caption style */}
-      {config.add_captions && (
-        <div>
-          <label className={labelCls}>Caption style</label>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {CAPTION_STYLES.map((s) => (
-              <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
-                className={cn("rounded-[9px] border px-3 py-2.5 text-left transition",
-                  config.caption_style === s.id ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
-                <div className={cn("text-[12px] font-semibold", config.caption_style === s.id ? "text-[#ff3d6a]" : "text-zinc-200")}>{s.label}</div>
-                <div className="mt-0.5 text-[10.5px] text-zinc-500">{s.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="h-px bg-white/[.05]" />
-
-      {/* Output quality */}
-      <div>
-        <label className={labelCls}>Output quality</label>
-        <div className="flex gap-1.5">
-          {(["source","1080p","720p","480p"] as const).map((q) => (
-            <button key={q} type="button" onClick={() => set({ output_quality: q })}
-              className={cn(chipBase, "flex-1 text-center", config.output_quality === q ? chipOn : chipOff)}>
-              {q === "source" ? "Full res" : q}
-            </button>
-          ))}
-        </div>
-      </div>
-
-    </div>
+    </section>
   );
 }
 
@@ -545,44 +556,152 @@ function TimelineEditor({
   );
 }
 
+/* ─── Zip download modal ─── */
+type ZipPhase = "zipping" | "done" | "error";
+
+function ZipDownloadModal({ clips, videoTitle, onClose }: {
+  clips: ClipApiResponse[];
+  videoTitle: string;
+  onClose: () => void;
+}) {
+  const [phase, setPhase] = useState<ZipPhase>("zipping");
+  const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    async function run() {
+      const ids = clips.filter((c) => c.storage_url).map((c) => c.id);
+      if (!ids.length) { setError("No downloadable clips."); setPhase("error"); return; }
+
+      try {
+        const blob = await videoApi.downloadZip(ids, videoTitle);
+        if (cancelledRef.current) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = safeFilename(videoTitle, "zip");
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        setPhase("done");
+        setTimeout(onClose, 1200);
+      } catch (e: unknown) {
+        if (cancelledRef.current) return;
+        setError(e instanceof Error ? e.message : "Unknown error");
+        setPhase("error");
+      }
+    }
+
+    void run();
+    return () => { cancelledRef.current = true; };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-[340px] rounded-[16px] border border-white/[.10] bg-[#0f1520] p-6 shadow-[0_24px_60px_rgba(0,0,0,.7)]"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <span className="text-[14px] font-semibold text-white">
+            {phase === "zipping" && "Preparing ZIP…"}
+            {phase === "done" && "Done!"}
+            {phase === "error" && "Error"}
+          </span>
+          {(phase === "done" || phase === "error") && (
+            <button onClick={onClose} className="text-[12px] text-zinc-500 hover:text-zinc-300">Close</button>
+          )}
+        </div>
+
+        {phase === "zipping" && (
+          <div className="flex items-center gap-2.5 text-[12px] text-zinc-400">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+            Server is fetching and zipping {clips.filter((c) => c.storage_url).length} clips…
+          </div>
+        )}
+
+        {phase === "done" && (
+          <div className="text-[12px] text-emerald-400">✓ ZIP downloaded successfully</div>
+        )}
+
+        {phase === "error" && (
+          <div className="text-[12px] text-red-400">{error}</div>
+        )}
+
+        {phase === "zipping" && (
+          <button onClick={() => { cancelledRef.current = true; onClose(); }}
+            className="mt-4 text-[11.5px] text-zinc-600 hover:text-zinc-400">
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Download menu ─── */
 function DownloadMenu({ clip, onClose }: { clip: ClipApiResponse; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => {
     const fn = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
     setTimeout(() => document.addEventListener("click", fn), 50);
     return () => document.removeEventListener("click", fn);
   }, []);
-  const items = [
-    { label:"Download MP4",       icon:"🎬", href: clip.storage_url ?? "#" },
-    { label:"Download SRT",       icon:"💬", href: "#" },
-    { label:"Download thumbnail", icon:"🖼", href: clip.thumbnail_url ?? "#" },
-    { label:"Copy transcript",    icon:"📝", href: null },
-    { label:"Share link",         icon:"🔗", href: null },
+
+  const title = clip.title ?? "clip";
+
+  const items: { label: string; icon: string; onClick?: () => void; disabled?: boolean }[] = [
+    {
+      label: "Download MP4", icon: "🎬",
+      disabled: !clip.storage_url,
+      onClick: () => { void downloadUrl(clip.storage_url!, safeFilename(title, "mp4")); onClose(); },
+    },
+    {
+      label: "Download SRT", icon: "💬",
+      disabled: !clip.caption_srt,
+      onClick: () => { downloadBlob(clip.caption_srt!, safeFilename(title, "srt"), "text/plain"); onClose(); },
+    },
+    {
+      label: "Download thumbnail", icon: "🖼",
+      disabled: !clip.thumbnail_url,
+      onClick: () => { void downloadUrl(clip.thumbnail_url!, safeFilename(title, "jpg")); onClose(); },
+    },
+    {
+      label: copied ? "Copied!" : "Copy transcript", icon: "📝",
+      disabled: !clip.caption_srt,
+      onClick: () => {
+        navigator.clipboard.writeText(stripSrtTimecodes(clip.caption_srt!))
+          .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+      },
+    },
+    {
+      label: "Share link", icon: "🔗",
+      onClick: () => { navigator.clipboard.writeText(window.location.href); onClose(); },
+    },
   ];
+
   return (
     <div ref={ref} className="absolute bottom-[calc(100%+6px)] right-0 z-50 w-48 overflow-hidden rounded-[11px] border border-white/[.10] bg-[#141926] shadow-[0_16px_40px_rgba(0,0,0,.5)]"
       onClick={(e) => e.stopPropagation()}>
-      {items.map((item, i) => (
-        <div key={item.label}>
-          {i === 3 && <div className="mx-3 border-t border-white/[.07]" />}
-          {item.href && item.href !== "#"
-            ? <a href={item.href} download onClick={onClose}
-                className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] text-zinc-300 transition hover:bg-white/[.05] hover:text-white">
-                <span>{item.icon}</span>{item.label}
-              </a>
-            : <button onClick={onClose}
-                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] text-zinc-300 transition hover:bg-white/[.05] hover:text-white">
-                <span>{item.icon}</span>{item.label}
-              </button>}
-        </div>
-      ))}
+      {items.map((item, i) => {
+        const cls = `flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] transition ${item.disabled ? "cursor-not-allowed opacity-40 text-zinc-500" : "text-zinc-300 hover:bg-white/[.05] hover:text-white"}`;
+        return (
+          <div key={item.label}>
+            {i === 3 && <div className="mx-3 border-t border-white/[.07]" />}
+            <button onClick={item.disabled ? undefined : item.onClick} disabled={item.disabled} className={cls}>
+              <span>{item.icon}</span>{item.label}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /* ─── Pipeline step label mapping ─── */
 const PROC_STEPS = [
+  { keys: ["queued","queue","waiting"],    emoji:"⏳", label:"Queued",                  sub:"Waiting for a worker to become available" },
   { keys: ["download"],                    emoji:"⬇",  label:"Downloading video",       sub:"Fetching from source" },
   { keys: ["upload","uploading"],          emoji:"⬆",  label:"Uploading file",          sub:"Transferring to secure storage" },
   { keys: ["metadata","probe"],            emoji:"🔎", label:"Probing video",           sub:"Reading resolution, duration, codec" },
@@ -598,6 +717,19 @@ function pipelineStepIdx(step: string | null): number {
   const s = step.toLowerCase();
   const idx = PROC_STEPS.findIndex((p) => p.keys.some((k) => s.includes(k)));
   return idx >= 0 ? idx : 0;
+}
+
+function formatElapsedSince(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "unknown";
+  const start = new Date(iso).getTime();
+  if (!Number.isFinite(start)) return "unknown";
+  const total = Math.max(0, Math.floor((now - start) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 /* ─── Social connect banner shown during processing ─── */
@@ -698,6 +830,34 @@ function SocialConnectBanner() {
 }
 
 /* ─── Processing view (SSE + polling fallback) ─── */
+type LiveEvent = {
+  id: string;
+  kind: "clip_ready" | "clip_uploading" | "clips_ready" | "info";
+  label: string;
+  sub?: string;
+  pct?: number;
+  step?: string;
+  thumbnail?: string;
+  ts: number;
+};
+
+const STEP_ICONS: Record<string, string> = {
+  download: "⬇", upload: "⬆", transcribe: "🎙", scoring: "🧠",
+  ai_content: "✍", export: "🎞", captions: "💬", saving: "💾",
+  complete: "✅", failed: "✗",
+};
+const STEP_COLORS: Record<string, string> = {
+  download: "border-blue-400/20 bg-blue-400/10 text-blue-300",
+  upload: "border-purple-400/20 bg-purple-400/10 text-purple-300",
+  transcribe: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",
+  scoring: "border-yellow-400/20 bg-yellow-400/10 text-yellow-300",
+  ai_content: "border-pink-400/20 bg-pink-400/10 text-pink-300",
+  export: "border-orange-400/20 bg-orange-400/10 text-orange-300",
+  captions: "border-indigo-400/20 bg-indigo-400/10 text-indigo-300",
+  saving: "border-teal-400/20 bg-teal-400/10 text-teal-300",
+  complete: "border-emerald-300/20 bg-emerald-400/10 text-emerald-300",
+};
+
 function ProcessingView({
   video,
   onDone,
@@ -710,59 +870,152 @@ function ProcessingView({
   const [current, setCurrent] = useState(video);
   const [liveMsg, setLiveMsg] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>(video.error_message ?? "");
+  const [now, setNow] = useState(Date.now());
+
+  const STORAGE_KEY = `viralo_live_${video.celery_task_id ?? video.id}`;
+  const [liveEvents, setLiveEvents] = useState<LiveEvent[]>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as LiveEvent[]) : [];
+    } catch { return []; }
+  });
+
   const doneRef = useRef(false);
+  const sseActiveRef = useRef(false);
+  const clipCountRef = useRef(0);
 
   const isTerminal = (v: VideoResponse) =>
     v.status === "done" || v.status === "ready" || v.status === "failed" || v.pipeline_step === "complete";
 
-  // SSE for real-time progress messages
+  const lastStepRef = useRef<string>("");
+  const pushEvent = (ev: Omit<LiveEvent, "id" | "ts">) =>
+    setLiveEvents((prev) => {
+      const next = [{ ...ev, id: Math.random().toString(36).slice(2), ts: Date.now() }, ...prev].slice(0, 30);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota */ }
+      return next;
+    });
+
+  useEffect(() => {
+    setCurrent(video);
+    setErrorMsg(video.error_message ?? "");
+    doneRef.current = false;
+  }, [video.id, video.status, video.pipeline_step, video.pipeline_pct, video.error_message]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // SSE — primary real-time progress channel
   useEffect(() => {
     if (!current.celery_task_id || doneRef.current) return;
-    const token = localStorage.getItem("viralo_access_token") || "";
-    const url = `http://localhost:8003/api/v1/video/progress/${current.celery_task_id}`;
-    const es = new EventSource(`${url}?token=${encodeURIComponent(token)}`);
+    const t = authToken.get() || "";
+    if (!t) return;
+    const url = `${VIDEO_SSE_BASE}/video/progress/${current.celery_task_id}`;
+    const es = new EventSource(`${url}?token=${encodeURIComponent(t)}`);
+
+    es.onopen = () => { sseActiveRef.current = true; };
+
     es.onmessage = (e) => {
       try {
         const d = JSON.parse(e.data);
         if (d.type === "keepalive") return;
+
+        // Pipeline progress
         if (d.message) setLiveMsg(d.message);
+        if (d.pct != null) setCurrent((prev) => ({ ...prev, pipeline_pct: d.pct, pipeline_step: d.step ?? prev.pipeline_step }));
         if (d.status === "failed" && d.message) setErrorMsg(d.message);
+
+        // Clip upload events
+        if (d.event === "clip_upload_complete") {
+          clipCountRef.current += 1;
+          pushEvent({
+            kind: "clip_ready",
+            label: `Clip ${clipCountRef.current} ready`,
+            sub: d.title ?? undefined,
+            thumbnail: d.thumbnail_url ?? undefined,
+          });
+        }
+        if (d.event === "clips_ready") {
+          pushEvent({ kind: "clips_ready", label: `${d.count ?? ""} clips found`, sub: "Uploading to cloud…" });
+        }
+        // Detailed message events — push every unique message
+        if (d.message && d.step && d.step !== "keepalive") {
+          const isNewStep = d.step !== lastStepRef.current;
+          if (isNewStep) lastStepRef.current = d.step;
+          pushEvent({
+            kind: "info",
+            label: d.message,
+            pct: d.pct ?? undefined,
+            step: d.step,
+          });
+        } else if (d.step && d.step !== "keepalive" && d.step !== lastStepRef.current) {
+          // Step transition with no message
+          lastStepRef.current = d.step;
+          const stepLabels: Record<string, string> = {
+            download: "Downloading video…", upload: "Uploading to storage…",
+            transcribe: "Transcribing speech…", scoring: "Finding viral moments…",
+            ai_content: "Generating titles & hashtags…", export: "Rendering clips…",
+            captions: "Burning captions…", saving: "Saving clips…", complete: "All done!",
+          };
+          if (stepLabels[d.step]) pushEvent({ kind: "info", label: stepLabels[d.step], step: d.step });
+        }
+
         if (d.status === "complete" || d.status === "failed") {
           es.close();
+          sseActiveRef.current = false;
           if (!doneRef.current) {
             doneRef.current = true;
+            try { localStorage.removeItem(STORAGE_KEY); } catch { /* ok */ }
             videoApi.get(current.id).then(onDone).catch(() => onDone(current));
           }
         }
       } catch { /* ignore malformed */ }
     };
-    es.onerror = () => es.close();
-    return () => es.close();
+
+    es.onerror = () => {
+      sseActiveRef.current = false;
+      es.close();
+    };
+
+    return () => { es.close(); sseActiveRef.current = false; };
   }, [current.celery_task_id]);
 
-  // Polling fallback — keeps video state fresh
+  // Queued-only timeout check — SSE handles all progress once the worker starts.
+  // Only poll while queued (no SSE events until worker picks up the task).
   useEffect(() => {
-    if (doneRef.current) return;
-    if (isTerminal(current)) {
-      if (!doneRef.current) { doneRef.current = true; setTimeout(() => onDone(current), 400); }
-      return;
-    }
-    const id = setTimeout(async () => {
+    if (doneRef.current || isTerminal(current)) return;
+    const isQueued = current.status === "queued" || (!current.pipeline_step && (current.pipeline_pct ?? 0) === 0);
+    if (!isQueued) return; // SSE active — no polling needed
+    const id = window.setInterval(async () => {
+      if (doneRef.current) return;
       try {
         const updated = await videoApi.get(current.id);
+        const stillQueued = updated.status === "queued" || (!updated.pipeline_step && (updated.pipeline_pct ?? 0) === 0);
+        if (stillQueued && updated.created_at) {
+          const queuedMs = Date.now() - new Date(updated.created_at).getTime();
+          if (queuedMs > 5 * 60 * 1000) {
+            setErrorMsg("No video worker picked up this job within 5 minutes. The worker may be down — please try again or contact support.");
+            return;
+          }
+        }
         setCurrent(updated);
+        if (updated.error_message) setErrorMsg(updated.error_message);
         if (isTerminal(updated) && !doneRef.current) {
           doneRef.current = true;
           setTimeout(() => onDone(updated), 400);
         }
       } catch { /* retry next tick */ }
-    }, 3000);
-    return () => clearTimeout(id);
-  }, [current]);
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [current.id, current.status, current.pipeline_step, current.pipeline_pct, onDone]);
 
   const overallPct = Math.min(Math.max(current.pipeline_pct ?? 0, 0), 100);
   const stepIdx = pipelineStepIdx(current.pipeline_step);
   const grad = gradFromId(current.id);
+  const queuedFor = formatElapsedSince(current.created_at, now);
+  const isQueued = current.status === "queued" || (!current.pipeline_step && overallPct === 0);
+  const sourceLabel = current.source_type === "youtube_url" ? "YouTube" : "Uploaded file";
 
   return (
     <div className="space-y-5">
@@ -773,15 +1026,38 @@ function ProcessingView({
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13.5px] font-semibold">{current.title ?? "Untitled"}</div>
           <div className="mt-0.5 flex gap-1.5 text-[11.5px] text-zinc-500">
-            <span>{current.source_type === "youtube" ? "YouTube" : "Uploaded file"}</span>
+            <span>{sourceLabel}</span>
             {current.duration_sec && <><span>·</span><span>{fmtDur(current.duration_sec)}</span></>}
           </div>
         </div>
-        {current.status === "failed"
-          ? <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-1 text-[11px] font-semibold text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Failed</span>
-          : <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/20 bg-yellow-400/10 px-2.5 py-1 text-[11px] font-semibold text-yellow-300"><span className="h-1.5 w-1.5 rounded-full bg-yellow-300" />Processing</span>}
+        <div className="flex flex-col items-end gap-1">
+          {current.status === "failed"
+            ? <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-1 text-[11px] font-semibold text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Failed</span>
+            : <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/20 bg-yellow-400/10 px-2.5 py-1 text-[11px] font-semibold text-yellow-300"><span className="h-1.5 w-1.5 rounded-full bg-yellow-300 animate-pulse" />{isQueued ? "Queued" : "Processing"}</span>}
+          {current.created_at && (
+            <span className="text-[10.5px] font-mono text-zinc-500">{formatElapsedSince(current.created_at, now)}</span>
+          )}
+        </div>
       </div>
-      {current.status === "failed" && errorMsg && (
+      {isQueued && current.status !== "failed" && (
+        <div className="rounded-[12px] border border-yellow-300/15 bg-yellow-400/[.045] p-3.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-[12.5px] font-semibold text-yellow-200">Waiting for a video worker</div>
+              <div className="mt-0.5 text-[11.5px] text-zinc-500">
+                This clipping job has been queued for <span className="font-mono text-zinc-300">{queuedFor}</span>.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-[10.5px] font-mono text-zinc-500">
+              <span className="rounded-[7px] border border-white/[.07] bg-white/[.035] px-2 py-1">video {current.id.slice(0, 8)}</span>
+              {current.celery_task_id && (
+                <span className="rounded-[7px] border border-white/[.07] bg-white/[.035] px-2 py-1">task {current.celery_task_id.slice(0, 8)}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {(current.status === "failed" || errorMsg) && errorMsg && (
         <div className="rounded-[8px] border border-red-500/20 bg-red-500/[.07] px-3 py-2 text-[11.5px] text-red-400 font-mono leading-snug break-all">
           {errorMsg}
         </div>
@@ -810,7 +1086,8 @@ function ProcessingView({
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="flex gap-4 items-start">
+      <div className="flex-1 space-y-2">
         {PROC_STEPS.map((step, i) => {
           const done = overallPct === 100 ? true : i < stepIdx;
           const active = !done && i === stepIdx;
@@ -834,7 +1111,7 @@ function ProcessingView({
               </div>
               <div className="flex-1 min-w-0">
                 <div className={cn("text-[13px] font-semibold", state === "done" ? "text-zinc-400" : state === "active" ? "text-white" : "text-zinc-600")}>{step.label}</div>
-                <div className="mt-0.5 text-[11.5px] text-zinc-500">{state === "done" ? "Completed" : step.sub}</div>
+                <div className="mt-0.5 text-[11.5px] text-zinc-500">{state === "done" ? "Completed" : state === "active" && step.keys.includes("queued") ? `Queued for ${queuedFor}` : step.sub}</div>
                 {state === "active" && liveMsg && (
                   <div className="mt-1.5 text-[11px] text-zinc-400 leading-snug">{liveMsg}</div>
                 )}
@@ -856,16 +1133,544 @@ function ProcessingView({
           );
         })}
       </div>
+
+      {/* Live SSE event feed */}
+      {liveEvents.length > 0 && (
+      <div className="w-72 shrink-0">
+        <div className="overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0a0f1a]">
+          {/* Header */}
+          <div className="flex items-center gap-2 border-b border-white/[.06] px-3.5 py-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff3d6a] opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#ff3d6a]" />
+            </span>
+            <span className="text-[11px] font-semibold uppercase tracking-[.08em] text-zinc-500">Live</span>
+          </div>
+
+          {/* Events list */}
+          <div className="divide-y divide-white/[.04]">
+            {liveEvents.map((ev) => {
+              const stepColor = ev.kind === "clip_ready" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-300"
+                : ev.kind === "clips_ready" ? "border-[#ff3d6a]/20 bg-[#ff3d6a]/10 text-[#ff3d6a]"
+                : ev.step ? (STEP_COLORS[ev.step] ?? "border-white/[.07] bg-white/[.04] text-zinc-400")
+                : "border-white/[.07] bg-white/[.03] text-zinc-500";
+              const icon = ev.kind === "clip_ready" ? "✓"
+                : ev.kind === "clips_ready" ? "✦"
+                : ev.step ? (STEP_ICONS[ev.step] ?? "›") : "›";
+              const elapsed = Math.round((Date.now() - ev.ts) / 1000);
+              return (
+                <div
+                  key={ev.id}
+                  className="flex items-start gap-3 px-3.5 py-2.5"
+                  style={{ animation: "fadeUp .2s ease" }}
+                >
+                  {/* Icon or thumbnail */}
+                  {ev.thumbnail ? (
+                    <img src={ev.thumbnail} alt="" className="h-8 w-[46px] flex-none rounded-[5px] object-cover" />
+                  ) : (
+                    <div className={cn("mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-[5px] border text-[10px]", stepColor)}>
+                      {icon}
+                    </div>
+                  )}
+
+                  {/* Label + sub */}
+                  <div className="min-w-0 flex-1">
+                    <div className={cn(
+                      "text-[11.5px] leading-snug",
+                      ev.kind === "clip_ready" ? "font-medium text-emerald-300"
+                      : ev.kind === "clips_ready" ? "font-semibold text-white"
+                      : "text-zinc-300"
+                    )}>
+                      {ev.label}
+                    </div>
+                    {ev.sub && <div className="mt-0.5 text-[10.5px] text-zinc-500">{ev.sub}</div>}
+                  </div>
+
+                  {/* Right: pct badge + time */}
+                  <div className="flex flex-none flex-col items-end gap-1">
+                    {ev.pct != null && (
+                      <span className="rounded-[4px] bg-white/[.05] px-1.5 py-0.5 font-mono text-[9px] text-zinc-400">
+                        {ev.pct}%
+                      </span>
+                    )}
+                    <span className="font-mono text-[9.5px] text-zinc-700">
+                      {elapsed < 5 ? "just now" : `${elapsed}s ago`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Clip detail modal ─── */
+const DETAIL_PLAT_CFG: Record<string, { color: string; icon: string }> = {
+  youtube:{color:"#FF0000",icon:"▶"},shorts:{color:"#FF0000",icon:"▶"},
+  tiktok:{color:"#69C9D0",icon:"♪"},reels:{color:"#E1306C",icon:"◈"},
+  instagram:{color:"#E1306C",icon:"◈"},twitter:{color:"#1DA1F2",icon:"𝕏"},
+  facebook:{color:"#1877F2",icon:"f"},linkedin:{color:"#0A66C2",icon:"in"},
+};
+
+type DetailTab = "info" | "copy" | "assets";
+
+function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClose, onPublish }: {
+  clip: ClipApiResponse;
+  isPosted?: boolean;
+  isScheduled?: boolean;
+  posts?: ScheduledPost[];
+  onClose: () => void;
+  onPublish?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(clip.duration_ms ? clip.duration_ms / 1000 : 0);
+  const [tab, setTab] = useState<DetailTab>("info");
+  const [activePlatIdx, setActivePlatIdx] = useState(0);
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+  useEffect(() => {
+    const v = videoRef.current; if (!v) return;
+    const onTime = () => { setCurrentTime(v.currentTime); setProgress(v.duration ? v.currentTime / v.duration : 0); };
+    const onMeta = () => setDuration(v.duration);
+    const onEnd = () => setPlaying(false);
+    v.addEventListener("timeupdate", onTime); v.addEventListener("loadedmetadata", onMeta); v.addEventListener("ended", onEnd);
+    return () => { v.removeEventListener("timeupdate", onTime); v.removeEventListener("loadedmetadata", onMeta); v.removeEventListener("ended", onEnd); };
+  }, []);
+
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  const togglePlay = () => {
+    const v = videoRef.current; if (!v) return;
+    if (v.paused) { v.play(); setPlaying(true); } else { v.pause(); setPlaying(false); }
+  };
+  const seekFromEvent = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const v = videoRef.current;
+    if (!barRef.current || !v || !v.duration) return;
+    const rect = barRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    v.currentTime = ratio * v.duration; setProgress(ratio);
+  }, []);
+  const onBarMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault(); seekFromEvent(e);
+    const onMove = (ev: MouseEvent) => seekFromEvent(ev);
+    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+  };
+
+  const platformKey = clip.platform ?? "shorts";
+  const platformContent = clip.clip_metadata?.platforms?.[platformKey] ?? null;
+  const allPlatformEntries = Object.entries(clip.clip_metadata?.platforms ?? {});
+  const primaryDescription = platformContent?.description ?? clip.clip_metadata?.ai_title ?? clip.title ?? "";
+  const primaryTags = platformContent?.tags ?? [];
+  const scoreValue = clip.score ?? 0;
+  const scoreColor = scoreValue >= 7 ? "#34d399" : scoreValue >= 4 ? "#fbbf24" : "#f87171";
+  const scorePct = Math.min(100, Math.round(scoreValue * 10));
+  const clipStart = clip.start_ms != null ? fmt(clip.start_ms / 1000) : "--:--";
+  const clipEnd = clip.end_ms != null ? fmt(clip.end_ms / 1000) : "--:--";
+  const durMs = clip.duration_ms ?? 0;
+  const cleanCaptionPreview = clip.caption_srt
+    ? clip.caption_srt.split("\n").filter((l) => l && !/^\d+$/.test(l) && !l.includes("-->")).join(" ").replace(/\s+/g, " ").slice(0, 320)
+    : "";
+  const captionLineCount = clip.caption_srt ? clip.caption_srt.split(/\n\n+/).filter(Boolean).length : 0;
+
+  const activePlat = allPlatformEntries[activePlatIdx];
+  const activePlatContent = activePlat?.[1] as { description: string; tags: string[] } | undefined;
+  const activePlatCfg = activePlat ? (DETAIL_PLAT_CFG[activePlat[0].toLowerCase()] ?? { color: "#ff3d6a", icon: "↗" }) : null;
+
+  const TABS: { id: DetailTab; label: string; count?: number }[] = [
+    { id: "info", label: "Info" },
+    { id: "copy", label: "Copy", count: allPlatformEntries.length },
+    { id: "assets", label: "Assets", count: posts.length > 0 ? posts.length : undefined },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[500] grid place-items-center p-3 sm:p-5"
+      style={{ background: "rgba(3,6,14,.82)", backdropFilter: "blur(12px)", animation: "fadeUp .14s ease" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Shell: 2-col grid, fixed height */}
+      <div
+        className="w-full overflow-hidden rounded-[22px] border border-white/[.09] bg-[#090d16] shadow-[0_48px_120px_rgba(0,0,0,.85)]"
+        style={{
+          maxWidth: 860,
+          height: "min(88vh, 580px)",
+          display: "grid",
+          gridTemplateColumns: "300px 1fr",
+          gridTemplateRows: "1fr",
+          animation: "fadeUp .22s cubic-bezier(.22,.8,.4,1)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ── Left: video player ── */}
+        <div className="flex items-center justify-center border-r border-white/[.06] bg-black overflow-hidden">
+          {/* video fills full left column height */}
+          <div
+            className="relative h-full w-full overflow-hidden"
+          >
+            {clip.storage_url
+              ? <video ref={videoRef} src={clip.storage_url} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" poster={clip.thumbnail_url ?? undefined} />
+              : clip.thumbnail_url
+              ? <img src={clip.thumbnail_url} alt={clip.title ?? "clip"} className="absolute inset-0 h-full w-full object-cover" />
+              : <div className="absolute inset-0 bg-gradient-to-b from-rose-700/50 to-violet-900/60" />}
+
+            {/* gradient overlay */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
+
+            {/* social sidebar */}
+            <div className="absolute right-1.5 bottom-16 z-10 flex flex-col items-center gap-2.5">
+              {([["👍","4.2K"],["💬","312"],["↗","1.1K"]] as [string,string][]).map(([icon, val], i) => (
+                <div key={i} className="flex flex-col items-center gap-0.5">
+                  <div className="grid h-7 w-7 place-items-center rounded-full bg-white/15 text-xs backdrop-blur-md">{icon}</div>
+                  <span className="text-[7px] font-bold text-white/80">{val}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* caption overlay */}
+            <div className="absolute bottom-8 left-2 right-9 z-10">
+              <p className="text-[7.5px] font-bold text-white/90 drop-shadow">@viralo</p>
+              {primaryDescription && <p className="mt-0.5 line-clamp-2 text-[7px] leading-[1.35] text-white/80 drop-shadow">{primaryDescription}</p>}
+              {primaryTags.length > 0 && (
+                <div className="mt-0.5 flex flex-wrap gap-0.5">
+                  {primaryTags.slice(0, 3).map((t) => <span key={t} className="text-[6.5px] font-bold text-[#ff6b8a] drop-shadow">#{t}</span>)}
+                </div>
+              )}
+            </div>
+
+            {/* play button */}
+            <button className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
+              {!playing && (
+                <div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-[0_4px_20px_rgba(0,0,0,.6)] backdrop-blur-sm transition hover:scale-105">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                </div>
+              )}
+            </button>
+
+            {/* seek bar */}
+            <div className="absolute bottom-0 left-0 right-0 z-30 px-2 pb-1.5">
+              <div className="flex items-center gap-1">
+                <span className="font-mono text-[6.5px] text-white/60">{fmt(currentTime)}</span>
+                <div ref={barRef} className="relative h-[3px] flex-1 cursor-pointer rounded-full bg-white/25" onMouseDown={onBarMouseDown}>
+                  <div className="h-full rounded-full bg-white" style={{ width: `${progress * 100}%` }} />
+                  <div className="absolute top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full bg-white shadow" style={{ left: `calc(${progress * 100}% - 5px)` }} />
+                </div>
+                <span className="font-mono text-[6.5px] text-white/60">{fmt(duration)}</span>
+              </div>
+            </div>
+
+            {/* status badge */}
+            {(isPosted || isScheduled) && (
+              <div className={cn("absolute left-2 top-2 z-20 flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold text-white backdrop-blur-sm", isPosted ? "bg-amber-500/90" : "bg-blue-500/80")}>
+                <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>{isPosted ? <path d="M20 6 9 17l-5-5"/> : <><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></>}</svg>
+                {isPosted ? "Live" : "Queued"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Right: header + tabs + content + footer ── */}
+        <div className="flex min-w-0 flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex shrink-0 items-start gap-3 border-b border-white/[.06] bg-white/[.015] px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-[16px] font-bold leading-tight tracking-[-0.01em] text-white">
+                {clip.clip_metadata?.ai_title ?? clip.title ?? "Untitled clip"}
+              </h2>
+              {primaryDescription && (
+                <p className="mt-0.5 line-clamp-1 text-[12px] text-zinc-500">{primaryDescription}</p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className={cn(
+                "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                clip.status === "ready" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-white/[.07] text-zinc-500"
+              )}>{clip.status}</span>
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="grid h-7 w-7 place-items-center rounded-full border border-white/[.08] text-zinc-500 transition hover:border-white/[.15] hover:text-white cursor-pointer"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex shrink-0 items-center gap-1 border-b border-white/[.06] px-4 py-2">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer",
+                  tab === t.id
+                    ? "bg-white/[.07] text-white"
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {t.label}
+                {t.count != null && t.count > 0 && (
+                  <span className={cn("rounded-full px-1.5 py-px text-[10px] font-bold", tab === t.id ? "bg-[#ff3d6a]/20 text-[#ff6a8a]" : "bg-white/[.04] text-zinc-600")}>
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content — fills remaining space, no overflow */}
+          <div className="min-h-0 flex-1 overflow-hidden">
+
+            {/* ── INFO tab ── */}
+            {tab === "info" && (
+              <div className="flex h-full flex-col gap-3 p-4">
+                {/* Score + Duration */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-[12px] border border-white/[.06] bg-white/[.025] p-3">
+                    <p className="text-[9px] font-bold uppercase tracking-[.13em] text-zinc-600">Score</p>
+                    <div className="mt-2 flex items-end gap-2">
+                      <span className="font-mono text-[26px] font-black leading-none" style={{ color: scoreColor }}>
+                        {clip.score != null ? clip.score.toFixed(1) : "--"}
+                      </span>
+                      <div className="mb-1 h-1.5 flex-1 overflow-hidden rounded-full bg-white/[.06]">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${scorePct}%`, background: scoreColor }} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-[12px] border border-white/[.06] bg-white/[.025] p-3">
+                    <p className="text-[9px] font-bold uppercase tracking-[.13em] text-zinc-600">Duration</p>
+                    <p className="mt-2 font-mono text-[26px] font-black leading-none text-white">{fmt(durMs / 1000)}</p>
+                  </div>
+                </div>
+
+                {/* 4-cell meta */}
+                <div className="grid grid-cols-2 gap-2">
+                  {([["Platform", clip.platform ?? "—"], ["Format", "9:16"], ["Timeline", `${clipStart}–${clipEnd}`], ["Created", new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })]] as [string,string][]).map(([label, value]) => (
+                    <div key={label} className="rounded-[10px] border border-white/[.05] bg-white/[.018] px-3 py-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[.1em] text-zinc-600">{label}</p>
+                      <p className="mt-0.5 truncate text-[13px] font-semibold text-zinc-200 capitalize">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Primary hashtags */}
+                {primaryTags.length > 0 && (
+                  <div className="min-h-0 flex-1 rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[9px] font-bold uppercase tracking-[.13em] text-zinc-600">Primary hashtags</p>
+                      <span className="text-[10px] text-zinc-600">{primaryTags.length}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {primaryTags.map((tag) => (
+                        <span key={tag} className="rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08] px-2.5 py-1 text-[11px] font-semibold text-rose-300">#{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Posts status (if any) */}
+                {posts.length > 0 && (
+                  <div className="shrink-0 flex flex-wrap gap-1.5">
+                    {posts.slice(0, 4).map((p) => {
+                      const pcfg = DETAIL_PLAT_CFG[p.platform?.toLowerCase() ?? ""] ?? { color: "#ff3d6a", icon: "↗" };
+                      const isLive = p.status === "posted";
+                      const isQ = ["scheduled","pending","processing"].includes(p.status);
+                      return (
+                        <span key={p.id} className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                          style={{ borderColor: `${pcfg.color}30`, background: `${pcfg.color}10`, color: pcfg.color }}>
+                          <span>{pcfg.icon}</span>
+                          <span className="capitalize">{p.platform}</span>
+                          {isLive && <span className="text-amber-400">✓</span>}
+                          {isQ && <span className="text-blue-400">⏱</span>}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── COPY tab ── */}
+            {tab === "copy" && (
+              <div className="flex h-full flex-col overflow-hidden">
+                {allPlatformEntries.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-[12px] text-zinc-600">No platform copy generated yet.</div>
+                ) : (
+                  <>
+                    {/* Platform pill selector */}
+                    <div className="shrink-0 flex gap-1.5 overflow-x-auto px-4 py-3 [scrollbar-width:none]">
+                      {allPlatformEntries.map(([plat], i) => {
+                        const pcfg = DETAIL_PLAT_CFG[plat.toLowerCase()] ?? { color: "#ff3d6a", icon: "↗" };
+                        return (
+                          <button
+                            key={plat}
+                            onClick={() => setActivePlatIdx(i)}
+                            className={cn(
+                              "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer whitespace-nowrap",
+                              activePlatIdx === i
+                                ? "border-transparent text-white"
+                                : "border-white/[.07] bg-transparent text-zinc-500 hover:text-zinc-300"
+                            )}
+                            style={activePlatIdx === i ? { background: `${pcfg.color}20`, borderColor: `${pcfg.color}40`, color: pcfg.color } : {}}
+                          >
+                            <span className="grid h-4 w-4 place-items-center rounded-[3px] text-[9px] font-black text-white" style={{ background: pcfg.color }}>{pcfg.icon}</span>
+                            <span className="capitalize">{plat}</span>
+                            <span className="rounded-full bg-white/[.06] px-1 text-[10px] text-zinc-600">{(allPlatformEntries[i][1] as { tags: string[] }).tags?.length ?? 0}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Content for selected platform */}
+                    {activePlatContent && activePlatCfg && (
+                      <div className="flex flex-1 flex-col gap-3 overflow-hidden px-4 pb-4">
+                        {/* Description */}
+                        <div className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3.5">
+                          <p className="mb-2 text-[9px] font-bold uppercase tracking-[.13em] text-zinc-600">Description</p>
+                          <p className="text-[13px] leading-[1.6] text-zinc-200">{activePlatContent.description}</p>
+                        </div>
+
+                        {/* Tags */}
+                        {activePlatContent.tags?.length > 0 && (
+                          <div className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3.5">
+                            <p className="mb-2 text-[9px] font-bold uppercase tracking-[.13em] text-zinc-600">Tags · {activePlatContent.tags.length}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {activePlatContent.tags.map((tag) => (
+                                <span key={tag} className="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                                  style={{ borderColor: `${activePlatCfg.color}35`, background: `${activePlatCfg.color}12`, color: activePlatCfg.color }}>
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── ASSETS tab ── */}
+            {tab === "assets" && (
+              <div className="flex h-full flex-col gap-3 overflow-hidden p-4">
+                {/* Caption preview */}
+                {cleanCaptionPreview && (
+                  <div className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3.5">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[9px] font-bold uppercase tracking-[.13em] text-zinc-600">Transcript preview</p>
+                      {captionLineCount > 0 && <span className="text-[10px] text-zinc-600">{captionLineCount} captions</span>}
+                    </div>
+                    <p className="line-clamp-4 text-[12px] leading-[1.6] text-zinc-400">{cleanCaptionPreview}…</p>
+                  </div>
+                )}
+
+                {/* Quick links */}
+                <div className="grid grid-cols-2 gap-2">
+                  {clip.storage_url && (
+                    <a href={clip.storage_url} target="_blank" rel="noreferrer"
+                      className="flex items-center justify-center gap-2 rounded-[10px] border border-white/[.07] bg-white/[.025] py-3 text-[12px] font-semibold text-zinc-300 transition hover:border-white/[.12] hover:bg-white/[.04] hover:text-white cursor-pointer">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      Open video
+                    </a>
+                  )}
+                  {clip.thumbnail_url && (
+                    <a href={clip.thumbnail_url} target="_blank" rel="noreferrer"
+                      className="flex items-center justify-center gap-2 rounded-[10px] border border-white/[.07] bg-white/[.025] py-3 text-[12px] font-semibold text-zinc-300 transition hover:border-white/[.12] hover:bg-white/[.04] hover:text-white cursor-pointer">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                      Thumbnail
+                    </a>
+                  )}
+                </div>
+
+                {/* Published posts in assets tab */}
+                {posts.length > 0 && (
+                  <div className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3.5">
+                    <p className="mb-2.5 text-[9px] font-bold uppercase tracking-[.13em] text-zinc-600">Published / Scheduled</p>
+                    <div className="space-y-2">
+                      {posts.map((p) => {
+                        const pcfg = DETAIL_PLAT_CFG[p.platform?.toLowerCase() ?? ""] ?? { color: "#ff3d6a", icon: "↗" };
+                        const isLive = p.status === "posted", isQ = ["scheduled","pending","processing"].includes(p.status), isFail = p.status === "failed";
+                        return (
+                          <div key={p.id} className="flex items-center gap-2.5 rounded-[9px] border px-2.5 py-2"
+                            style={{ borderColor: isLive ? "rgba(52,211,153,.2)" : isQ ? "rgba(96,165,250,.18)" : isFail ? "rgba(248,113,113,.18)" : "rgba(255,255,255,.06)", background: isLive ? "rgba(52,211,153,.04)" : isQ ? "rgba(96,165,250,.04)" : "rgba(255,255,255,.01)" }}>
+                            <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white" style={{ background: pcfg.color }}>{pcfg.icon}</div>
+                            <span className="flex-1 text-[12px] font-semibold capitalize" style={{ color: pcfg.color }}>{p.platform}</span>
+                            {isLive && <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">✓ Live</span>}
+                            {isQ && <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-bold text-blue-400">Queued</span>}
+                            {isFail && <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-400">Failed</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* IDs */}
+                <div className="mt-auto space-y-1 text-[9px] text-zinc-700">
+                  <p className="truncate font-mono">Clip · {clip.id}</p>
+                  <p className="truncate font-mono">Video · {clip.video_id}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer actions */}
+          <div className="shrink-0 border-t border-white/[.06] bg-white/[.01] px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-[#ff3d6a] py-2.5 text-[13px] font-semibold text-white shadow-[0_2px_16px_rgba(255,61,106,.3)] transition hover:bg-[#e8304f] hover:shadow-[0_4px_24px_rgba(255,61,106,.4)] cursor-pointer"
+                onClick={() => { onPublish?.(); onClose(); }}
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                {isPosted ? "Publish again" : isScheduled ? "Reschedule" : "Publish"}
+              </button>
+              <button
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-white/[.07] bg-white/[.025] text-zinc-400 transition hover:border-white/[.12] hover:bg-white/[.04] hover:text-white cursor-pointer"
+                aria-label="Edit clip"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-white/[.07] bg-white/[.025] text-zinc-400 transition hover:border-white/[.12] hover:bg-white/[.04] hover:text-white cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                disabled={!clip.storage_url}
+                aria-label="Download"
+                onClick={() => { if (clip.storage_url) void downloadUrl(clip.storage_url, safeFilename(clip.title, "mp4")); }}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ─── Clip card ─── */
-function ClipCard({ clip, idx, selected = false, onToggleSelect }: {
+function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted = false, isScheduled = false, posts = [], onOpen }: {
   clip: ClipApiResponse;
   idx: number;
   selected?: boolean;
   onToggleSelect?: () => void;
+  isPosted?: boolean;
+  isScheduled?: boolean;
+  posts?: ScheduledPost[];
+  onOpen?: () => void;
 }) {
   const [showEditor,     setShowEditor]     = useState(false);
   const [showDl,         setShowDl]         = useState(false);
@@ -907,8 +1712,12 @@ function ClipCard({ clip, idx, selected = false, onToggleSelect }: {
           selected={selected}
           selectable={Boolean(onToggleSelect)}
           onSelect={() => onToggleSelect?.()}
+          onClick={() => onOpen?.()}
           actions={actions}
           density="compact"
+          isPosted={isPosted}
+          isScheduled={isScheduled}
+          posts={posts}
         />
         {regenerating && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[16px] bg-black/45 backdrop-blur-[1px]">
@@ -1158,6 +1967,135 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
   );
 }
 
+/* ─── Failed error card ─── */
+function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMessage: string; videoId: string; onRetried: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  type ErrorKind = { label: string; msg: string; hint: string };
+  const kind: ErrorKind = (() => {
+    if (/429|Too Many Requests/i.test(errorMessage))
+      return { label: "Rate limited", msg: "YouTube throttled this request (HTTP 429).", hint: "Wait a few minutes before retrying — YouTube limits how often a server can fetch the same video." };
+    if (/403|Forbidden/i.test(errorMessage))
+      return { label: "Access denied", msg: "YouTube refused access to this video (HTTP 403).", hint: "The video may be age-restricted, region-locked, or require sign-in. Try a different video." };
+    if (/unavailable|removed|private/i.test(errorMessage))
+      return { label: "Unavailable", msg: "This video is unavailable or private.", hint: "Check that the link is correct and the video is publicly accessible." };
+    const firstLine = errorMessage.split("\n")[0].replace(/^(ERROR|WARNING|CRITICAL):\s*/i, "");
+    const msg = firstLine.length > 160 ? firstLine.slice(0, 160) + "…" : firstLine;
+    return { label: "Processing error", msg, hint: "Expand the details below for the full error log." };
+  })();
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await videoApi.retry(videoId);
+      onRetried();
+    } catch {
+      setRetryError("Retry failed — check service logs or try again shortly.");
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto mt-10 max-w-[540px]" style={{ animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}>
+      {/* Main card */}
+      <div className="overflow-hidden rounded-[18px] border border-red-500/20 bg-[#0e1420]">
+        {/* Top accent bar */}
+        <div className="h-[3px] w-full bg-gradient-to-r from-red-500/80 via-red-400/60 to-transparent" />
+
+        <div className="p-6">
+          {/* Header row */}
+          <div className="mb-5 flex items-start gap-4">
+            {/* Icon */}
+            <div className="mt-0.5 grid h-10 w-10 flex-none place-items-center rounded-[10px] border border-red-500/25 bg-red-500/10">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            </div>
+
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[13px] font-bold text-red-300">{kind.label}</span>
+                <span className="rounded-full border border-red-400/20 bg-red-400/10 px-2 py-0.5 text-[10px] font-semibold text-red-400 uppercase tracking-wide">Failed</span>
+              </div>
+              <p className="text-[13px] font-medium text-zinc-200 leading-snug mb-2">{kind.msg}</p>
+              <p className="text-[12px] text-zinc-500 leading-relaxed">{kind.hint}</p>
+            </div>
+          </div>
+
+          {/* Retry error inline */}
+          {retryError && (
+            <div className="mb-4 flex items-center gap-2 rounded-[8px] border border-red-500/20 bg-red-500/[.06] px-3 py-2">
+              <svg className="h-3.5 w-3.5 flex-none text-red-400" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 1a7 7 0 100 14A7 7 0 008 1zM7.25 4.75a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 7a1 1 0 110-2 1 1 0 010 2z"/>
+              </svg>
+              <span className="text-[11.5px] text-red-400">{retryError}</span>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleRetry}
+              disabled={retrying}
+              className="flex cursor-pointer items-center gap-2 rounded-[9px] bg-[#ff3d6a] px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-[0_2px_16px_rgba(255,61,106,.3)] transition-all hover:bg-[#ff3d6a]/85 hover:shadow-[0_4px_20px_rgba(255,61,106,.4)] active:scale-[.97] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {retrying
+                ? <>
+                    <span className="block h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    Retrying…
+                  </>
+                : <>
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M13.5 2.5A6.5 6.5 0 012.5 8M2.5 13.5A6.5 6.5 0 0113.5 8"/>
+                      <polyline points="2.5,10.5 2.5,13.5 5.5,13.5"/>
+                      <polyline points="13.5,2.5 13.5,5.5 10.5,5.5"/>
+                    </svg>
+                    Retry processing
+                  </>
+              }
+            </button>
+
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-white/[.08] bg-white/[.03] px-3.5 py-2.5 text-[12px] text-zinc-400 transition hover:border-white/[.12] hover:bg-white/[.06] hover:text-zinc-200"
+            >
+              <svg className={cn("h-3.5 w-3.5 transition-transform duration-150", expanded && "rotate-180")} viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 10.94L2.53 5.47a.75.75 0 011.06-1.06L8 8.88l4.41-4.47a.75.75 0 111.06 1.06L8 10.94z"/>
+              </svg>
+              {expanded ? "Hide details" : "Show details"}
+            </button>
+          </div>
+
+          {/* Expandable log */}
+          {expanded && (
+            <div className="mt-4 overflow-hidden rounded-[10px] border border-white/[.07] bg-black/40">
+              <div className="flex items-center gap-2 border-b border-white/[.06] px-3 py-2">
+                <span className="h-2 w-2 rounded-full bg-red-400/70" />
+                <span className="h-2 w-2 rounded-full bg-yellow-400/40" />
+                <span className="h-2 w-2 rounded-full bg-white/10" />
+                <span className="ml-2 text-[10.5px] font-mono text-zinc-600">error.log</span>
+              </div>
+              <pre className="max-h-[200px] overflow-auto p-4 text-[10.5px] font-mono leading-relaxed text-zinc-500 whitespace-pre-wrap">
+                {errorMessage}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Soft suggestion below card */}
+      <p className="mt-3 text-center text-[11.5px] text-zinc-600">
+        Persistent failures? Check the{" "}
+        <span className="text-zinc-400">yt-cookies.txt</span> file or try a different video source.
+      </p>
+    </div>
+  );
+}
+
 /* ─── Results view ─── */
 function ResultsView({
   video,
@@ -1174,10 +2112,64 @@ function ResultsView({
   const toggleOpt = (id: string) => setRegenOpts((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkModal, setBulkModal] = useState(false);
+  const [zipModal, setZipModal] = useState(false);
+  const [posts, setPosts] = useState<ScheduledPost[]>([]);
+  const [publishFilter, setPublishFilter] = useState<"all" | "posted" | "queued" | "unposted">("all");
+  const [detailClip, setDetailClip] = useState<ClipApiResponse | null>(null);
   const toggleSelect = (id: string) =>
     setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const selectAll = () => setSelected(new Set(clips.map((c) => c.id)));
   const clearSel = () => setSelected(new Set());
+
+  useEffect(() => {
+    platformApi.listPosts({ per_page: 200 })
+      .then((r) => setPosts(Array.isArray(r.items) ? r.items : []))
+      .catch(() => {});
+  }, []);
+
+  const postedClipIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of posts) { if (p.status === "posted" && p.clip_id) s.add(p.clip_id); }
+    return s;
+  }, [posts]);
+
+  const scheduledClipIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of posts) {
+      if (["scheduled","pending","processing"].includes(p.status) && p.clip_id) s.add(p.clip_id);
+    }
+    return s;
+  }, [posts]);
+
+  const postsByClipId = useMemo(() => {
+    const map = new Map<string, ScheduledPost[]>();
+    for (const p of posts) {
+      if (!p.clip_id) continue;
+      const list = map.get(p.clip_id) ?? [];
+      list.push(p);
+      map.set(p.clip_id, list);
+    }
+    return map;
+  }, [posts]);
+
+  const filteredClips = useMemo(() => {
+    if (publishFilter === "all") return clips;
+    return clips.filter((c) => {
+      const isPosted = postedClipIds.has(c.id);
+      const isQueued = scheduledClipIds.has(c.id);
+      if (publishFilter === "posted") return isPosted;
+      if (publishFilter === "queued") return isQueued;
+      if (publishFilter === "unposted") return !isPosted && !isQueued;
+      return true;
+    });
+  }, [clips, publishFilter, postedClipIds, scheduledClipIds]);
+
+  const PUBLISH_FILTERS: { id: typeof publishFilter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "posted", label: "Posted" },
+    { id: "queued", label: "Queued" },
+    { id: "unposted", label: "Not posted" },
+  ];
 
   return (
     <div>
@@ -1206,15 +2198,16 @@ function ResultsView({
             ✦ Regenerate all
           </button>
           {video.storage_url && (
-            <a
-              href={video.storage_url}
-              download
+            <button
+              onClick={() => void downloadUrl(video.storage_url!, safeFilename(video.title, "mp4"))}
               className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white"
             >
               ↓ Source video
-            </a>
+            </button>
           )}
-          <button className="flex items-center gap-1.5 rounded-[8px] bg-[#ff3d6a] px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.3)]">
+          <button
+            onClick={() => setZipModal(true)}
+            className="flex items-center gap-1.5 rounded-[8px] bg-[#ff3d6a] px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.3)] transition hover:bg-[#ff3d6a]/85">
             ↓ Download all
           </button>
         </div>
@@ -1232,9 +2225,33 @@ function ResultsView({
           </button>
         </div>
       )}
-      {clips.length > 0
+      {/* Published filter chips */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {PUBLISH_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setPublishFilter(f.id)}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-medium transition cursor-pointer whitespace-nowrap",
+              publishFilter === f.id
+                ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100"
+                : "border-white/[.06] bg-white/[.018] text-zinc-500 hover:border-white/[.12] hover:bg-white/[.035] hover:text-zinc-200"
+            )}
+          >
+            {f.label}
+            {f.id === "posted" && postedClipIds.size > 0 && (
+              <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-px text-[10px] font-bold text-amber-400">{postedClipIds.size}</span>
+            )}
+            {f.id === "queued" && scheduledClipIds.size > 0 && (
+              <span className="ml-1.5 rounded-full bg-blue-500/15 px-1.5 py-px text-[10px] font-bold text-blue-400">{scheduledClipIds.size}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {filteredClips.length > 0
         ? <VirtualizedGrid
-            items={clips}
+            items={filteredClips}
             keyForItem={(clip) => clip.id}
             estimateRowHeight={390}
             columns={[{ minWidth: 640, columns: 2 }, { minWidth: 1024, columns: 4 }]}
@@ -1244,15 +2261,29 @@ function ResultsView({
                 idx={i}
                 selected={selected.has(c.id)}
                 onToggleSelect={() => toggleSelect(c.id)}
+                isPosted={postedClipIds.has(c.id)}
+                isScheduled={scheduledClipIds.has(c.id)}
+                posts={postsByClipId.get(c.id) ?? []}
+                onOpen={() => setDetailClip(c)}
               />
             )}
           />
-        : <div className="py-16 text-center text-zinc-500">No clips generated yet.</div>}
+        : video.status === "failed" && video.error_message
+          ? <FailedErrorCard errorMessage={video.error_message} videoId={video.id} onRetried={() => onBack()} />
+          : <div className="py-16 text-center text-zinc-500">No clips generated yet.</div>}
 
       {bulkModal && (
         <BulkPublishModal
           clips={clips.filter((c) => selected.has(c.id))}
           onClose={() => { setBulkModal(false); clearSel(); }}
+        />
+      )}
+
+      {zipModal && (
+        <ZipDownloadModal
+          clips={clips}
+          videoTitle={video.title ?? "clips"}
+          onClose={() => setZipModal(false)}
         />
       )}
 
@@ -1300,6 +2331,17 @@ function ResultsView({
           </div>
         </div>
       )}
+
+      {detailClip && (
+        <ClipDetailModal
+          clip={detailClip}
+          isPosted={postedClipIds.has(detailClip.id)}
+          isScheduled={scheduledClipIds.has(detailClip.id)}
+          posts={postsByClipId.get(detailClip.id) ?? []}
+          onClose={() => setDetailClip(null)}
+          onPublish={() => setBulkModal(true)}
+        />
+      )}
     </div>
   );
 }
@@ -1332,23 +2374,61 @@ export function UploadPage() {
     }).catch(() => {}).finally(() => setHistoryLoading(false));
   }, []);
 
-  /* Poll in-progress videos in history every 3s */
+  /* SSE subscriptions for in-progress videos in history — no polling */
+  const historySseRef = useRef<Map<string, EventSource>>(new Map());
   useEffect(() => {
-    const inProgress = history.filter((v) => !isTerminalStatus(v));
-    if (inProgress.length === 0) return;
-    const t = setTimeout(async () => {
-      const updates = await Promise.allSettled(inProgress.map((v) => videoApi.get(v.id)));
-      setHistory((prev) =>
-        prev.map((v) => {
-          const idx = inProgress.findIndex((p) => p.id === v.id);
-          if (idx === -1) return v;
-          const result = updates[idx];
-          return result.status === "fulfilled" ? result.value : v;
-        })
-      );
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [history]);
+    const inProgress = history.filter((v) => !isTerminalStatus(v) && v.celery_task_id);
+    const activeIds = new Set(inProgress.map((v) => v.celery_task_id!));
+
+    // Close stale sources
+    for (const [tid, es] of historySseRef.current) {
+      if (!activeIds.has(tid)) { es.close(); historySseRef.current.delete(tid); }
+    }
+
+    const t = authToken.get() || "";
+    if (!t) return;
+
+    for (const video of inProgress) {
+      const tid = video.celery_task_id!;
+      if (historySseRef.current.has(tid)) continue;
+
+      const es = new EventSource(`${VIDEO_SSE_BASE}/video/progress/${tid}?token=${encodeURIComponent(t)}`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "keepalive") return;
+          if (d.pct != null || d.step != null || d.status != null) {
+            setHistory((prev) => prev.map((v) =>
+              v.id === video.id
+                ? { ...v,
+                    pipeline_pct: d.pct ?? v.pipeline_pct,
+                    pipeline_step: d.step ?? v.pipeline_step,
+                    status: d.status === "complete" ? "ready" : d.status === "failed" ? "failed" : v.status,
+                  }
+                : v
+            ));
+          }
+          if (d.status === "complete" || d.status === "failed") {
+            es.close();
+            historySseRef.current.delete(tid);
+            videoApi.get(video.id).then((updated) =>
+              setHistory((prev) => prev.map((v) => v.id === updated.id ? updated : v))
+            ).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => { es.close(); historySseRef.current.delete(tid); };
+      historySseRef.current.set(tid, es);
+    }
+
+    return () => {/* keep sources open across renders — cleaned up above */};
+  }, [history.map((v) => `${v.id}:${v.status}:${v.celery_task_id}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    for (const es of historySseRef.current.values()) es.close();
+    historySseRef.current.clear();
+  }, []);
 
   /* YouTube URL validation */
   useEffect(() => {
@@ -1410,7 +2490,7 @@ export function UploadPage() {
   }, []);
 
   const loadVideo = useCallback(async (vid: VideoResponse) => {
-    if (vid.status === "processing" || vid.status === "pending") {
+    if (vid.status === "processing" || vid.status === "pending" || vid.status === "queued") {
       setActiveVideo(vid);
       setView("processing");
       return;
@@ -1669,4 +2749,3 @@ export function UploadPage() {
     </Shell>
   );
 }
-
