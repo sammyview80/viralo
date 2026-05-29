@@ -1,0 +1,204 @@
+# Viralo LLM Configuration
+# =========================
+# Edit this file to control provider priority, models, and enabled/disabled state.
+# Changes require: docker compose build + docker compose up -d
+#
+# Priority: providers listed first in `priority` are tried first.
+# Env var LLM_PROVIDER_PRIORITY still overrides this for quick testing without rebuild.
+
+# ── Provider priority order ────────────────────────────────────────────────────
+# List names in order of preference. Unlisted providers go at the end.
+priority:
+  - groq-small          # free, fast 8b, separate quota bucket — always try first
+  - openrouter-gemma    # free gemma-4, independent rate limit
+  - groq                # free 70b, multiple key rotation
+  - cerebras            # free, fast inference
+  - openrouter          # free llama 70b
+  - sambanova           # free 70b
+  - cloudflare          # free workers ai
+  - openrouter-deepseek # free deepseek flash
+  - openrouter-llama32  # free llama fallback
+  - openrouter-qwen3coder
+  - azure-openai        # PAID — last resort only
+
+# ── Global defaults ────────────────────────────────────────────────────────────
+defaults:
+  temperature: 0.3
+  max_tokens: 1000
+  timeout_seconds: 15
+  prefer_large_model: false   # false = use small/cheap model by default
+  probe_cache_live_ttl: 30    # seconds before re-probing a live provider
+  probe_cache_dead_ttl: 60    # seconds to skip a dead/rate-limited provider
+
+# ── Provider definitions ───────────────────────────────────────────────────────
+# enabled: false  → completely skip this provider
+# env_key         → environment variable holding the API key
+# model_large     → used when prefer_large_model: true
+# model_small     → used when prefer_large_model: false
+providers:
+
+  groq-small:
+    enabled: true
+    env_key: GROQ_API_KEY
+    base_url: https://api.groq.com/openai/v1
+    model_large: llama-3.1-8b-instant
+    model_small: llama-3.1-8b-instant
+    json_mode: true
+    notes: "Separate quota bucket. Fast cheap 8b. First priority."
+
+  openrouter-gemma:
+    enabled: true
+    env_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model_large: google/gemma-4-31b-it:free
+    model_small: google/gemma-4-26b-a4b-it:free
+    json_mode: false
+
+  groq:
+    enabled: true
+    env_key: GROQ_API_KEY
+    base_url: https://api.groq.com/openai/v1
+    model_large: llama-3.3-70b-versatile
+    model_small: llama-3.1-8b-instant
+    json_mode: true
+    notes: "Multi-key rotation via GROQ_API_KEY_2, GROQ_API_KEY_3, etc."
+
+  cerebras:
+    enabled: true
+    env_key: CEREBRAS_API_KEY
+    base_url: https://api.cerebras.ai/v1
+    model_large: llama-3.3-70b
+    model_small: llama3.1-8b
+    json_mode: true
+
+  openrouter:
+    enabled: true
+    env_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model_large: meta-llama/llama-3.3-70b-instruct:free
+    model_small: meta-llama/llama-3.1-8b-instruct:free
+    json_mode: true
+
+  sambanova:
+    enabled: true
+    env_key: SAMBANOVA_API_KEY
+    base_url: https://api.sambanova.ai/v1
+    model_large: Meta-Llama-3.3-70B-Instruct
+    model_small: Meta-Llama-3.1-8B-Instruct
+    json_mode: false
+
+  cloudflare:
+    enabled: true
+    env_key: CLOUDFLARE_API_TOKEN
+    base_url: auto   # built from CLOUDFLARE_ACCOUNT_ID at runtime
+    model_large: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    model_small: "@cf/meta/llama-3.1-8b-instruct"
+    json_mode: false
+
+  openrouter-deepseek:
+    enabled: true
+    env_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model_large: deepseek/deepseek-v4-flash:free
+    model_small: deepseek/deepseek-v4-flash:free
+    json_mode: false
+
+  openrouter-minimax:
+    enabled: false   # model frequently 404 on free tier
+    env_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model_large: minimax/minimax-m2.5:free
+    model_small: minimax/minimax-m2.5:free
+    json_mode: false
+
+  openrouter-llama32:
+    enabled: true
+    env_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model_large: nousresearch/hermes-3-llama-3.1-405b:free
+    model_small: meta-llama/llama-3.2-3b-instruct:free
+    json_mode: false
+
+  openrouter-qwen3coder:
+    enabled: true
+    env_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model_large: qwen/qwen3-coder:free
+    model_small: qwen/qwen3-coder:free
+    json_mode: false
+
+  # ── PAID providers — disabled by default ──────────────────────────────────
+
+  azure-openai:
+    enabled: true
+    env_key: AZURE_OPENAI_API_KEY
+    base_url: auto   # built from AZURE_OPENAI_ENDPOINT at runtime
+    model_large: auto  # resolved from AZURE_OPENAI_CHAT_DEPLOYMENT env var
+    model_small: auto
+    json_mode: true
+    notes: |
+      PAID — last in priority list to avoid charges.
+      Set AZURE_OPENAI_CHAT_DEPLOYMENT to control model:
+        gpt-4o          → $0.27/video
+        gpt-4o-mini     → $0.017/video
+        gpt-4.1-nano    → $0.011/video  (recommended if using Azure)
+
+  together:
+    enabled: false
+    env_key: TOGETHER_API_KEY
+    base_url: https://api.together.xyz/v1
+    model_large: meta-llama/Meta-Llama-3.3-70B-Instruct-Turbo
+    model_small: meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
+    json_mode: true
+    cost_per_1m_input: 0.18
+    cost_per_1m_output: 0.18
+
+  fireworks:
+    enabled: false
+    env_key: FIREWORKS_API_KEY
+    base_url: https://api.fireworks.ai/inference/v1
+    model_large: accounts/fireworks/models/llama-v3p3-70b-instruct
+    model_small: accounts/fireworks/models/llama-v3p1-8b-instruct
+    json_mode: true
+    cost_per_1m_input: 0.20
+    cost_per_1m_output: 0.20
+
+  deepseek:
+    enabled: false
+    env_key: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com/v1
+    model_large: deepseek-chat
+    model_small: deepseek-chat
+    json_mode: true
+    cost_per_1m_input: 0.07
+    cost_per_1m_output: 1.10
+
+  mistral:
+    enabled: false
+    env_key: MISTRAL_API_KEY
+    base_url: https://api.mistral.ai/v1
+    model_large: mistral-large-latest
+    model_small: mistral-small-latest
+    json_mode: true
+    cost_per_1m_input: 0.10
+    cost_per_1m_output: 0.30
+
+  novita:
+    enabled: false
+    env_key: NOVITA_API_KEY
+    base_url: https://api.novita.ai/v3/openai
+    model_large: meta-llama/llama-3.3-70b-instruct
+    model_small: meta-llama/llama-3.1-8b-instruct
+    json_mode: true
+    cost_per_1m_input: 0.08
+    cost_per_1m_output: 0.08
+
+  gemini:
+    enabled: false
+    env_key: GEMINI_API_KEY
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    model_large: gemini-2.0-flash
+    model_small: gemini-1.5-flash
+    json_mode: false
+    cost_per_1m_input: 0.10
+    cost_per_1m_output: 0.40

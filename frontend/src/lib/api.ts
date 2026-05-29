@@ -297,6 +297,22 @@ export const videoApi = {
   cancel:  (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/cancel`),
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
+  downloadZip: async (clipIds: string[], zipName?: string): Promise<Blob> => {
+    const base = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
+    const res = await fetch(`${base}/clips/download-zip`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ clip_ids: clipIds, zip_name: zipName }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.detail ?? `HTTP ${res.status}`);
+    }
+    return res.blob();
+  },
 };
 
 /* ─── Platform service (port 8006) ─── */

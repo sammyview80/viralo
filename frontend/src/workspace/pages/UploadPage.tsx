@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { cn } from "@/lib/utils";
+import { cn, safeFilename, downloadBlob, downloadUrl, stripSrtTimecodes } from "@/lib/utils";
 import { Shell } from "../Shell";
 import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
@@ -53,158 +53,167 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
     set({ platforms: cur.includes(id) ? cur.filter((p) => p !== id) : [...cur, id] });
   };
 
-  const labelCls = "mb-1.5 block text-[11px] font-semibold uppercase tracking-[.08em] text-zinc-500";
-  const inputCls = "w-full rounded-[8px] border border-white/[.07] bg-[#0b101a] px-3 py-2 text-[13px] text-zinc-200 outline-none focus:border-[#ff3d6a]/50 transition";
-  const chipBase = "rounded-[7px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer";
-  const chipOn  = "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-[#ff3d6a]";
-  const chipOff = "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12] hover:text-zinc-200";
+  const selectedPlatforms = config.platforms ?? [];
+  const virality = Math.round((config.min_score ?? 0.5) * 10);
+  const durationLabel = `${config.duration_min ?? 20}-${config.duration_max ?? 60}s`;
+  const labelCls = "mb-2 block text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500";
+  const inputCls = "w-full rounded-[11px] border border-white/[.08] bg-[#0a0f18] px-3.5 py-3 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#ff3d6a]/55 focus:shadow-[0_0_0_3px_rgba(255,61,106,.09)]";
+  const chipBase = "rounded-[10px] border px-3 py-2 text-[12px] font-semibold transition cursor-pointer";
+  const chipOn  = "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.13] text-[#ff5f86] shadow-[inset_0_1px_0_rgba(255,255,255,.05)]";
+  const chipOff = "border-white/[.08] bg-white/[.035] text-zinc-400 hover:border-white/[.15] hover:bg-white/[.06] hover:text-zinc-200";
 
   return (
-    <div className="space-y-6 rounded-[16px] border border-white/[.07] bg-[#0d1219] p-5">
-
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <span className="text-[13px] font-bold text-white">Clip settings</span>
-      </div>
-
-      {/* Platforms */}
-      <div>
-        <label className={labelCls}>Platforms</label>
-        <div className="flex flex-wrap gap-1.5">
-          {PLATFORM_OPTIONS.map((p) => {
-            const active = (config.platforms ?? []).includes(p.id);
-            return (
-              <button key={p.id} type="button" onClick={() => togglePlat(p.id)}
-                className={cn(chipBase, active ? chipOn : chipOff)}>
-                {p.label}
-              </button>
-            );
-          })}
+    <section className="overflow-hidden rounded-[22px] border border-white/[.08] bg-[#0b111a] shadow-[0_24px_70px_rgba(0,0,0,.22)]">
+      <div className="border-b border-white/[.07] bg-[radial-gradient(circle_at_0%_0%,rgba(255,61,106,.16),transparent_35%),linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015))] p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center rounded-[10px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[14px] text-[#ff668a]">⚙</span>
+              <div>
+                <h3 className="font-display text-[17px] font-bold text-white">Clip recipe</h3>
+                <p className="mt-0.5 text-[12px] text-zinc-500">Tune output once. Viralo uses these rules for every generated clip.</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-300">
+            <span className="rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1">{selectedPlatforms.length} platforms</span>
+            <span className="rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1">{durationLabel}</span>
+            <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[#ff6c90]">≥ {virality}/10</span>
+          </div>
         </div>
       </div>
 
-      <div className="h-px bg-white/[.05]" />
-
-      {/* Aspect ratio + Language */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="space-y-5 p-4 sm:p-5">
         <div>
-          <label className={labelCls}>Aspect ratio</label>
-          <div className="flex gap-1.5">
-            {ASPECT_OPTIONS.map((r) => (
-              <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
-                className={cn(chipBase, "flex-1 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
-                {r}
+          <label className={labelCls}>Destinations</label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {PLATFORM_OPTIONS.map((p) => {
+              const active = selectedPlatforms.includes(p.id);
+              return (
+                <button key={p.id} type="button" onClick={() => togglePlat(p.id)}
+                  className={cn("flex items-center justify-center gap-2", chipBase, active ? chipOn : chipOff)}>
+                  <span className={cn("text-[13px]", active ? "text-[#ff7a9a]" : "text-zinc-500")}>{p.ltr}</span>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11.5px] text-zinc-600">Select every platform you plan to publish on so framing and captions stay safe.</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_1.2fr]">
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Aspect ratio</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {ASPECT_OPTIONS.map((r) => (
+                <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
+                  className={cn(chipBase, "px-2 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Language</label>
+            <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
+              className={inputCls}>
+              {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
+            </select>
+          </div>
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Target length</label>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <input type="number" min={5} max={config.duration_max} value={config.duration_min}
+                onChange={(e) => set({ duration_min: Number(e.target.value) })}
+                className={inputCls} />
+              <span className="text-zinc-600 text-sm">to</span>
+              <input type="number" min={config.duration_min} max={300} value={config.duration_max}
+                onChange={(e) => set({ duration_max: Number(e.target.value) })}
+                className={inputCls} />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <div className="mb-2 flex items-center justify-between">
+              <label className={cn(labelCls, "mb-0")}>Max clips</label>
+              <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[12px] font-bold text-[#ff5f86]">{config.max_clips}</span>
+            </div>
+            <input type="range" min={1} max={20} value={config.max_clips}
+              onChange={(e) => set({ max_clips: Number(e.target.value) })}
+              className="w-full accent-[#ff3d6a]" />
+            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1 focused clip</span><span>20 batch clips</span></div>
+          </div>
+
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <div className="mb-2 flex items-center justify-between">
+              <label className={cn(labelCls, "mb-0")}>Minimum viral score</label>
+              <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[12px] font-bold text-[#ff5f86]">{virality}/10</span>
+            </div>
+            <input type="range" min={0} max={10} step={1} value={virality}
+              onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
+              className="w-full accent-[#ff3d6a]" />
+            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any usable</span><span>Balanced</span><span>Viral only</span></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_.9fr]">
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-zinc-600">optional</span></label>
+            <input type="text" placeholder="e.g. controversial moment, product demo, founder story…"
+              value={config.topic_focus ?? ""}
+              onChange={(e) => set({ topic_focus: e.target.value || null })}
+              className={inputCls} />
+            <p className="mt-2 text-[11.5px] text-zinc-600">Use this to bias clip selection without changing the source video.</p>
+          </div>
+
+          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[13px] font-bold text-zinc-100">Auto captions</div>
+                <div className="mt-0.5 text-[11.5px] text-zinc-500">Burn readable subtitles into every clip.</div>
+              </div>
+              <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
+                aria-pressed={!!config.add_captions}
+                className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+                  config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+                  config.add_captions ? "left-[calc(100%-24px)]" : "left-1")} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {config.add_captions && (
+          <div className="rounded-[14px] border border-[#ff3d6a]/18 bg-[#ff3d6a]/[.04] p-3.5">
+            <label className={labelCls}>Caption style</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {CAPTION_STYLES.map((s) => (
+                <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
+                  className={cn("rounded-[11px] border px-3 py-2.5 text-left transition",
+                    config.caption_style === s.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
+                  <div className={cn("text-[12px] font-bold", config.caption_style === s.id ? "text-[#ff5f86]" : "text-zinc-200")}>{s.label}</div>
+                  <div className="mt-0.5 text-[10.5px] leading-4 text-zinc-500">{s.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+          <label className={labelCls}>Output quality</label>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {(["source","1080p","720p","480p"] as const).map((q) => (
+              <button key={q} type="button" onClick={() => set({ output_quality: q })}
+                className={cn(chipBase, "text-center", config.output_quality === q ? chipOn : chipOff)}>
+                {q === "source" ? "Full res" : q}
               </button>
             ))}
           </div>
         </div>
-        <div>
-          <label className={labelCls}>Language</label>
-          <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
-            className={inputCls}>
-            {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
-          </select>
-        </div>
       </div>
-
-      {/* Duration */}
-      <div>
-        <label className={labelCls}>Duration (sec)</label>
-        <div className="flex items-center gap-2">
-          <input type="number" min={5} max={config.duration_max} value={config.duration_min}
-            onChange={(e) => set({ duration_min: Number(e.target.value) })}
-            className={inputCls} />
-          <span className="text-zinc-600 text-sm">–</span>
-          <input type="number" min={config.duration_min} max={300} value={config.duration_max}
-            onChange={(e) => set({ duration_max: Number(e.target.value) })}
-            className={inputCls} />
-        </div>
-      </div>
-
-      {/* Max clips */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className={cn(labelCls, "mb-0")}>Max clips</label>
-          <span className="text-[12px] font-semibold text-[#ff3d6a]">{config.max_clips}</span>
-        </div>
-        <input type="range" min={1} max={20} value={config.max_clips}
-          onChange={(e) => set({ max_clips: Number(e.target.value) })}
-          className="w-full accent-[#ff3d6a]" />
-        <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1</span><span>20</span></div>
-      </div>
-
-      {/* Virality score */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className={cn(labelCls, "mb-0")}>Min virality score</label>
-          <span className="text-[12px] font-semibold text-[#ff3d6a]">{Math.round((config.min_score ?? 0.5) * 10)}/10</span>
-        </div>
-        <input type="range" min={0} max={10} step={1} value={Math.round((config.min_score ?? 0.5) * 10)}
-          onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
-          className="w-full accent-[#ff3d6a]" />
-        <div className="mt-1 flex justify-between text-[10px] text-zinc-600">
-          <span>Any</span><span>Balanced</span><span>Viral only</span>
-        </div>
-      </div>
-
-      <div className="h-px bg-white/[.05]" />
-
-      {/* Topic focus */}
-      <div>
-        <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-zinc-600">— optional</span></label>
-        <input type="text" placeholder="e.g. fitness tips, product demo…"
-          value={config.topic_focus ?? ""}
-          onChange={(e) => set({ topic_focus: e.target.value || null })}
-          className={inputCls} />
-      </div>
-
-      {/* Auto captions */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[13px] font-semibold text-zinc-200">Auto captions</div>
-          <div className="text-[11px] text-zinc-500">Burn subtitles into clips</div>
-        </div>
-        <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
-          className={cn("relative h-6 w-11 rounded-full transition-colors duration-200 shrink-0",
-            config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.12]")}>
-          <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
-            config.add_captions ? "left-[calc(100%-22px)]" : "left-0.5")} />
-        </button>
-      </div>
-
-      {/* Caption style */}
-      {config.add_captions && (
-        <div>
-          <label className={labelCls}>Caption style</label>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {CAPTION_STYLES.map((s) => (
-              <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
-                className={cn("rounded-[9px] border px-3 py-2.5 text-left transition",
-                  config.caption_style === s.id ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
-                <div className={cn("text-[12px] font-semibold", config.caption_style === s.id ? "text-[#ff3d6a]" : "text-zinc-200")}>{s.label}</div>
-                <div className="mt-0.5 text-[10.5px] text-zinc-500">{s.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="h-px bg-white/[.05]" />
-
-      {/* Output quality */}
-      <div>
-        <label className={labelCls}>Output quality</label>
-        <div className="flex gap-1.5">
-          {(["source","1080p","720p","480p"] as const).map((q) => (
-            <button key={q} type="button" onClick={() => set({ output_quality: q })}
-              className={cn(chipBase, "flex-1 text-center", config.output_quality === q ? chipOn : chipOff)}>
-              {q === "source" ? "Full res" : q}
-            </button>
-          ))}
-        </div>
-      </div>
-
-    </div>
+    </section>
   );
 }
 
@@ -547,38 +556,145 @@ function TimelineEditor({
   );
 }
 
+/* ─── Zip download modal ─── */
+type ZipPhase = "zipping" | "done" | "error";
+
+function ZipDownloadModal({ clips, videoTitle, onClose }: {
+  clips: ClipApiResponse[];
+  videoTitle: string;
+  onClose: () => void;
+}) {
+  const [phase, setPhase] = useState<ZipPhase>("zipping");
+  const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    async function run() {
+      const ids = clips.filter((c) => c.storage_url).map((c) => c.id);
+      if (!ids.length) { setError("No downloadable clips."); setPhase("error"); return; }
+
+      try {
+        const blob = await videoApi.downloadZip(ids, videoTitle);
+        if (cancelledRef.current) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = safeFilename(videoTitle, "zip");
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        setPhase("done");
+        setTimeout(onClose, 1200);
+      } catch (e: unknown) {
+        if (cancelledRef.current) return;
+        setError(e instanceof Error ? e.message : "Unknown error");
+        setPhase("error");
+      }
+    }
+
+    void run();
+    return () => { cancelledRef.current = true; };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-[340px] rounded-[16px] border border-white/[.10] bg-[#0f1520] p-6 shadow-[0_24px_60px_rgba(0,0,0,.7)]"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <span className="text-[14px] font-semibold text-white">
+            {phase === "zipping" && "Preparing ZIP…"}
+            {phase === "done" && "Done!"}
+            {phase === "error" && "Error"}
+          </span>
+          {(phase === "done" || phase === "error") && (
+            <button onClick={onClose} className="text-[12px] text-zinc-500 hover:text-zinc-300">Close</button>
+          )}
+        </div>
+
+        {phase === "zipping" && (
+          <div className="flex items-center gap-2.5 text-[12px] text-zinc-400">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+            Server is fetching and zipping {clips.filter((c) => c.storage_url).length} clips…
+          </div>
+        )}
+
+        {phase === "done" && (
+          <div className="text-[12px] text-emerald-400">✓ ZIP downloaded successfully</div>
+        )}
+
+        {phase === "error" && (
+          <div className="text-[12px] text-red-400">{error}</div>
+        )}
+
+        {phase === "zipping" && (
+          <button onClick={() => { cancelledRef.current = true; onClose(); }}
+            className="mt-4 text-[11.5px] text-zinc-600 hover:text-zinc-400">
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Download menu ─── */
 function DownloadMenu({ clip, onClose }: { clip: ClipApiResponse; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => {
     const fn = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
     setTimeout(() => document.addEventListener("click", fn), 50);
     return () => document.removeEventListener("click", fn);
   }, []);
-  const items = [
-    { label:"Download MP4",       icon:"🎬", href: clip.storage_url ?? "#" },
-    { label:"Download SRT",       icon:"💬", href: "#" },
-    { label:"Download thumbnail", icon:"🖼", href: clip.thumbnail_url ?? "#" },
-    { label:"Copy transcript",    icon:"📝", href: null },
-    { label:"Share link",         icon:"🔗", href: null },
+
+  const title = clip.title ?? "clip";
+
+  const items: { label: string; icon: string; onClick?: () => void; disabled?: boolean }[] = [
+    {
+      label: "Download MP4", icon: "🎬",
+      disabled: !clip.storage_url,
+      onClick: () => { void downloadUrl(clip.storage_url!, safeFilename(title, "mp4")); onClose(); },
+    },
+    {
+      label: "Download SRT", icon: "💬",
+      disabled: !clip.caption_srt,
+      onClick: () => { downloadBlob(clip.caption_srt!, safeFilename(title, "srt"), "text/plain"); onClose(); },
+    },
+    {
+      label: "Download thumbnail", icon: "🖼",
+      disabled: !clip.thumbnail_url,
+      onClick: () => { void downloadUrl(clip.thumbnail_url!, safeFilename(title, "jpg")); onClose(); },
+    },
+    {
+      label: copied ? "Copied!" : "Copy transcript", icon: "📝",
+      disabled: !clip.caption_srt,
+      onClick: () => {
+        navigator.clipboard.writeText(stripSrtTimecodes(clip.caption_srt!))
+          .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+      },
+    },
+    {
+      label: "Share link", icon: "🔗",
+      onClick: () => { navigator.clipboard.writeText(window.location.href); onClose(); },
+    },
   ];
+
   return (
     <div ref={ref} className="absolute bottom-[calc(100%+6px)] right-0 z-50 w-48 overflow-hidden rounded-[11px] border border-white/[.10] bg-[#141926] shadow-[0_16px_40px_rgba(0,0,0,.5)]"
       onClick={(e) => e.stopPropagation()}>
-      {items.map((item, i) => (
-        <div key={item.label}>
-          {i === 3 && <div className="mx-3 border-t border-white/[.07]" />}
-          {item.href && item.href !== "#"
-            ? <a href={item.href} download onClick={onClose}
-                className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] text-zinc-300 transition hover:bg-white/[.05] hover:text-white">
-                <span>{item.icon}</span>{item.label}
-              </a>
-            : <button onClick={onClose}
-                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] text-zinc-300 transition hover:bg-white/[.05] hover:text-white">
-                <span>{item.icon}</span>{item.label}
-              </button>}
-        </div>
-      ))}
+      {items.map((item, i) => {
+        const cls = `flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] transition ${item.disabled ? "cursor-not-allowed opacity-40 text-zinc-500" : "text-zinc-300 hover:bg-white/[.05] hover:text-white"}`;
+        return (
+          <div key={item.label}>
+            {i === 3 && <div className="mx-3 border-t border-white/[.07]" />}
+            <button onClick={item.disabled ? undefined : item.onClick} disabled={item.disabled} className={cls}>
+              <span>{item.icon}</span>{item.label}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1424,6 +1540,7 @@ function ResultsView({
   const toggleOpt = (id: string) => setRegenOpts((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkModal, setBulkModal] = useState(false);
+  const [zipModal, setZipModal] = useState(false);
   const toggleSelect = (id: string) =>
     setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const selectAll = () => setSelected(new Set(clips.map((c) => c.id)));
@@ -1456,15 +1573,16 @@ function ResultsView({
             ✦ Regenerate all
           </button>
           {video.storage_url && (
-            <a
-              href={video.storage_url}
-              download
+            <button
+              onClick={() => void downloadUrl(video.storage_url!, safeFilename(video.title, "mp4"))}
               className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white"
             >
               ↓ Source video
-            </a>
+            </button>
           )}
-          <button className="flex items-center gap-1.5 rounded-[8px] bg-[#ff3d6a] px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.3)]">
+          <button
+            onClick={() => setZipModal(true)}
+            className="flex items-center gap-1.5 rounded-[8px] bg-[#ff3d6a] px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.3)] transition hover:bg-[#ff3d6a]/85">
             ↓ Download all
           </button>
         </div>
@@ -1505,6 +1623,14 @@ function ResultsView({
         <BulkPublishModal
           clips={clips.filter((c) => selected.has(c.id))}
           onClose={() => { setBulkModal(false); clearSel(); }}
+        />
+      )}
+
+      {zipModal && (
+        <ZipDownloadModal
+          clips={clips}
+          videoTitle={video.title ?? "clips"}
+          onClose={() => setZipModal(false)}
         />
       )}
 

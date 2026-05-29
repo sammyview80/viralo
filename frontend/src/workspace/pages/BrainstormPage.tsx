@@ -477,12 +477,30 @@ export function BrainstormPage() {
                   </section>
                 )}
 
-                {/* Running spinner */}
+                {/* Helpful empty states */}
                 {isRunning && ideas.length === 0 && (
                   <div className="rounded-[20px] border border-white/[.07] bg-white/[.02] p-8 text-center">
                     <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[#ff3d6a]/30 border-t-[#ff3d6a]" />
                     <p className="mt-3 text-[12px] font-semibold text-zinc-400">Agents are researching your niche…</p>
                     <p className="mt-1 text-[11px] text-zinc-600">The session will update automatically as each agent finishes.</p>
+                  </div>
+                )}
+
+                {!isRunning && ideas.length === 0 && selected.status !== "failed" && (
+                  <div className="rounded-[20px] border border-dashed border-white/[.08] bg-white/[.015] p-8 text-center">
+                    <p className="text-[13px] font-bold text-zinc-300">No ideas generated yet</p>
+                    <p className="mx-auto mt-1 max-w-md text-[11px] leading-5 text-zinc-600">
+                      This session exists, but it does not have video ideas attached. Retry if you expected generated output.
+                    </p>
+                  </div>
+                )}
+
+                {selected.status === "failed" && (
+                  <div className="rounded-[20px] border border-red-500/20 bg-red-500/[.04] p-5">
+                    <p className="text-[13px] font-bold text-red-200">Brainstorm failed</p>
+                    <p className="mt-1 text-[11px] leading-5 text-red-200/60">
+                      The saved session is still available. Use Retry above to run the same topic again.
+                    </p>
                   </div>
                 )}
               </div>

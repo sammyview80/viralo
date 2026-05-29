@@ -38,10 +38,11 @@ VIDEO_TEMP_DIR = os.getenv("VIDEO_TEMP_DIR", "/tmp/viralo-video")
 GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"
 GROQ_LLM_MODEL = "llama-3.3-70b-versatile"
 GROQ_MAX_AUDIO_MB = 24
-VIDEO_CRF = 18          # visually lossless (default 23 is lossy)
-AUDIO_BITRATE = 192_000  # 192kbps vs 128kbps
+VIDEO_CRF = 23          # visually good quality; 16 was near-lossless but 10x slower
+AUDIO_BITRATE = 256_000  # 256kbps — high fidelity AAC
 CAPTION_BURN_MAX_SECONDS = 120
-CAPTION_LEAD_SEC = 0.25  # Whisper/Groq timestamps lag ~250ms behind actual pronunciation
+CAPTION_LEAD_SEC = 0.10  # Whisper/Groq word timestamps lag ~100ms; shift captions earlier
+MAX_VIDEO_DURATION_SEC = 1800  # 30 minutes — reject longer videos before download
 
 REFRAME_PRESETS = {
     "9:16":  (1080, 1920, "9:16"),
@@ -77,8 +78,17 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 ]
 
-redis_client = redis.from_url(REDIS_URL)
-engine = create_engine(SYNC_DATABASE_URL, pool_pre_ping=True)
+redis_client = redis.from_url(REDIS_URL, max_connections=5)
+engine = create_engine(
+    SYNC_DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=5,
+    pool_recycle=3600,
+    pool_timeout=30,
+)
+import atexit as _atexit
+_atexit.register(lambda: engine.dispose())
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
@@ -106,6 +116,9 @@ class ClipResult:
     title: str
     reason: str
     platform: str = "tiktok"
+    audio_energy: float | None = None
+    speech_rate: float | None = None
+    chapter_match: bool = False
 
 
 @dataclass
@@ -467,28 +480,32 @@ def _audio_energy_signals(video_path: str, duration: float, top_n: int = 15) -> 
             if not audio_stream:
                 return []
 
-            samples_by_sec: dict[int, list[float]] = {}
+            # Accumulate (sum_sq, count) per bucket — no per-frame list allocation
+            samples_by_sec: dict[int, tuple[float, int]] = {}
             for frame in container.decode(audio_stream):
                 t = float(frame.pts * frame.time_base)
                 bucket = int(t / hop_sec)
                 planes = frame.to_ndarray()
-                # flatten multi-channel to mono by averaging
                 mono = planes.mean(axis=0) if planes.ndim > 1 else planes[0]
-                rms = math.sqrt(max(float((mono.astype(float) ** 2).mean()), 1e-10))
-                samples_by_sec.setdefault(bucket, []).append(rms)
+                mean_sq = float((mono.astype(float) ** 2).mean())
+                prev = samples_by_sec.get(bucket, (0.0, 0))
+                samples_by_sec[bucket] = (prev[0] + mean_sq, prev[1] + 1)
+                del planes, mono
 
         if not samples_by_sec:
             return []
 
-        # Compute windowed RMS
+        # Compute windowed RMS from (sum_sq, count) tuples — no list allocation
         window_buckets = int(window_sec / hop_sec)
         buckets = sorted(samples_by_sec.keys())
-        for i, b in enumerate(buckets):
-            window = []
+        for b in buckets:
+            w_sum_sq, w_count = 0.0, 0
             for wb in range(b, b + window_buckets):
-                window.extend(samples_by_sec.get(wb, []))
-            if window:
-                rms_avg = sum(window) / len(window)
+                sq, cnt = samples_by_sec.get(wb, (0.0, 0))
+                w_sum_sq += sq
+                w_count += cnt
+            if w_count > 0:
+                rms_avg = math.sqrt(max(w_sum_sq / w_count, 1e-10))
                 ts = b * hop_sec
                 energies.append((ts, rms_avg))
 
@@ -592,6 +609,54 @@ def _speech_rate_signals(words: list[WordTimestamp], top_n: int = 10) -> list[di
         if len(deduped) >= top_n:
             break
     return deduped
+
+
+_AD_PHRASES = [
+    "sponsored by", "this video is sponsored", "use code", "use my code",
+    "check the description", "link in the description", "link in bio",
+    "discount code", "promo code", "coupon code", "affiliate",
+    "thank you to our sponsor", "today's sponsor", "brought to you by",
+    "subscribe and hit the bell", "hit the notification", "smash the like",
+    "turn on notifications",
+]
+
+
+def _detect_ad_segments(words: list, min_gap_sec: float = 5.0) -> list[tuple[float, float]]:
+    """Return list of (start, end) ad segments to skip when building clips."""
+    if not words:
+        return []
+    text_lower = " ".join(w.word for w in words).lower()
+    segments: list[tuple[float, float]] = []
+
+    for phrase in _AD_PHRASES:
+        idx = 0
+        while True:
+            pos = text_lower.find(phrase, idx)
+            if pos == -1:
+                break
+            char_count = 0
+            word_idx = 0
+            for i, w in enumerate(words):
+                char_count += len(w.word) + 1
+                if char_count >= pos:
+                    word_idx = i
+                    break
+            ts = words[word_idx].start
+            seg_start = max(0.0, ts - 5.0)
+            seg_end = ts + 30.0
+            segments.append((seg_start, seg_end))
+            idx = pos + len(phrase)
+
+    if not segments:
+        return []
+    segments.sort()
+    merged: list[tuple[float, float]] = [segments[0]]
+    for start, end in segments[1:]:
+        if start <= merged[-1][1] + min_gap_sec:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
 
 
 def _youtube_chapter_signals(chapters: list[dict]) -> list[dict]:
@@ -701,13 +766,168 @@ _CONTENT_TYPE_SIGNALS: dict[str, str] = {
 }
 
 _SCORE_CALIBRATION = """\
-Score calibration (BE GENEROUS — these clips are competing for attention on TikTok/Reels):
-- 9-10: Stops scrolling guaranteed. Instantly shareable. Strong hook AND payoff.
-- 7-8:  High engagement expected. Clear emotional peak or surprising moment.
-- 5-6:  Good content, would perform well with the right audience.
-- 3-4:  Decent but missing a strong hook or payoff.
-- 1-2:  Flat, no hook, no reaction, no value.
-Most clips from engaging videos should score 6-9. Reserve <5 only for truly flat sections."""
+SCORING RULES — score relative to THIS content type's audience, NOT vs global entertainment:
+- 9-10: Best possible clip from this video. The moment that defines the video. MUST share.
+- 7-8:  Strong clip for this genre. Clear hook or emotional peak. Will perform well.
+- 5-6:  Decent clip. Worth publishing but not the standout moment.
+- 3-4:  Weak. Missing hook or payoff. Only use if nothing better exists.
+- 1-2:  Flat. No value. Skip entirely.
+
+IMPORTANT: Score within the genre context:
+- News/politics clips: a shocking revelation or heated moment scores 8-9, not 3.
+- Educational clips: a mind-blowing fact or counterintuitive insight scores 8-9.
+- Comedy clips: the funniest punchline scores 9-10.
+- DO NOT penalize clips for being political or educational — score the BEST MOMENT for that genre.
+- The TOP clip from any real video should score 7-9. A score of 2-3 means the video has NO watchable moments at all.
+- If you are scoring clips below 5, you are being too strict. Re-calibrate upward."""
+
+
+def _multi_agent_viral_signals(
+    transcript: str,
+    content_type: str,
+    num_clips: int,
+    signals_for_type: str,
+) -> list[dict]:
+    """Run 4 specialised LLM agents in parallel and aggregate their viral signals.
+
+    Signals within a 5-second window are grouped; consensus across agents boosts
+    the score (+1.0 for 2 agents, +2.0 for 3+).  Returns up to 15 signals sorted
+    by boosted score descending.  Falls back to an empty list so the caller can
+    use the existing single-agent path.
+    """
+    short_transcript = transcript[:6000]
+
+    agent_prompts = [
+        (
+            "hook_hunter",
+            f"""You are a viral hook specialist. Find moments where the speaker says something in the first 3 words that would STOP a scroller cold.
+Focus on: bold claims, shocking facts, counter-intuitive statements, direct challenges.
+Score 8-10 for genuine scroll-stoppers. Return 5-8 best moments.
+
+Transcript:
+{short_transcript}
+
+Return JSON:
+{{"signals": [{{"timestamp_sec": <number>, "signal_type": "hook", "score": <8.0-10.0>, "trigger_words": "<exact quote>", "stop_scroll_reason": "<1 sentence>"}}]}}""",
+        ),
+        (
+            "emotion_detector",
+            f"""You are an emotional intelligence analyst. Find moments of genuine human emotion: laughter, shock, frustration, awe, pride, fear, surprise.
+Focus on: tone changes, exclamations, dramatic pauses followed by revelation, genuine reactions.
+Score 8-10 for peak emotional moments. Return 5-8 best moments.
+
+Transcript:
+{short_transcript}
+
+Return JSON:
+{{"signals": [{{"timestamp_sec": <number>, "signal_type": "emotion", "score": <8.0-10.0>, "trigger_words": "<exact quote>", "stop_scroll_reason": "<1 sentence>"}}]}}""",
+        ),
+        (
+            "info_density",
+            f"""You are an educational content specialist. Find the most information-dense, surprising, or counter-intuitive facts/insights.
+Focus on: statistics that surprise, myths busted, "nobody knows this" moments, expert reveals.
+Score 8-10 for genuinely mind-blowing insights. Return 5-8 best moments.
+
+Transcript:
+{short_transcript}
+
+Return JSON:
+{{"signals": [{{"timestamp_sec": <number>, "signal_type": "insight", "score": <8.0-10.0>, "trigger_words": "<exact quote>", "stop_scroll_reason": "<1 sentence>"}}]}}""",
+        ),
+        (
+            "controversy",
+            f"""You are a controversy and opinion analyst. Find the most provocative opinions, bold predictions, disagreements, or callouts.
+Focus on: strong opinions stated directly, pushback moments, bold predictions, statements that will make people reply.
+Score 8-10 for genuinely provocative/shareable opinions. Return 5-8 best moments.
+
+Transcript:
+{short_transcript}
+
+Return JSON:
+{{"signals": [{{"timestamp_sec": <number>, "signal_type": "controversy", "score": <8.0-10.0>, "trigger_words": "<exact quote>", "stop_scroll_reason": "<1 sentence>"}}]}}""",
+        ),
+    ]
+
+    agent_results: list[list[dict]] = []
+    successful_agents = 0
+
+    def _run_agent(name: str, prompt: str) -> list[dict]:
+        try:
+            data = _call_llm_json(
+                [{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=1500,
+            )
+            sigs = data.get("signals", [])
+            logging.info("Multi-agent viral detection: agent '%s' returned %d signals", name, len(sigs))
+            return sigs
+        except Exception as exc:
+            logging.warning("Multi-agent viral detection: agent '%s' failed — %s", name, exc)
+            return []
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_run_agent, name, prompt): name for name, prompt in agent_prompts}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                agent_results.append(result)
+                successful_agents += 1
+            else:
+                agent_results.append([])
+
+    # Require at least 2 successful agents; otherwise signal caller to fall back.
+    if successful_agents < 2:
+        logging.warning("Multi-agent viral detection: only %d/4 agents succeeded — falling back", successful_agents)
+        return []
+
+    # Flatten all signals with their origin
+    all_signals: list[dict] = []
+    for sigs in agent_results:
+        for s in sigs:
+            if isinstance(s.get("timestamp_sec"), (int, float)):
+                all_signals.append(s)
+
+    if not all_signals:
+        return []
+
+    # Group signals within 5-second windows and compute boosted scores
+    groups: list[list[dict]] = []
+    for sig in sorted(all_signals, key=lambda x: x.get("timestamp_sec", 0)):
+        placed = False
+        for group in groups:
+            rep_ts = group[0].get("timestamp_sec", 0)
+            if abs(sig.get("timestamp_sec", 0) - rep_ts) <= 5.0:
+                group.append(sig)
+                placed = True
+                break
+        if not placed:
+            groups.append([sig])
+
+    merged: list[dict] = []
+    for group in groups:
+        avg_score = sum(s.get("score", 5.0) for s in group) / len(group)
+        agent_count = len(group)
+        if agent_count >= 3:
+            boosted = avg_score + 2.0
+        elif agent_count >= 2:
+            boosted = avg_score + 1.0
+        else:
+            boosted = avg_score
+        boosted = min(10.0, round(boosted, 2))
+        # Use the representative signal (highest individual score) as the base
+        best = max(group, key=lambda s: s.get("score", 0))
+        merged.append({
+            "timestamp_sec": best.get("timestamp_sec"),
+            "signal_type": best.get("signal_type", "multi"),
+            "score": boosted,
+            "trigger_words": best.get("trigger_words", ""),
+            "stop_scroll_reason": best.get("stop_scroll_reason", ""),
+        })
+
+    merged.sort(key=lambda x: x["score"], reverse=True)
+    top = merged[:15]
+    logging.info("Multi-agent viral detection: %d signals from %d/4 agents", len(top), successful_agents)
+    return top
 
 
 def _ai_score_clips(
@@ -723,6 +943,8 @@ def _ai_score_clips(
     key_moments: list[dict] = None,
     source_path: str = "",
     chapters: list[dict] = None,
+    precision_mode: bool = False,
+    yt_engagement: dict | None = None,
 ) -> list[ClipResult]:
     if platforms is None:
         platforms = ["tiktok", "reels", "shorts"]
@@ -751,7 +973,61 @@ def _ai_score_clips(
         key_moments_hint = f"\nPre-identified key moments (use as starting points):\n{km_lines}\n"
 
     # Step 1 — identify viral signal moments in the transcript
-    analysis_prompt = f"""You are an expert viral content analyst specializing in {content_type} content for TikTok, Reels, and Shorts.
+    if precision_mode:
+        _eng = yt_engagement or {}
+        _views = _eng.get("views", 0)
+        _likes = _eng.get("likes", 0)
+        _like_ratio = (_likes / _views) if _views > 0 else 0.0
+        _title = _eng.get("title", "Unknown")
+        _comments = _eng.get("comments", 0)
+        _desc = _eng.get("description", "")[:500]
+        _chapters_hint = ""
+        if chapters:
+            # raw yt-dlp chapters use start_time+title; processed signals use timestamp_sec+reason
+            top_chapters = chapters[:5]
+            _chapters_hint = "YouTube chapters: " + "; ".join(
+                f"{int(c.get('start_time', c.get('timestamp_sec', 0)) // 60)}:{int(c.get('start_time', c.get('timestamp_sec', 0)) % 60):02d} — {c.get('title', c.get('reason', ''))}"
+                for c in top_chapters
+            )
+        analysis_prompt = f"""You are a world-class viral content scout. Find the SINGLE BEST moment that stops a scroller in 2 seconds.
+
+VIDEO METADATA:
+- Title: {_title}
+- Views: {_views:,}
+- Likes: {_likes:,}
+- Like ratio: {_like_ratio:.2%}
+- Comment count: {_comments:,}
+- Description: {_desc}
+
+{_chapters_hint}
+
+Transcript:
+{transcript}
+
+PRECISION SCORING — score 0–10:
+9.5–10: Instant scroll-stop. First 3 words are a hook. Contains: shocking reveal, counter-intuitive fact, raw emotion, before/after payoff, quotable one-liner, or a moment viewers feel they discovered alone.
+8–9.4: Strong potential but missing one hook element.
+<8: Not precision-mode worthy.
+
+Find ALL moments scoring 8.0+. For each, explain exactly why the first 3 words create an irresistible hook.
+
+Return JSON:
+{{
+  "signals": [
+    {{
+      "timestamp_sec": <number>,
+      "signal_type": "<hook|reveal|emotion|payoff|quotable>",
+      "score": <8.0-10.0>,
+      "trigger_words": "<exact quote — 3-8 words that ARE the hook>",
+      "hook_mechanism": "<why first 3 words stop a scroller, 1 sentence>",
+      "payoff": "<what viewer gets if they watch the full clip>",
+      "shareability": "<why someone forwards this>"
+    }}
+  ]
+}}"""
+        min_score_10 = max(min_score_10, 8.5)  # precision mode: only high-quality clips
+    else:
+        analysis_prompt = f"""You are an expert viral content analyst specializing in {content_type} content for TikTok, Reels, and Shorts.
 
 {context_block}
 {key_moments_hint}
@@ -786,15 +1062,38 @@ Return JSON with ALL signals found (aim for at least {max(num_clips * 2, 8)} sig
 }}"""
 
     try:
-        try:
-            signals_data = _call_llm_json(
-                [{"role": "user", "content": analysis_prompt}],
-                temperature=0.3, max_tokens=3000,
+        _stage1_temp = 0.1 if precision_mode else 0.3
+        if precision_mode:
+            # Precision mode: use the focused single-agent prompt built above
+            try:
+                signals_data = _call_llm_json(
+                    [{"role": "user", "content": analysis_prompt}],
+                    temperature=_stage1_temp, max_tokens=3000,
+                )
+                signals = signals_data.get("signals", [])
+            except Exception as e1:
+                logging.warning("_ai_score_clips step-1 LLM failed (%s) — using evenly-spaced fallback signals", e1)
+                signals = []
+        else:
+            # Non-precision mode: multi-agent consensus detection
+            signals = _multi_agent_viral_signals(
+                transcript=transcript,
+                content_type=content_type,
+                num_clips=num_clips,
+                signals_for_type=signals_for_type,
             )
-            signals = signals_data.get("signals", [])
-        except Exception as e1:
-            logging.warning("_ai_score_clips step-1 LLM failed (%s) — using evenly-spaced fallback signals", e1)
-            signals = []
+            if not signals:
+                # Fall back to original single-agent call
+                logging.info("_ai_score_clips: multi-agent returned nothing — falling back to single-agent Stage 1")
+                try:
+                    signals_data = _call_llm_json(
+                        [{"role": "user", "content": analysis_prompt}],
+                        temperature=_stage1_temp, max_tokens=3000,
+                    )
+                    signals = signals_data.get("signals", [])
+                except Exception as e1:
+                    logging.warning("_ai_score_clips step-1 LLM failed (%s) — using evenly-spaced fallback signals", e1)
+                    signals = []
 
         if not signals:
             signals = [{"timestamp_sec": i * (duration / max(num_clips, 1)), "score": 6.0} for i in range(num_clips)]
@@ -829,15 +1128,44 @@ Return JSON with ALL signals found (aim for at least {max(num_clips * 2, 8)} sig
             for s in sorted(signals, key=lambda x: x.get("score", 0), reverse=True)
         )
 
-        clip_prompt = f"""You are a viral video editor specializing in {content_type} content for {platforms_str}.
+        if precision_mode:
+            stage2_prompt = f"""You are a precision clip editor. Select the TOP {num_clips} clip(s) scoring as close to 10/10 as possible.
+
+VIDEO: {_title} | {_views:,} views | {_like_ratio:.2%} like ratio
+
+Signals (best first):
+{signals_str}
+
+RULES:
+- Select exactly {num_clips} non-overlapping clip(s), ranked by score descending.
+- Start 2–3s BEFORE trigger words to build micro-tension.
+- End exactly at the payoff peak. Silence after punchline is fine.
+- Duration: {min_dur}–{max_dur}s. Never cut mid-sentence unless it adds cliffhanger tension.
+- Score each clip honestly — do NOT inflate. If signal is weak, score it low.
+- Adjacent short clips (<{min_dur}s gap between them) SHOULD be merged into one longer clip when they form a narrative arc.
+
+Return ONLY JSON with EXACTLY {num_clips} clip(s):
+{{
+  "clips": [
+    {{
+      "start_seconds": <number>,
+      "end_seconds": <number>,
+      "score": <0.0-10.0>,
+      "title": "<punchy TikTok caption under 80 chars>",
+      "reason": "<why this scores this high, max 15 words>",
+      "platform": "<tiktok|reels|shorts>",
+      "hook_words": "<exact first 3-5 words of clip>"
+    }}
+  ]
+}}"""
+            clip_prompt = stage2_prompt
+        else:
+            clip_prompt = f"""You are a viral video editor specializing in {content_type} content for {platforms_str}.
 
 {context_block}
 
 Viral signals found (sorted by score, highest first):
 {signals_str}
-
-Full transcript:
-{transcript}
 
 {_SCORE_CALIBRATION}
 
@@ -864,10 +1192,11 @@ Return ONLY JSON:
   ]
 }}"""
 
+        _stage2_temp = 0.1 if precision_mode else 0.25
         try:
             data = _call_llm_json(
                 [{"role": "user", "content": clip_prompt}],
-                temperature=0.25, max_tokens=max(2000, num_clips * 400),
+                temperature=_stage2_temp, max_tokens=max(2000, num_clips * 400),
             )
             raw_clips = data.get("clips", [])
         except Exception as e2:
@@ -920,8 +1249,32 @@ Return ONLY JSON:
                 platform=plat,
             ))
 
+        # Filter clips overlapping with ad segments
+        ad_segs = _detect_ad_segments(words)
+        if ad_segs:
+            pre_count = len(clips)
+            clips = [c for c in clips if not any(c.start < seg_end and c.end > seg_start for seg_start, seg_end in ad_segs)]
+            if pre_count != len(clips):
+                logging.info("_ai_score_clips: removed %d ad-overlapping clips", pre_count - len(clips))
+
+        # Rescale scores relative to content type — LLM under-scores non-entertainment genres.
+        # Linear map: raw 0→floor, raw 10→10 (preserves relative ranking within the video).
+        _genre_floors = {"news": 6.0, "interview": 6.5, "educational": 6.0, "opinion": 6.5,
+                         "tutorial": 6.0, "vlog": 5.5, "other": 5.5, "entertainment": 5.0, "gaming": 5.0}
+        _floor = _genre_floors.get(content_type, 5.5)
+        if not precision_mode and _floor > 0:
+            clips = [
+                ClipResult(
+                    start=c.start, end=c.end,
+                    score=round(_floor + (c.score / 10.0) * (10.0 - _floor), 2),
+                    title=c.title, reason=c.reason, platform=c.platform,
+                    audio_energy=c.audio_energy, speech_rate=c.speech_rate, chapter_match=c.chapter_match,
+                )
+                for c in clips
+            ]
+
         clips.sort(key=lambda c: c.score, reverse=True)
-        clips = [c for c in clips if c.score >= min_score_10]
+        clips = [c for c in clips if c.score >= min(min_score_10, _floor)]
         deduped: list[ClipResult] = []
         for clip in clips:
             overlaps = any(
@@ -991,7 +1344,7 @@ def _heuristic_clips(
             density = min(len(window) / dur / 2.5, 2.0)
             pos_bonus = 1.2 if start / max(duration, 1) < 0.3 else 1.0
             dur_bonus = 1.2 if 15 <= dur <= 45 else (0.8 if dur < 15 else 0.9)
-            score = density * pos_bonus * dur_bonus
+            score = min(7.0, round(density * pos_bonus * dur_bonus * 3.5, 2))
             candidates.append((score, start, end, " ".join(w.word for w in window[:8])))
 
     candidates.sort(key=lambda c: c[0], reverse=True)
@@ -1000,7 +1353,7 @@ def _heuristic_clips(
         if not any(start < s.end and end > s.start for s in selected):
             selected.append(ClipResult(
                 start=round(start, 2), end=round(end, 2),
-                score=round(score, 2), title=f"Clip {len(selected)+1}",
+                score=min(7.0, round(score * 3.5, 2)), title=f"Clip {len(selected)+1}",
                 reason=preview, platform=platforms[len(selected) % len(platforms)],
             ))
         if len(selected) >= num_clips:
@@ -1028,28 +1381,59 @@ def _heuristic_clips(
 # ── Stage 6: Caption generation ───────────────────────────────────────────────
 
 def _generate_captions(words: list[WordTimestamp], clip: ClipResult, max_words: int = 3) -> list[CaptionSegment]:
+    """
+    Group word-level timestamps into caption segments for burn-in.
+
+    Timing contract:
+      - start: shifted earlier by CAPTION_LEAD_SEC to compensate for Whisper's
+               end-of-word detection bias (timestamps mark word completion, not onset).
+      - end:   natural word end time — NOT shifted, so the caption stays visible
+               until the word truly finishes.
+      - Gaps ≤ 0.5 s between consecutive segments are closed to prevent flicker.
+    """
     clip_words = [w for w in words if w.start >= clip.start - 0.1 and w.end <= clip.end + 0.1]
     if not clip_words:
         return []
+
     segments, current = [], []
     for w in clip_words:
         current.append(w)
         is_break = len(current) >= max_words or w.word.endswith((".", "!", "?", ","))
         if is_break:
-            segments.append(CaptionSegment(
-                text=" ".join(cw.word for cw in current),
-                start=max(0.0, current[0].start - clip.start - CAPTION_LEAD_SEC),
-                end=max(0.0, current[-1].end - clip.start - CAPTION_LEAD_SEC),
-                words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start - CAPTION_LEAD_SEC), max(0.0, cw.end - clip.start - CAPTION_LEAD_SEC)) for cw in current],
-            ))
+            seg_start = max(0.0, current[0].start - clip.start - CAPTION_LEAD_SEC)
+            seg_end   = max(seg_start + 0.1, current[-1].end - clip.start)
+            seg_words = [
+                WordTimestamp(cw.word,
+                              max(0.0, cw.start - clip.start - CAPTION_LEAD_SEC),
+                              max(0.0, cw.end   - clip.start))
+                for cw in current
+            ]
+            segments.append(CaptionSegment(text=" ".join(cw.word for cw in current),
+                                           start=seg_start, end=seg_end, words=seg_words))
             current = []
     if current:
-        segments.append(CaptionSegment(
-            text=" ".join(cw.word for cw in current),
-            start=max(0.0, current[0].start - clip.start - CAPTION_LEAD_SEC),
-            end=max(0.0, current[-1].end - clip.start - CAPTION_LEAD_SEC),
-            words=[WordTimestamp(cw.word, max(0.0, cw.start - clip.start - CAPTION_LEAD_SEC), max(0.0, cw.end - clip.start - CAPTION_LEAD_SEC)) for cw in current],
-        ))
+        seg_start = max(0.0, current[0].start - clip.start - CAPTION_LEAD_SEC)
+        seg_end   = max(seg_start + 0.1, current[-1].end - clip.start)
+        seg_words = [
+            WordTimestamp(cw.word,
+                          max(0.0, cw.start - clip.start - CAPTION_LEAD_SEC),
+                          max(0.0, cw.end   - clip.start))
+            for cw in current
+        ]
+        segments.append(CaptionSegment(text=" ".join(cw.word for cw in current),
+                                       start=seg_start, end=seg_end, words=seg_words))
+
+    # Extend each segment's end to the next segment's start to eliminate blank frames
+    for i in range(len(segments) - 1):
+        gap = segments[i + 1].start - segments[i].end
+        if 0 < gap <= 0.5:
+            segments[i] = CaptionSegment(
+                text=segments[i].text,
+                start=segments[i].start,
+                end=segments[i + 1].start,
+                words=segments[i].words,
+            )
+
     return segments
 
 
@@ -1079,6 +1463,18 @@ def _load_font(size: int):
 
 
 def _build_caption_timeline(segments: list[CaptionSegment], style: str) -> dict:
+    """
+    Build a centisecond-keyed lookup table used by _draw_caption.
+
+    Keys are int(t * 100) — hundredths of a second relative to clip start.
+    Values are (word_list, active_word_index) for capcut styles,
+    or (text, None) for all other styles.
+
+    Each word's display window runs from its shifted start to the next word's
+    start (or segment end for the last word). Minimum 0.12 s per word prevents
+    single-frame flashes. Upper bound uses +1 to include the boundary centisecond
+    that floating-point truncation would otherwise miss.
+    """
     timeline = {}
     is_capcut = style in CAPCUT_STYLES
     for seg in segments:
@@ -1090,11 +1486,10 @@ def _build_caption_timeline(segments: list[CaptionSegment], style: str) -> dict:
                 t_end = seg.words[i + 1].start if i + 1 < n else seg.end
                 if t_end - t_start < 0.12:
                     t_end = t_start + 0.12
-                for cs in range(int(t_start * 100), int(t_end * 100)):
-                    # Store (word_list, active_index) for inline per-word highlight
+                for cs in range(int(t_start * 100), int(t_end * 100) + 1):
                     timeline[cs] = (list(words), i)
         else:
-            for cs in range(int(seg.start * 100), int(seg.end * 100)):
+            for cs in range(int(seg.start * 100), int(seg.end * 100) + 1):
                 timeline[cs] = (seg.text, None)
     return timeline
 
@@ -1131,9 +1526,12 @@ def _crop_frame(img, crop_mode: str, target_w: int, target_h: int):
 
 def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int, height: int, font_main, font_highlight, cfg):
     from PIL import ImageDraw
-    cs = int(t * 100)
+    cs = round(t * 100)
     if cs not in caption_timeline:
-        return img
+        # Try adjacent centisecond for float rounding edge
+        cs = int(t * 100)
+        if cs not in caption_timeline:
+            return img
     entry = caption_timeline[cs]
     text_color, highlight_color, ctx_alpha, font_size, bg_color = cfg
     is_capcut = style in CAPCUT_STYLES
@@ -1144,7 +1542,7 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     else:
         y_base = int(height * (0.76 if is_vertical else 0.80))
 
-    draw = ImageDraw.Draw(img, "RGBA")
+    draw = ImageDraw.Draw(img)
 
     def draw_centered_outline(text, y, font, color, stroke_width=4, stroke_color=(0, 0, 0, 255), bg=None, pad=16):
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -1160,38 +1558,58 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         draw.text((x, y), text, font=font, fill=color)
 
     def draw_capcut_inline(words: list, active_idx: int, y: int, bold: bool):
-        """Draw words in a single row; active word gets yellow pill, others white."""
+        """Draw words in one or two rows; wraps to second row if total exceeds frame width."""
         GAP = 8
         PAD_X, PAD_Y = 14, 8
         RADIUS = 10
+        MARGIN = int(width * 0.04)  # 4% side margin so pills never touch edges
+        MAX_W = width - MARGIN * 2
         font = font_highlight if bold else font_main
         word_sizes = []
         for w in words:
             bb = draw.textbbox((0, 0), w, font=font)
             word_sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
 
-        total_w = sum(ws[0] + PAD_X * 2 for ws in word_sizes) + GAP * (len(words) - 1)
-        x = (width - total_w) // 2
-        row_h = max(ws[1] for ws in word_sizes) if word_sizes else font_size
+        def _pill_w(tw): return tw + PAD_X * 2
 
-        for i, (w, (tw, th)) in enumerate(zip(words, word_sizes)):
-            pill_w = tw + PAD_X * 2
-            pill_h = th + PAD_Y * 2
-            pill_y = y + (row_h - pill_h) // 2
+        total_w = sum(_pill_w(ws[0]) for ws in word_sizes) + GAP * (len(words) - 1)
 
-            if i == active_idx:
-                draw.rounded_rectangle([x, pill_y, x + pill_w, pill_y + pill_h],
-                                       radius=RADIUS, fill=(245, 197, 24, 240))
-                txt_color = (0, 0, 0, 255)
-            else:
-                txt_color = (255, 255, 255, 230)
+        # Split into two rows if overflow
+        if total_w > MAX_W and len(words) > 1:
+            split = max(1, len(words) // 2)
+            rows = [list(zip(words[:split], word_sizes[:split])),
+                    list(zip(words[split:], word_sizes[split:]))]
+            active_rows = [(active_idx if active_idx < split else -1),
+                           (active_idx - split if active_idx >= split else -1)]
+        else:
+            rows = [list(zip(words, word_sizes))]
+            active_rows = [active_idx]
 
-            wx = x + PAD_X
-            wy = pill_y + PAD_Y
-            if i != active_idx:
-                draw.text((wx + 2, wy + 2), w, font=font, fill=(0, 0, 0, 120))
-            draw.text((wx, wy), w, font=font, fill=txt_color)
-            x += pill_w + GAP
+        row_h_base = max(ws[1] for ws in word_sizes) if word_sizes else font_size
+        pill_h = row_h_base + PAD_Y * 2
+
+        for row_i, (row, act_idx) in enumerate(zip(rows, active_rows)):
+            row_total_w = sum(_pill_w(ws[0]) for _, ws in row) + GAP * (len(row) - 1)
+            x = (width - row_total_w) // 2
+            row_y = y + row_i * (pill_h + GAP)
+
+            for i, (w, (tw, th)) in enumerate(row):
+                pw = _pill_w(tw)
+                pill_y = row_y
+
+                if i == act_idx:
+                    draw.rounded_rectangle([x, pill_y, x + pw, pill_y + pill_h],
+                                           radius=RADIUS, fill=(245, 197, 24, 240))
+                    txt_color = (0, 0, 0, 255)
+                else:
+                    txt_color = (255, 255, 255, 230)
+
+                wx = x + PAD_X
+                wy = pill_y + PAD_Y
+                if i != act_idx:
+                    draw.text((wx + 2, wy + 2), w, font=font, fill=(0, 0, 0, 120))
+                draw.text((wx, wy), w, font=font, fill=txt_color)
+                x += pw + GAP
 
     if style == "classic":
         ctx_text, _ = entry
@@ -1269,21 +1687,100 @@ def _render_clip_streamcopy(
     if target_width != src_w or target_height != src_h:
         vf_parts.append(f"scale={target_width}:{target_height}:flags=lanczos")
 
-    # Cap output at 1080p long-edge — social platforms don't serve beyond 1080p,
-    # and 4K AV1 decode at clip time is too slow (~0.4 fps on ARM containers).
-    long_edge = max(src_w, src_h)
-    if long_edge > 1080:
-        scale_factor = 1080 / long_edge
-        scaled_w = int(src_w * scale_factor) & ~1
-        scaled_h = int(src_h * scale_factor) & ~1
-        if vf_parts:
-            vf_parts.append(f"scale={scaled_w}:{scaled_h}:flags=lanczos")
-        else:
-            vf_parts.append(f"scale={scaled_w}:{scaled_h}:flags=lanczos")
+    # Stream-copy only safe for h264/hevc → MP4; VP9/AV1/other must re-encode
+    _copy_safe_codecs = {"h264", "hevc", "h265", "avc"}
+    can_stream_copy = not vf_parts and meta.codec.lower() in _copy_safe_codecs
+
+    if can_stream_copy:
+        # True stream-copy — zero quality loss, no re-encode
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(max(0.0, clip.start)),
+            "-i", source_path,
+            "-t", str(max(1.0, duration)),
+            "-map", "0:v:0",
+            "-map", "0:a:0?",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "256k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+    else:
+        vf_str = ",".join(vf_parts) if vf_parts else "null"
+        cmd = [
+            "ffmpeg", "-y",
+            "-threads", "2",
+            "-ss", str(max(0.0, clip.start)),
+            "-i", source_path,
+            "-t", str(max(1.0, duration)),
+            "-map", "0:v:0",
+            "-map", "0:a:0?",
+            "-vf", vf_str,
+            "-c:v", "libx264",
+            "-crf", "23",
+            "-preset", "veryfast",
+            "-profile:v", "high",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "256k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    out_ok = Path(output_path).exists() and Path(output_path).stat().st_size >= 1000
+    if result.returncode != 0 or not out_ok:
+        err = result.stderr
+        excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
+        raise RuntimeError(f"ffmpeg render failed (rc={result.returncode}): {excerpt}")
+
+
+def _render_clip_ffmpeg_captions(
+    source_path: str,
+    clip: ClipResult,
+    output_path: str,
+    captions: list[CaptionSegment],
+    target_width: int,
+    target_height: int,
+    crop_mode: Optional[str],
+    meta: VideoMeta,
+    style: str = "capcut",
+) -> None:
+    """Two-pass caption burn for VP9/AV1 sources.
+    Pass 1: ffmpeg transcode clip to h264 (low memory, fast seek).
+    Pass 2: PyAV frame-by-frame caption burn on h264 intermediate.
+    Avoids simultaneous VP9 decode + libx264 encode + libass = OOM (rc=-9)."""
+    import tempfile
+
+    src_w, src_h = meta.width, meta.height
+    duration = clip.end - clip.start
+
+    # Pass 1: transcode VP9/AV1 clip segment → h264 intermediate (no captions yet)
+    tmp_h264 = str(Path(output_path).parent / f"_tmp_h264_{Path(output_path).name}")
+
+    vf_parts = []
+    if crop_mode == "9:16" and src_w > src_h:
+        crop_h = src_h
+        crop_w = int(src_h * 9 / 16) & ~1
+        x_off = (src_w - crop_w) // 2
+        vf_parts.append(f"crop={crop_w}:{crop_h}:{x_off}:0")
+    elif crop_mode == "16:9" and src_h > src_w:
+        crop_w = src_w
+        crop_h = int(src_w * 9 / 16) & ~1
+        y_off = (src_h - crop_h) // 2
+        vf_parts.append(f"crop={crop_w}:{crop_h}:0:{y_off}")
+    elif crop_mode == "1:1":
+        side = min(src_w, src_h) & ~1
+        vf_parts.append(f"crop={side}:{side}:{(src_w-side)//2}:{(src_h-side)//2}")
+
+    if target_width != src_w or target_height != src_h:
+        vf_parts.append(f"scale={target_width}:{target_height}:flags=lanczos")
 
     vf_str = ",".join(vf_parts) if vf_parts else "null"
-    cmd = [
+    cmd1 = [
         "ffmpeg", "-y",
+        "-threads", "2",       # cap per-process threads → reduces peak memory
         "-ss", str(max(0.0, clip.start)),
         "-i", source_path,
         "-t", str(max(1.0, duration)),
@@ -1292,18 +1789,57 @@ def _render_clip_streamcopy(
         "-vf", vf_str,
         "-c:v", "libx264",
         "-crf", "18",
-        "-preset", "veryfast",
-        "-profile:v", "high",
+        "-preset", "ultrafast",  # lowest memory usage; quality fine for intermediate
+        "-profile:v", "baseline",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-b:a", "256k",
         "-movflags", "+faststart",
-        output_path,
+        tmp_h264,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    if result.returncode != 0 or not Path(output_path).exists() or Path(output_path).stat().st_size < 1000:
-        raise RuntimeError(f"ffmpeg render failed: {result.stderr[-600:]}")
+    try:
+        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
+        if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
+            err = r1.stderr
+            excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
+            raise RuntimeError(f"ffmpeg transcode pass1 failed (rc={r1.returncode}): {excerpt}")
+
+        # Pass 2: PyAV caption burn on the h264 intermediate
+        # Build a synthetic meta for the h264 file (same dims, h264 codec)
+        h264_meta = VideoMeta(
+            width=target_width,
+            height=target_height,
+            fps=meta.fps,
+            duration=duration,
+            codec="h264",
+            has_audio=meta.has_audio,
+        )
+        # Captions are already absolute-time in the original clip context;
+        # _render_clip clips them to clip window internally
+        _render_clip(
+            source_path=tmp_h264,
+            clip=ClipResult(
+                start=0.0,
+                end=duration,
+                score=clip.score,
+                title=clip.title,
+                reason=clip.reason,
+            ),
+            output_path=output_path,
+            captions=captions,
+            style=style,
+            target_width=target_width,
+            target_height=target_height,
+            crop_mode=None,  # already cropped/scaled in pass 1
+            meta=h264_meta,
+            burn_captions=True,
+        )
+    finally:
+        try:
+            Path(tmp_h264).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def _render_clip(
@@ -1339,8 +1875,8 @@ def _render_clip(
         out_v.pix_fmt = "yuv420p"
         out_v.options = {
             "crf": str(VIDEO_CRF),
-            "preset": "slow",        # better compression at same CRF vs fast
-            "profile:v": "high",     # H.264 High profile — wider device support + better compression
+            "preset": "veryfast",
+            "profile:v": "high",
             "level": "4.2",
             "movflags": "+faststart", # web-optimized: moov atom at front for streaming
         }
@@ -1379,18 +1915,33 @@ def _render_clip(
                     for frame in packet.decode():
                         t_frame = float(frame.pts * v_stream.time_base) if frame.pts is not None else t
                         t_in_clip = t_frame - clip.start
-                        img = frame.to_image().convert("RGB")
-                        if crop_mode:
-                            img = _crop_frame(img, crop_mode, target_width, target_height)
-                        if caption_timeline:
-                            img = _draw_caption(img, max(t_in_clip, 0), caption_timeline, style,
-                                                target_width, target_height, font_main, font_highlight, cfg)
-                        new_frame = av.VideoFrame.from_image(img)
+
+                        needs_pil = bool(crop_mode or caption_timeline)
+                        if needs_pil:
+                            # PIL path: to_image reuses internal buffer; del immediately after encode
+                            img = frame.to_image()
+                            if img.mode != "RGB":
+                                img = img.convert("RGB")
+                            if crop_mode:
+                                img = _crop_frame(img, crop_mode, target_width, target_height)
+                            if caption_timeline:
+                                img = _draw_caption(img, max(t_in_clip, 0), caption_timeline, style,
+                                                    target_width, target_height, font_main, font_highlight, cfg)
+                            new_frame = av.VideoFrame.from_image(img)
+                            del img  # free PIL buffer before encode
+                        else:
+                            # Fast path: reformat in yuv420p directly — zero PIL overhead
+                            new_frame = frame.reformat(
+                                width=target_width, height=target_height,
+                                format="yuv420p",
+                            )
+
                         new_frame.pts = frame_idx
                         new_frame.time_base = Fraction(1, int(fps))
                         frame_idx += 1
                         for pkt in out_v.encode(new_frame):
                             dst.mux(pkt)
+                        del new_frame  # release frame buffer before next decode
 
                 elif out_a and packet.stream == a_stream:
                     if audio_done:
@@ -1449,6 +2000,200 @@ def _srt_to_plain(srt: str) -> str:
     return " ".join(lines)
 
 
+def _multi_agent_clip_content(
+    clip: "ClipResult",
+    transcript_snippet: str,
+    platforms: list[str],
+    content_type: str,
+    topic_focus: str | None = None,
+) -> dict:
+    """Run 3 parallel agents: viral description, trending hashtags, title optimizer."""
+    import concurrent.futures
+
+    platforms_str = ", ".join(platforms)
+    topic_ctx = f"Topic: {topic_focus}\n" if topic_focus else ""
+    clip_ctx = f"Clip reason: {clip.reason}\nClip title hint: {clip.title}"
+
+    # Agent 1 — Viral Description Writer
+    def _desc_agent():
+        prompt = f"""You are a viral social media copywriter specializing in {content_type} content.
+
+{topic_ctx}{clip_ctx}
+Transcript excerpt:
+{transcript_snippet[:3000]}
+
+Write platform-optimized descriptions for this clip. Each description must:
+- Open with a HOOK (first 5 words stop the scroll)
+- Build curiosity or emotional connection in 2-3 sentences
+- End with a call-to-action or cliffhanger
+- Match platform tone: TikTok=casual/punchy, Reels=visual/trendy, Shorts=direct/fast
+
+Return JSON:
+{{
+  "platforms": {{
+    "tiktok": {{"description": "<150 char hook-first caption>", "cta": "<comment bait question>"}},
+    "reels": {{"description": "<visual storytelling caption 100-200 chars>", "cta": "<save/share prompt>"}},
+    "shorts": {{"description": "<direct punchy caption under 100 chars>", "cta": "<subscribe hook>"}}
+  }}
+}}"""
+        return _call_llm_json([{"role": "user", "content": prompt}], temperature=0.7, max_tokens=1000)
+
+    # Agent 2 — Trending Hashtag Researcher
+    def _hashtag_agent():
+        prompt = f"""You are a viral hashtag research agent. Your job is to identify the REAL trending hashtags being used right now on TikTok, Instagram Reels, and YouTube Shorts for this type of content.
+
+Content type: {content_type}
+{topic_ctx}{clip_ctx}
+Transcript excerpt:
+{transcript_snippet[:2000]}
+
+RESEARCH TASK — Think like a trending content analyst:
+1. What topics, people, events, or themes appear in this clip?
+2. What hashtags are people ACTUALLY searching and following for this content RIGHT NOW?
+3. What mega viral tags (#viral #trending #fyp #foryou #reels) apply universally?
+4. What niche tags are specific to this exact topic/moment?
+5. What community tags will surface this to the right audience?
+
+HASHTAG STRATEGY:
+- 4-5 mega tags: #viral #trending #fyp #foryoupage #explore (always include these)
+- 4-5 topic tags: specific to what's discussed (e.g. #politics #news #science #gaming)
+- 3-4 niche tags: sub-topic specifics (e.g. #2024election #aitools #streetfood)
+- 2-3 engagement tags: #watchthis #mustsee #mindblown or emotion-driven tags
+- 2-3 platform-native tags relevant to current trends on each platform
+
+RULES — CRITICAL:
+- ALL tags must be LOWERCASE only — no CamelCase, no uppercase, no mixed case
+- No spaces inside tags
+- No special characters except letters and numbers
+- Include # prefix in output
+- Research actual trending tags — do NOT make up fake tags
+
+Return JSON:
+{{
+  "hashtags": {{
+    "mega": ["#viral", "#trending", "#fyp", "#foryou", "#explore"],
+    "topic": ["#tag1", "#tag2", "#tag3", "#tag4"],
+    "niche": ["#tag1", "#tag2", "#tag3"],
+    "engagement": ["#watchthis", "#mustsee", "#tag3"],
+    "by_platform": {{
+      "tiktok": ["#viral", "#fyp", "#foryou", "<5 more topic-specific lowercase tags>"],
+      "reels": ["#reels", "#instagram", "#explore", "<5 more topic-specific lowercase tags>"],
+      "shorts": ["#shorts", "#youtubeshorts", "<3 more topic-specific lowercase tags>"]
+    }}
+  }}
+}}"""
+        return _call_llm_json([{"role": "user", "content": prompt}], temperature=0.4, max_tokens=1000)
+
+    # Agent 3 — Title Optimizer (generates 5 options, picks best)
+    def _title_agent():
+        prompt = f"""You are a viral title specialist. Generate 5 title options for this clip, then select the single BEST one.
+
+Content type: {content_type}
+{topic_ctx}{clip_ctx}
+Transcript excerpt:
+{transcript_snippet[:2000]}
+
+Title rules:
+- Under 80 characters
+- Creates curiosity gap OR makes a bold claim OR triggers emotion
+- Optimized for click-through as a TikTok caption or YouTube Shorts title
+- NO clickbait that doesn't deliver — the title must reflect what's actually in the clip
+- Formats that work: "X did Y and Z happened", "Nobody talks about X", "The truth about X", "When X meets Y"
+
+Generate 5 options, score each 1-10, then return only the best.
+
+Return JSON:
+{{
+  "titles": [
+    {{"text": "<title>", "score": <1-10>, "hook_type": "<curiosity|emotion|bold|reveal>"}}
+  ],
+  "best_title": "<the highest scoring title>"
+}}"""
+        return _call_llm_json([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=600)
+
+    # Run all 3 in parallel
+    desc_result, hashtag_result, title_result = {}, {}, {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(_desc_agent): "desc",
+            executor.submit(_hashtag_agent): "hashtag",
+            executor.submit(_title_agent): "title",
+        }
+        for future in concurrent.futures.as_completed(futures):
+            agent_name = futures[future]
+            try:
+                result = future.result(timeout=30)
+                if agent_name == "desc":
+                    desc_result = result
+                elif agent_name == "hashtag":
+                    hashtag_result = result
+                elif agent_name == "title":
+                    title_result = result
+            except Exception as e:
+                logging.warning("_multi_agent_clip_content %s agent failed: %s", agent_name, e)
+
+    def _normalize_tag(t: str) -> str:
+        """Lowercase, strip #, remove spaces/special chars, re-add #."""
+        t = t.strip().lower().lstrip("#")
+        t = re.sub(r"[^a-z0-9]", "", t)
+        return f"#{t}" if t else ""
+
+    # Merge results into final platform content
+    merged_platforms = {}
+    plat_descs = desc_result.get("platforms", {})
+    ht = hashtag_result.get("hashtags", {})
+    plat_hashtags = ht.get("by_platform", {})
+
+    # Build master tag pool — all categories, normalized lowercase, deduplicated
+    raw_all = (
+        ht.get("mega", [])
+        + ht.get("topic", [])
+        + ht.get("niche", [])
+        + ht.get("engagement", [])
+        + ht.get("content_type", [])  # backward compat
+    )
+    seen: set[str] = set()
+    all_hashtags: list[str] = []
+    for t in raw_all:
+        norm = _normalize_tag(t)
+        if norm and norm not in seen:
+            seen.add(norm)
+            all_hashtags.append(norm)
+
+    best_title = title_result.get("best_title") or clip.title or "Viral Clip"
+
+    for plat in platforms:
+        plat_key = plat.lower().replace("youtube_shorts", "shorts")
+        desc_data = plat_descs.get(plat_key, {})
+        description = desc_data.get("description", "")
+        cta = desc_data.get("cta", "")
+
+        # Per-platform tags, normalized lowercase, fallback to master pool
+        raw_plat_tags = plat_hashtags.get(plat_key, [])
+        plat_seen: set[str] = set()
+        plat_tags: list[str] = []
+        for t in raw_plat_tags:
+            norm = _normalize_tag(t)
+            if norm and norm not in plat_seen:
+                plat_seen.add(norm)
+                plat_tags.append(norm)
+        if not plat_tags:
+            plat_tags = all_hashtags[:8]
+
+        full_desc = f"{description}\n\n{cta}" if cta else description
+
+        merged_platforms[plat] = {
+            "description": full_desc or clip.reason or "",
+            "tags": [t.lstrip("#") for t in plat_tags],  # stored without # for DB compat
+        }
+
+    return {
+        "title": best_title,
+        "platforms": merged_platforms,
+        "all_hashtags": all_hashtags,  # includes # prefix, all lowercase
+    }
+
+
 def _ai_generate_clip_content(
     clip: "ClipResult",
     transcript_snippet: str,
@@ -1501,6 +2246,13 @@ Return ONLY valid JSON — MUST include every platform listed above:
         )
         if "platforms" not in result or not result["platforms"]:
             raise ValueError("empty platforms in response")
+        # Normalize all tags to lowercase, no special chars
+        for plat_data in result.get("platforms", {}).values():
+            plat_data["tags"] = [
+                re.sub(r"[^a-z0-9]", "", t.strip().lower().lstrip("#"))
+                for t in plat_data.get("tags", [])
+                if t.strip()
+            ]
         return result
     except Exception as e:
         logging.warning(f"_ai_generate_clip_content failed: {e}")
@@ -1553,6 +2305,8 @@ def _batch_ai_content(
     words: list[WordTimestamp],
     all_captions: dict[int, list],
     platforms: list[str],
+    content_type: str = "other",
+    topic_focus: str | None = None,
 ) -> dict[int, dict]:
     """Generate AI title/description/tags for all clips in parallel. Returns {clip_index: content}."""
     def _gen_one(idx_clip: tuple[int, ClipResult]) -> tuple[int, dict]:
@@ -1561,11 +2315,21 @@ def _batch_ai_content(
         srt = _generate_srt(captions)
         clip_words = [w.word for w in words if clip.start <= w.start <= clip.end]
         snippet = " ".join(clip_words[:80])
-        content = _ai_generate_clip_content(clip, snippet, platforms, captions_srt=srt)
+        try:
+            content = _multi_agent_clip_content(
+                clip=clip,
+                transcript_snippet=snippet,
+                platforms=platforms,
+                content_type=content_type,
+                topic_focus=topic_focus,
+            )
+        except Exception as e:
+            logging.warning("_multi_agent_clip_content failed for clip %s: %s — falling back", clip.start, e)
+            content = _ai_generate_clip_content(clip, snippet, platforms, captions_srt=srt)
         return idx, content
 
     results: dict[int, dict] = {}
-    with ThreadPoolExecutor(max_workers=min(len(clips), 8)) as executor:
+    with ThreadPoolExecutor(max_workers=min(len(clips), 4)) as executor:
         for idx, content in executor.map(_gen_one, enumerate(clips)):
             results[idx] = content
     return results
@@ -1611,8 +2375,20 @@ def _export_clip(
     if style not in CAPTION_STYLE_CFG:
         style = "capcut"
 
+    _copy_safe_codecs = {"h264", "hevc", "h265", "avc"}
+    codec_safe = meta.codec.lower() in _copy_safe_codecs
+
+    # Always burn captions over the first 5 s of every clip (hook visibility).
+    # If the user disabled full captions, restrict the caption list to that window.
+    CAPTION_INTRO_SEC = 5.0
+    if not burn_captions and captions:
+        intro_captions = [c for c in captions if c.start < CAPTION_INTRO_SEC]
+        if intro_captions:
+            burn_captions = True
+            captions = intro_captions
+
     if not burn_captions:
-        # Fast path: stream-copy, no frame decode/re-encode quality loss
+        # Fast path: stream-copy when no captions at all
         _render_clip_streamcopy(
             source_path=source_path,
             clip=clip,
@@ -1622,7 +2398,8 @@ def _export_clip(
             crop_mode=crop_mode,
             meta=meta,
         )
-    else:
+    elif codec_safe:
+        # PyAV caption-burn path (h264/hevc only — frame-accurate, styled captions)
         _render_clip(
             source_path=source_path,
             clip=clip,
@@ -1634,6 +2411,19 @@ def _export_clip(
             crop_mode=crop_mode,
             meta=meta,
             burn_captions=burn_captions,
+        )
+    else:
+        # VP9/AV1/other: ffmpeg re-encode + subtitles filter (PyAV can't decode these)
+        _render_clip_ffmpeg_captions(
+            source_path=source_path,
+            clip=clip,
+            output_path=clip_path,
+            captions=captions,
+            target_width=target_w,
+            target_height=target_h,
+            crop_mode=crop_mode,
+            meta=meta,
+            style=style,
         )
 
     try:
@@ -1653,6 +2443,8 @@ def _export_clip(
         "viral_score": round(clip.score, 2),
         "platforms": content.get("platforms", {}),
     }
+    if content.get("all_hashtags"):
+        clip_meta["trending_hashtags"] = content["all_hashtags"]
 
     # Upload thumbnail synchronously (small file, fast) — video upload deferred to queue
     from shared.storage.base import get_storage
@@ -1765,6 +2557,23 @@ def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
         return {"title": "", "thumbnail_url": ""}
 
 
+def _get_youtube_duration(url: str) -> float | None:
+    """Return video duration in seconds via yt-dlp --dump-json (no download).
+    Returns None on failure so callers can decide whether to block or proceed."""
+    try:
+        base = _ytdlp_base_flags(None)
+        result = subprocess.run(
+            ["yt-dlp"] + base + ["--dump-json", "--no-download", url],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            info = json.loads(result.stdout.splitlines()[0])
+            return float(info.get("duration") or 0) or None
+    except Exception as e:
+        logging.warning("_get_youtube_duration failed: %s", e)
+    return None
+
+
 def _ytdlp_proxies() -> list[str]:
     """Return list of proxies from YTDLP_PROXY_LIST (comma-sep) or YTDLP_PROXY. Empty = no proxy."""
     proxy_list = os.getenv("YTDLP_PROXY_LIST", "")
@@ -1796,7 +2605,7 @@ def _is_429(stderr: str) -> bool:
     return "429" in stderr or "Too Many Requests" in stderr
 
 
-def _download_youtube(url: str, out_path: str, quality: str = "source") -> None:
+def _download_youtube(url: str, out_path: str, quality: str = "source", progress_cb=None) -> None:
     import time, random
     errors = []
     proxies = _ytdlp_proxies()
@@ -1843,10 +2652,41 @@ def _download_youtube(url: str, out_path: str, quality: str = "source") -> None:
 
     for attempt, (cmd, label) in enumerate(ytdlp_strategies):
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if result.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
+            # Stream stdout/stderr to parse yt-dlp progress lines in real time
+            proc = subprocess.Popen(
+                cmd + ["--newline"],  # --newline: one progress line per line (no \r)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True,
+            )
+            stderr_lines: list[str] = []
+            last_pct = 0
+            import threading
+            def _drain_stdout():
+                for _ in proc.stdout:
+                    pass
+            def _drain_stderr():
+                for line in proc.stderr:
+                    line = line.rstrip()
+                    stderr_lines.append(line)
+                    if progress_cb and "[download]" in line:
+                        import re as _re
+                        m = _re.search(r'(\d+\.?\d*)%', line)
+                        if m:
+                            pct = min(int(float(m.group(1))), 99)
+                            nonlocal last_pct
+                            if pct > last_pct:
+                                last_pct = pct
+                                progress_cb(pct)
+            t_out = threading.Thread(target=_drain_stdout, daemon=True)
+            t_err = threading.Thread(target=_drain_stderr, daemon=True)
+            t_out.start()
+            t_err.start()
+            t_out.join(timeout=310)
+            t_err.join(timeout=310)
+            proc.wait(timeout=300)
+            if proc.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
                 return
-            stderr = result.stderr or ""
+            stderr = "\n".join(stderr_lines[-20:])
             errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
             if _is_429(stderr) and proxies:
                 # Switch to next proxy, append proxy-based strategies after current position
@@ -1860,6 +2700,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source") -> None:
                 remaining = [(c, proxy) for c in _client_args(proxy)]
                 ytdlp_strategies[attempt + 1:attempt + 1] = remaining
         except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except Exception:
+                pass
             errors.append(f"yt-dlp strategy {attempt+1} ({label}): timeout")
         except Exception as e:
             errors.append(f"yt-dlp strategy {attempt+1} ({label}): {e}")
@@ -1956,7 +2800,7 @@ def _parse_vtt_to_words(vtt: str) -> list[WordTimestamp]:
     return words
 
 
-def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: str, cfg: dict | None = None, yt_url: str | None = None) -> None:
+def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: str, cfg: dict | None = None, yt_url: str | None = None, yt_meta: dict | None = None) -> None:
     cfg = cfg or {}
     work_dir = Path(VIDEO_TEMP_DIR) / video_id
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -1972,6 +2816,15 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     min_score_10 = min_score_01 * 10  # e.g. 0.5 → 5.0; default keeps 7.5 floor in AI prompt
     vid_meta: dict = {}  # populated after transcription
     yt_chapters: list[dict] = []  # populated from yt-dlp metadata if YouTube
+    precision_mode = cfg.get("precision_mode", False)
+    _yt_meta = yt_meta or {}
+    yt_engagement = {
+        "title": _yt_meta.get("title", ""),
+        "views": int(_yt_meta.get("view_count", 0) or 0),
+        "likes": int(_yt_meta.get("like_count", 0) or 0),
+        "comments": int(_yt_meta.get("comment_count", 0) or 0),
+        "description": ((_yt_meta.get("description") or "")[:500]),
+    } if precision_mode else None
 
     output_quality = cfg.get("output_quality", "source")
     if output_quality == "source":
@@ -2007,6 +2860,14 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
                 _yt_info = _ytdlp_fetch_json_worker(yt_url)
                 yt_chapters = _yt_info.get("chapters") or []
                 logging.info("Fetched %d YouTube chapters for signal augmentation", len(yt_chapters))
+                if precision_mode and yt_engagement is None:
+                    yt_engagement = {
+                        "title": _yt_info.get("title", "") or (_yt_meta.get("title", "") if _yt_meta else ""),
+                        "views": int(_yt_info.get("view_count", 0) or 0),
+                        "likes": int(_yt_info.get("like_count", 0) or 0),
+                        "comments": int(_yt_info.get("comment_count", 0) or 0),
+                        "description": ((_yt_info.get("description") or "")[:500]),
+                    }
             except Exception:
                 yt_chapters = []
             words = _fetch_youtube_captions(yt_url, language)
@@ -2064,6 +2925,8 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         key_moments=_key_moments,
         source_path=source_path,
         chapters=yt_chapters,
+        precision_mode=precision_mode,
+        yt_engagement=yt_engagement,
     )
 
     # Fill remaining slots with heuristic clips if AI returned fewer than requested
@@ -2109,7 +2972,8 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
 
     # Generate AI content for all clips in parallel before export
     _publish_progress(job_id, "ai_content", 58, "processing", f"Generating AI content for {len(clips)} clips...")
-    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms)
+    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms,
+                                       content_type=_content_type, topic_focus=topic_focus)
 
     # Step 5: Export clips in parallel (60→95%)
     if output_quality == "source":
@@ -2208,7 +3072,7 @@ def _segments_to_words(segments: list[dict]) -> list[WordTimestamp]:
 
 @celery_app.task(bind=True, name="workers.tasks.video.generate_viral_clips",
                  queue="viralo.video.generate", acks_late=True, max_retries=2,
-                 time_limit=600, soft_time_limit=570)
+                 time_limit=1260, soft_time_limit=1200)
 def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None = None):
     """
     Transcript → viral clip scoring → per-clip social content. No video rendering.
@@ -2221,9 +3085,16 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
       5. Generate title + description + tags for each target platform.
       6. Persist Clip rows with status='scored' and full social metadata.
     """
+    from celery.exceptions import SoftTimeLimitExceeded
     cfg = cfg or {}
     job_id = self.request.id or video_id
+    try:
+        return _gvc_inner(self, tenant_id, video_id, job_id, cfg)
+    except SoftTimeLimitExceeded:
+        _handle_timeout(tenant_id, video_id, job_id)
+        raise
 
+def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
     num_clips   = int(cfg.get("max_clips", 5))
     min_dur     = int(cfg.get("duration_min", 15))
     max_dur     = int(cfg.get("duration_max", 60))
@@ -2232,6 +3103,8 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
     platforms   = cfg.get("platforms") or ["tiktok", "reels", "shorts"]
     language    = cfg.get("language", "en")
     style       = cfg.get("caption_style", "capcut")
+    precision_mode_gvc = cfg.get("precision_mode", False)
+    yt_engagement_gvc: dict | None = None
 
     _update_video(tenant_id, video_id, status="processing",
                   celery_task_id=job_id, pipeline_step="transcribe", pipeline_pct=5)
@@ -2249,7 +3122,7 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
             {"vid": video_id},
         ).fetchone()
         vid_row = session.execute(
-            text("SELECT duration_sec, topic, source_url, original_storage_key, source_type FROM videos WHERE id = CAST(:vid AS uuid)"),
+            text("SELECT duration_sec, topic, source_url, original_storage_key, source_type, metadata FROM videos WHERE id = CAST(:vid AS uuid)"),
             {"vid": video_id},
         ).fetchone()
 
@@ -2271,6 +3144,14 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
             try:
                 _yt_info = _ytdlp_fetch_json_worker(yt_url)
                 yt_chapters = _yt_info.get("chapters") or []
+                if precision_mode_gvc:
+                    yt_engagement_gvc = {
+                        "title": _yt_info.get("title", ""),
+                        "views": int(_yt_info.get("view_count", 0) or 0),
+                        "likes": int(_yt_info.get("like_count", 0) or 0),
+                        "comments": int(_yt_info.get("comment_count", 0) or 0),
+                        "description": ((_yt_info.get("description") or "")[:500]),
+                    }
             except Exception:
                 yt_chapters = []
             words = _fetch_youtube_captions(yt_url, language)
@@ -2345,6 +3226,13 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
                       "Analyzing transcript for viral signals...")
 
     min_score_10 = min_score * 10
+    _gvc_content_type = "other"
+    if vid_row and vid_row.metadata:
+        try:
+            _meta = vid_row.metadata if isinstance(vid_row.metadata, dict) else json.loads(vid_row.metadata)
+            _gvc_content_type = _meta.get("content_type", "other") or "other"
+        except Exception:
+            pass
     clips = _ai_score_clips(
         words=words,
         duration=duration,
@@ -2356,6 +3244,9 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
         platforms=platforms,
         source_path=source_path or "",
         chapters=yt_chapters,
+        precision_mode=precision_mode_gvc,
+        yt_engagement=yt_engagement_gvc,
+        content_type=_gvc_content_type,
     )
 
     # Heuristic fill if AI returned fewer than requested
@@ -2387,7 +3278,8 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
     # ── Step 4: AI social content per clip (parallel) ─────────────────────────
     _publish_progress(job_id, "ai_content", 65, "processing",
                       f"Generating social content for {len(clips)} clips across {len(platforms)} platforms...")
-    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms)
+    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms,
+                                       content_type="other", topic_focus=topic_focus)
 
     # ── Step 5: Persist clips ─────────────────────────────────────────────────
     _publish_progress(job_id, "saving", 90, "processing", f"Saving {len(clips)} clips...")
@@ -2407,7 +3299,14 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
                 "reason": clip.reason,
                 "transcript_source": transcript_source,
                 "social": ai_content.get("platforms", {}),
+                "signals": {
+                    "audio_energy": getattr(clip, "audio_energy", None),
+                    "speech_rate": getattr(clip, "speech_rate", None),
+                    "chapter_match": getattr(clip, "chapter_match", False),
+                },
             }
+            if ai_content.get("all_hashtags"):
+                clip_meta["trending_hashtags"] = ai_content["all_hashtags"]
 
             session.execute(
                 text("""
@@ -2439,6 +3338,18 @@ def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None =
     _publish_progress(job_id, "complete", 100, "complete",
                       f"Generated {len(clips)} viral clips with social content")
     return clip_ids
+
+
+def _handle_timeout(tenant_id: str, video_id: str, job_id: str) -> None:
+    """Called from SoftTimeLimitExceeded handlers — mark failed, free memory."""
+    import gc
+    msg = "Processing timed out after 20 minutes — video may be too long or complex."
+    try:
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+    except Exception:
+        pass
+    gc.collect()
 
 
 @celery_app.task(bind=True, name="workers.tasks.video.upload_clip_to_storage",
@@ -2608,8 +3519,9 @@ def _reexport_clip_from_source(clip_id: str, tenant_id: str, out_path: str) -> N
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_uploaded_video",
                  queue="viralo.video.generate", acks_late=True, max_retries=3,
-                 time_limit=1800, soft_time_limit=1700)
+                 time_limit=1260, soft_time_limit=1200)
 def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str | None, cfg: dict | None = None):
+    from celery.exceptions import SoftTimeLimitExceeded
     job_id = self.request.id or video_id
     cfg = cfg or {}
     try:
@@ -2633,11 +3545,32 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         else:
             raise FileNotFoundError("No source file available. Re-upload the video.")
 
+        # Enforce max duration before running the full pipeline
+        try:
+            probe = _probe_video(source)
+            if probe.duration > MAX_VIDEO_DURATION_SEC:
+                mins = int(probe.duration // 60)
+                raise ValueError(
+                    f"Video is {mins} minutes long. Maximum supported length is "
+                    f"{MAX_VIDEO_DURATION_SEC // 60} minutes."
+                )
+        except ValueError:
+            raise
+        except Exception:
+            pass  # probe failure is non-fatal; pipeline will probe again
+
         run_video_pipeline(tenant_id, video_id, source, job_id, cfg)
-    except FileNotFoundError as exc:
+    except SoftTimeLimitExceeded:
+        import gc
+        msg = "Processing timed out after 20 minutes — video may be too long or complex."
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        gc.collect()
+        raise
+    except (FileNotFoundError, ValueError) as exc:
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise  # file won't reappear — no retry
+        raise
     except Exception as exc:
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
@@ -2646,8 +3579,9 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_youtube_video",
                  queue="viralo.video.generate", acks_late=True, max_retries=3,
-                 time_limit=1800, soft_time_limit=1700)
+                 time_limit=1260, soft_time_limit=1200)
 def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: dict | None = None):
+    from celery.exceptions import SoftTimeLimitExceeded
     job_id = self.request.id or video_id
     cfg = cfg or {}
     try:
@@ -2663,10 +3597,352 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         if meta.get("title") or meta.get("thumbnail_url"):
             _update_video(tenant_id, video_id, **{k: v for k, v in meta.items() if v})
 
-        _download_youtube(url, out_path, quality=cfg.get("output_quality", "source"))
+        # Check duration before downloading — reject videos exceeding the limit
+        yt_duration = _get_youtube_duration(url)
+        if yt_duration and yt_duration > MAX_VIDEO_DURATION_SEC:
+            mins = int(yt_duration // 60)
+            raise ValueError(
+                f"Video is {mins} minutes long. Maximum supported length is "
+                f"{MAX_VIDEO_DURATION_SEC // 60} minutes."
+            )
+
+        def _on_download_progress(pct: int):
+            # Map yt-dlp 0-100% → pipeline 5-14% range
+            mapped = 5 + int(pct * 9 / 100)
+            _publish_progress(job_id, "download", mapped, "processing",
+                              f"Downloading YouTube video... {pct}%")
+            _update_video(tenant_id, video_id, pipeline_pct=mapped)
+
+        _download_youtube(url, out_path, quality=cfg.get("output_quality", "source"),
+                          progress_cb=_on_download_progress)
         _publish_progress(job_id, "download", 15, "processing", "Download complete, processing...")
-        run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url)
+        run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url, yt_meta=meta)
+    except SoftTimeLimitExceeded:
+        import gc
+        msg = "Processing timed out after 20 minutes — video may be too long or complex."
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        gc.collect()
+        raise
+    except ValueError as exc:
+        # Non-retryable (bad input: too long, invalid URL, etc.)
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
+        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
+        raise
     except Exception as exc:
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
         _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
         raise self.retry(exc=exc, countdown=30)
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.video.concat_top_clips",
+    queue="viralo.video.generate",
+    acks_late=True,
+    max_retries=2,
+    default_retry_delay=60,
+    time_limit=1260,
+    soft_time_limit=1200,
+)
+def concat_top_clips(self, tenant_id: str, video_id: str, clip_ids: list) -> str:
+    """Download two clips from storage, concat via ffmpeg, upload as composite clip."""
+    import tempfile
+    import uuid as uuid_mod
+
+    if len(clip_ids) != 2:
+        raise ValueError(f"concat_top_clips requires exactly 2 clip_ids, got {len(clip_ids)}")
+
+    composite_id = str(uuid_mod.uuid4())
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f"viralo-concat-{composite_id}-"))
+
+    try:
+        import httpx as _httpx
+
+        local_paths = []
+        for i, clip_id in enumerate(clip_ids):
+            with _get_session(tenant_id) as session:
+                row = session.execute(
+                    text("SELECT storage_url, status FROM clips WHERE id = CAST(:id AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+                    {"id": clip_id, "tid": tenant_id},
+                ).fetchone()
+                if not row:
+                    raise ValueError(f"Clip {clip_id} not found for tenant {tenant_id}")
+                if row.status != "ready":
+                    raise ValueError(f"Clip {clip_id} status is '{row.status}', must be 'ready'")
+                storage_url = row.storage_url
+
+            local_path = tmp_dir / f"part_{i}.mp4"
+            with _httpx.stream("GET", storage_url, timeout=120, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                with open(local_path, "wb") as f:
+                    for chunk in resp.iter_bytes(chunk_size=65536):
+                        f.write(chunk)
+
+            if local_path.stat().st_size == 0:
+                raise ValueError(f"Downloaded clip {clip_id} is empty")
+            local_paths.append(local_path)
+
+        list_file = tmp_dir / "list.txt"
+        list_file.write_text("\n".join(f"file '{p}'" for p in local_paths))
+
+        output_path = tmp_dir / f"{composite_id}.mp4"
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", str(list_file),
+                "-c", "copy",
+                "-movflags", "+faststart",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg concat failed: {result.stderr[-2000:]}")
+
+        if output_path.stat().st_size == 0:
+            raise RuntimeError("ffmpeg produced empty output file")
+
+        with _get_session(tenant_id) as session:
+            session.execute(
+                text("""
+                    INSERT INTO clips (id, tenant_id, video_id, title, status, metadata, created_at, updated_at)
+                    VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:vid AS uuid), :title, 'uploading',
+                            CAST(:meta AS jsonb), NOW(), NOW())
+                """),
+                {
+                    "id": composite_id,
+                    "tid": tenant_id,
+                    "vid": video_id,
+                    "title": "Top 2 Compilation",
+                    "meta": json.dumps({
+                        "composite": True,
+                        "source_clip_ids": clip_ids,
+                    }),
+                },
+            )
+
+        storage_key = f"clips/{tenant_id}/{composite_id}.mp4"
+        from shared.storage.base import get_storage
+
+        async def _upload() -> str:
+            _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+            with open(output_path, "rb") as f:
+                return await _storage.upload(f, storage_key, "video/mp4")
+
+        storage_url = asyncio.run(_upload())
+
+        with _get_session(tenant_id) as session:
+            session.execute(
+                text("UPDATE clips SET status='ready', storage_url=:url, updated_at=NOW() WHERE id = CAST(:id AS uuid)"),
+                {"url": storage_url, "id": composite_id},
+            )
+
+        return composite_id
+
+    finally:
+        import shutil as _shutil
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.video.merge_ai_clips",
+    queue="viralo.video.generate",
+    acks_late=True,
+    max_retries=2,
+    default_retry_delay=60,
+    time_limit=900,
+    soft_time_limit=870,
+)
+def merge_ai_clips(self, tenant_id: str, clip_ids: list) -> list:
+    """LLM-assisted merge: groups clips by narrative coherence, re-renders from source."""
+    import json as _json
+    import shutil as _shutil
+    import tempfile as _tempfile
+    import uuid as _uuid_mod
+    from collections import defaultdict
+    from pathlib import Path as _Path
+
+    if len(clip_ids) < 2:
+        raise ValueError("merge_ai_clips requires at least 2 clips")
+
+    with _get_session(tenant_id) as session:
+        rows = session.execute(
+            text("""
+                SELECT c.id::text, c.video_id::text, c.start_sec, c.end_sec, c.duration_ms,
+                       c.score, c.caption_srt, c.title,
+                       c.clip_metadata->>'reason' as reason,
+                       v.original_storage_key
+                FROM clips c
+                JOIN videos v ON c.video_id = v.id
+                WHERE c.id = ANY(CAST(:ids AS uuid[]))
+                  AND c.tenant_id = CAST(:tid AS uuid)
+                ORDER BY c.start_sec
+            """),
+            {"ids": clip_ids, "tid": tenant_id},
+        ).fetchall()
+
+    if len(rows) < 2:
+        raise ValueError(f"Found only {len(rows)} clips for tenant {tenant_id}")
+
+    # Group clips by video_id (can only merge clips from same source)
+    by_video: dict = defaultdict(list)
+    for r in rows:
+        by_video[r[1]].append(r)
+
+    all_new_clip_ids: list = []
+
+    for video_id, clips in by_video.items():
+        original_storage_key = clips[0][9]
+        if not original_storage_key:
+            logging.warning("No original_storage_key for video %s — skipping merge", video_id)
+            continue
+
+        t_start = min(float(c[2] or 0) for c in clips)
+        t_end = max(float(c[3] or 0) for c in clips)
+
+        with _get_session(tenant_id) as session:
+            t_row = session.execute(
+                text("SELECT segments FROM transcripts WHERE video_id = CAST(:vid AS uuid) LIMIT 1"),
+                {"vid": video_id},
+            ).fetchone()
+
+        transcript_segs = []
+        if t_row and t_row[0]:
+            segs = t_row[0] if isinstance(t_row[0], list) else _json.loads(t_row[0])
+            transcript_segs = [s for s in segs if float(s.get("end", 0)) >= t_start and float(s.get("start", 0)) <= t_end]
+
+        transcript_text = " ".join(s.get("text", "") for s in transcript_segs).strip() or "(no transcript)"
+
+        clips_summary = "\n".join(
+            f"Clip {i+1}: [{float(c[2] or 0):.1f}s–{float(c[3] or 0):.1f}s] score={c[5]} title=\"{c[7] or ''}\" reason=\"{c[8] or ''}\""
+            for i, c in enumerate(clips)
+        )
+
+        merge_prompt = f"""You are a professional video editor. Given these clips from the same video, decide which should be merged into a single clip for maximum narrative coherence and virality.
+
+CLIPS (sorted by time):
+{clips_summary}
+
+TRANSCRIPT (covering this time range):
+{transcript_text}
+
+MERGE RULES:
+- Merge clips that form a single coherent thought, story beat, or joke setup+punchline
+- Merge clips whose combined duration is ≤90 seconds
+- Do NOT merge clips that are about different topics or have a narrative break between them
+- Clips separated by >15 seconds of dead time should NOT be merged unless transcript shows continuity
+- A single strong clip should stay as-is (group of 1)
+
+Return JSON — groups of clip indices (1-based) to merge:
+{{
+  "groups": [
+    {{
+      "clip_indices": [1, 2],
+      "reason": "<why these merge well, 1 sentence>",
+      "merged_title": "<punchy title for the merged clip>"
+    }}
+  ]
+}}
+
+Every clip index must appear in exactly one group. Use a group of [N] for clips that should stay solo."""
+
+        try:
+            merge_decision = _call_llm_json(
+                [{"role": "user", "content": merge_prompt}],
+                temperature=0.15,
+                max_tokens=1000,
+            )
+            groups = merge_decision.get("groups", [])
+        except Exception as e:
+            logging.warning("MergeAI LLM failed for video %s: %s — using solo groups", video_id, e)
+            groups = [{"clip_indices": [i + 1], "reason": "solo", "merged_title": clips[i][7]} for i in range(len(clips))]
+
+        tmp_dir = _Path(_tempfile.mkdtemp(prefix=f"viralo-merge-{video_id[:8]}-"))
+        try:
+            source_path = str(tmp_dir / "source.mp4")
+            from shared.storage.base import get_storage
+            _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+            asyncio.run(_storage.download(original_storage_key, source_path))
+
+            if not _Path(source_path).exists() or _Path(source_path).stat().st_size == 0:
+                raise RuntimeError(f"Downloaded source for video {video_id} is empty")
+
+            for group in groups:
+                indices = [i - 1 for i in group.get("clip_indices", []) if 0 < i <= len(clips)]
+                if not indices:
+                    continue
+
+                group_clips = [clips[i] for i in indices]
+                merged_start = min(float(c[2] or 0) for c in group_clips)
+                merged_end = max(float(c[3] or 0) for c in group_clips)
+                merged_dur = merged_end - merged_start
+                merged_score = max(float(c[5] or 0) for c in group_clips)
+                merged_title = group.get("merged_title") or group_clips[0][7] or "Merged Clip"
+                source_clip_ids = [c[0] for c in group_clips]
+
+                new_id = str(_uuid_mod.uuid4())
+                out_path = str(tmp_dir / f"{new_id}.mp4")
+
+                result = subprocess.run(
+                    ["ffmpeg", "-y", "-ss", str(merged_start), "-i", source_path,
+                     "-t", str(merged_dur), "-c", "copy", "-movflags", "+faststart", out_path],
+                    capture_output=True, text=True, timeout=300,
+                )
+                if result.returncode != 0:
+                    logging.error("ffmpeg merge failed for group %s: %s", source_clip_ids, result.stderr[-1000:])
+                    continue
+
+                if _Path(out_path).stat().st_size == 0:
+                    logging.error("ffmpeg produced empty file for group %s", source_clip_ids)
+                    continue
+
+                storage_key = f"clips/{tenant_id}/{new_id}.mp4"
+
+                async def _upload_merge(p=out_path, k=storage_key) -> str:
+                    _s = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+                    with open(p, "rb") as f:
+                        return await _s.upload(f, k, "video/mp4")
+
+                storage_url = asyncio.run(_upload_merge())
+
+                with _get_session(tenant_id) as session:
+                    session.execute(
+                        text("""
+                            INSERT INTO clips (id, tenant_id, video_id, title, start_sec, end_sec,
+                                duration_ms, score, status, clip_metadata, created_at, updated_at)
+                            VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:vid AS uuid),
+                                :title, :start, :end, :dur, :score,
+                                'ready', CAST(:meta AS jsonb), NOW(), NOW())
+                        """),
+                        {
+                            "id": new_id, "tid": tenant_id, "vid": video_id,
+                            "title": merged_title,
+                            "start": merged_start, "end": merged_end,
+                            "dur": int(merged_dur * 1000),
+                            "score": merged_score,
+                            "meta": _json.dumps({
+                                "merged_from": source_clip_ids,
+                                "merge_reason": group.get("reason", ""),
+                                "is_merge_ai": True,
+                            }),
+                        },
+                    )
+
+                with _get_session(tenant_id) as session:
+                    session.execute(
+                        text("UPDATE clips SET storage_url = :url, updated_at = NOW() WHERE id = CAST(:id AS uuid)"),
+                        {"url": storage_url, "id": new_id},
+                    )
+
+                all_new_clip_ids.append(new_id)
+                logging.info("MergeAI: created merged clip %s from %s", new_id, source_clip_ids)
+
+        finally:
+            _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return all_new_clip_ids

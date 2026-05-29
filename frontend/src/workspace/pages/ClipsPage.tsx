@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, safeFilename, downloadUrl } from "@/lib/utils";
 import { Shell } from "../Shell";
 import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
@@ -984,7 +984,14 @@ export function ClipsPage() {
                     </Button>
                     <div className="grid grid-cols-2 gap-2">
                       <Button className="h-8 text-[12px]" variant="secondary">Edit clip</Button>
-                      <Button className="h-8 text-[12px]" variant="ghost">Download</Button>
+                      <Button
+                        className="h-8 text-[12px]"
+                        variant="ghost"
+                        disabled={!drawer?.storage_url}
+                        onClick={() => { if (drawer?.storage_url) void downloadUrl(drawer.storage_url, safeFilename(drawer.title, "mp4")); }}
+                      >
+                        Download
+                      </Button>
                     </div>
                   </div>
                 </div>
