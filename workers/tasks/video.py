@@ -2530,9 +2530,9 @@ def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
         return {"title": "", "thumbnail_url": ""}
 
 
-def _get_youtube_duration(url: str) -> float | None:
-    """Return video duration in seconds via yt-dlp --dump-json (no download).
-    Returns None on failure so callers can decide whether to block or proceed."""
+def _get_youtube_info(url: str) -> dict:
+    """Return {duration, is_live, live_status} via yt-dlp --dump-json (no download).
+    Returns empty dict on failure so callers can decide whether to block or proceed."""
     try:
         base = _ytdlp_base_flags(None)
         result = subprocess.run(
@@ -2541,10 +2541,18 @@ def _get_youtube_duration(url: str) -> float | None:
         )
         if result.returncode == 0:
             info = json.loads(result.stdout.splitlines()[0])
-            return float(info.get("duration") or 0) or None
+            return {
+                "duration": float(info.get("duration") or 0) or None,
+                "is_live": bool(info.get("is_live")),
+                "live_status": info.get("live_status") or "",
+            }
     except Exception as e:
-        logging.warning("_get_youtube_duration failed: %s", e)
-    return None
+        logging.warning("_get_youtube_info failed: %s", e)
+    return {}
+
+
+def _get_youtube_duration(url: str) -> float | None:
+    return _get_youtube_info(url).get("duration")
 
 
 def _ytdlp_proxies() -> list[str]:
@@ -3581,8 +3589,13 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         if meta.get("title") or meta.get("thumbnail_url"):
             _update_video(tenant_id, video_id, **{k: v for k, v in meta.items() if v})
 
-        # Check duration before downloading — reject videos exceeding the limit
-        yt_duration = _get_youtube_duration(url)
+        # Check live status and duration before downloading
+        yt_info = _get_youtube_info(url)
+        if yt_info.get("is_live") or yt_info.get("live_status") in ("is_live", "is_upcoming"):
+            raise ValueError(
+                "Live and upcoming streams are not supported. Please use a recorded video."
+            )
+        yt_duration = yt_info.get("duration")
         if yt_duration and yt_duration > MAX_VIDEO_DURATION_SEC:
             mins = int(yt_duration // 60)
             raise ValueError(
