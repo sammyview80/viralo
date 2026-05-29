@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, safeFilename, downloadUrl } from "@/lib/utils";
@@ -44,7 +44,7 @@ const CARD_PLAT_CFG: Record<string, { color: string; icon: string }> = {
   facebook:  { color: "#1877F2", icon: "f"  },
 };
 
-function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isScheduled, clipPosts = [] }: {
+const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isScheduled, clipPosts = [] }: {
   clip: ClipApiResponse; active?: boolean; onClick?: () => void; onRetry?: () => void; delay?: number;
   isPosted?: boolean; isScheduled?: boolean; clipPosts?: ScheduledPost[];
 }) {
@@ -170,7 +170,7 @@ function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isSched
       </div>
     </button>
   );
-}
+});
 
 function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () => void }) {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
@@ -817,7 +817,7 @@ export function ClipsPage() {
       try {
         const [clipsResp, postsResp] = await Promise.all([
           videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined, sort === "score_desc" ? "score" : undefined),
-          platformApi.listPosts({ per_page: 100 }),
+          platformApi.listPosts({ per_page: 20 }),
         ]);
         const allClips = Array.isArray(clipsResp.items) ? clipsResp.items : [];
         setClips(allClips);

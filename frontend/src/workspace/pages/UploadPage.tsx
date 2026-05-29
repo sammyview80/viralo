@@ -902,7 +902,7 @@ function ProcessingView({
   }, [video.id, video.status, video.pipeline_step, video.pipeline_pct, video.error_message]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    const id = window.setInterval(() => setNow(Date.now()), 5000);
     return () => window.clearInterval(id);
   }, []);
 

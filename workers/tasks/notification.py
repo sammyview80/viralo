@@ -200,11 +200,10 @@ def send_notification(
 
             if stale_ids:
                 with engine.connect() as conn:
-                    for sid in stale_ids:
-                        conn.execute(
-                            text("DELETE FROM push_subscriptions WHERE id = CAST(:sid AS uuid)"),
-                            {"sid": sid},
-                        )
+                    conn.execute(
+                        text("DELETE FROM push_subscriptions WHERE id = ANY(CAST(:ids AS uuid[]))"),
+                        {"ids": stale_ids},
+                    )
                     conn.commit()
         except Exception:
             logger.exception("send_notification: push delivery failed for tenant %s", tenant_id)
