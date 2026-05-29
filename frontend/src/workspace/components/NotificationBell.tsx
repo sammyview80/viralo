@@ -42,7 +42,14 @@ function timeAgo(dateStr: string): string {
 function NotificationRow({ notification }: { notification: Notification }) {
   function handleClick() {
     if (!notification.is_read) markRead(notification.id);
-    if (notification.action_url) navigate(notification.action_url);
+    const url = notification.action_url;
+    if (url) {
+      if (url.startsWith("http")) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      } else {
+        navigate(url.replace(/^\/workspace/, ""));
+      }
+    }
   }
 
   return (

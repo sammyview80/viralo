@@ -27,6 +27,9 @@ export function StudioPage() {
   const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Precision mode state
+  const [precisionMode, setPrecisionMode] = useState(false);
+
   // YouTube tab state
   const [urlVal, setUrlVal]       = useState("");
   const [urlReady, setUrlReady]   = useState(false);
@@ -90,13 +93,16 @@ export function StudioPage() {
     setUploading(true);
     setUploadError("");
     try {
-      const video = await videoApi.youtube(urlVal.trim(), undefined, clipConfig);
+      const effectiveConfig: ClipConfig = precisionMode
+        ? { ...clipConfig, precision_mode: true }
+        : clipConfig;
+      const video = await videoApi.youtube(urlVal.trim(), undefined, effectiveConfig);
       startProcessing(video);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, clipConfig]);
+  }, [urlVal, clipConfig, precisionMode]);
 
   const isUploadTab = tab === "upload" || tab === "url";
 
@@ -265,6 +271,36 @@ export function StudioPage() {
                           ? <span className="mx-auto block h-4 w-4 rounded-full border-2 border-white/70 border-t-transparent animate-spin" />
                           : "Import & Clip"}
                       </Button>
+                    </div>
+
+                    {/* Precision Mode toggle */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-semibold text-zinc-400">Clip mode</span>
+                        <div className="flex rounded-[10px] border border-white/[.07] bg-[#090f18] p-0.5">
+                          <button
+                            onClick={() => setPrecisionMode(false)}
+                            className={cn(
+                              "rounded-[8px] px-3 py-1.5 text-[11.5px] font-bold transition",
+                              !precisionMode ? "bg-[#ff3d6a] text-white shadow-[0_4px_14px_rgba(255,61,106,.32)]" : "text-zinc-500 hover:text-zinc-300"
+                            )}
+                          >
+                            Multi Clip
+                          </button>
+                          <button
+                            onClick={() => setPrecisionMode(true)}
+                            className={cn(
+                              "rounded-[8px] px-3 py-1.5 text-[11.5px] font-bold transition",
+                              precisionMode ? "bg-[#ff3d6a] text-white shadow-[0_4px_14px_rgba(255,61,106,.32)]" : "text-zinc-500 hover:text-zinc-300"
+                            )}
+                          >
+                            Best Viral Clip
+                          </button>
+                        </div>
+                      </div>
+                      {precisionMode && (
+                        <p className="text-[11px] font-medium text-[#ff7a9a]">Targeting 1 clip at 9.5+ virality score</p>
+                      )}
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-3">

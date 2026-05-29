@@ -219,6 +219,99 @@ function ChannelCardSkeleton() {
   );
 }
 
+/* ─── Video list skeleton ─── */
+function VideoSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="flex items-center gap-3 rounded-[10px] border border-white/[.06] bg-white/[.02] p-2.5">
+          <Skeleton className="h-[52px] w-[88px] shrink-0 rounded-[8px] bg-white/[.05]" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-3 w-3/4 bg-white/[.04]" />
+            <Skeleton className="h-2.5 w-1/2 bg-white/[.03]" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Single video row ─── */
+function VideoCard({ v, rank, showRank }: { v: ChannelVideo; rank?: number; showRank?: boolean }) {
+  const dur = parseDuration(v.duration);
+  return (
+    <div className={cn(
+      "group flex items-center gap-3 rounded-[10px] border bg-white/[.02] p-2.5 transition",
+      v.already_clipped
+        ? "border-amber-500/20 hover:border-amber-500/30"
+        : "border-white/[.06] hover:border-white/[.10] hover:bg-white/[.04]"
+    )}>
+      {/* Rank badge */}
+      {showRank && rank && rank <= 3 && (
+        <span className="shrink-0 text-[13px]">{["🥇","🥈","🥉"][rank - 1]}</span>
+      )}
+      {showRank && rank && rank > 3 && (
+        <span className="w-4 shrink-0 text-center text-[10px] font-bold text-zinc-600">#{rank}</span>
+      )}
+
+      {/* Thumbnail */}
+      <div className="relative h-[52px] w-[88px] shrink-0 overflow-hidden rounded-[8px] bg-zinc-900">
+        <img src={v.thumbnail} alt={v.title} className="h-full w-full object-cover" loading="lazy" />
+        {dur && (
+          <span className="absolute bottom-0.5 right-0.5 rounded-[4px] bg-black/75 px-1 py-0.5 text-[9px] font-bold text-white">
+            {dur}
+          </span>
+        )}
+        <div className="absolute inset-0 grid place-items-center bg-black/30 opacity-0 transition group-hover:opacity-100">
+          <span className="text-white text-sm">▶</span>
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-1.5">
+          <p className="line-clamp-2 flex-1 text-[12px] font-medium leading-[1.35] text-zinc-200">{v.title}</p>
+          {v.already_clipped && (
+            <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+              Clipped
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-600">
+          <span>{formatNum(v.views)} views</span>
+          {v.likes && <span>· {formatNum(v.likes)} likes</span>}
+          <span>· {formatDate(v.published)}</span>
+        </div>
+      </div>
+
+      {/* Clip button */}
+      <button
+        onClick={() => navigate(`/studio?type=youtube&url=${encodeURIComponent(v.url)}`)}
+        className={cn(
+          "shrink-0 rounded-[8px] border px-2.5 py-1.5 text-[11px] font-medium transition",
+          v.already_clipped
+            ? "border-amber-500/20 bg-amber-500/[.06] text-amber-500 hover:bg-amber-500/10"
+            : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-[#ff3d6a]/30 hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
+        )}
+      >
+        {v.already_clipped ? "Re-clip ↗" : "Clip ↗"}
+      </button>
+    </div>
+  );
+}
+
+/* ─── Duration ISO 8601 parser ─── */
+function parseDuration(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return "";
+  const h = parseInt(m[1] ?? "0");
+  const min = parseInt(m[2] ?? "0");
+  const sec = parseInt(m[3] ?? "0");
+  if (h > 0) return `${h}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
 /* ─── Right detail panel ─── */
 function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
   channel: ChannelSubscription;
@@ -227,19 +320,37 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
 }) {
   const [removing, setRemoving] = useState(false);
   const [renewing, setRenewing] = useState(false);
-  const [videos, setVideos] = useState<ChannelVideo[]>([]);
-  const [videosLoading, setVideosLoading] = useState(false);
-  const [videosErr, setVideosErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<"top" | "recent">("top");
+  const [orderBy, setOrderBy] = useState<"viewCount" | "date" | "rating">("viewCount");
+  const [hideClipped, setHideClipped] = useState(false);
+
+  const [topVideos, setTopVideos] = useState<ChannelVideo[]>([]);
+  const [topLoading, setTopLoading] = useState(false);
+  const [topErr, setTopErr] = useState<string | null>(null);
+
+  const [recentVideos, setRecentVideos] = useState<ChannelVideo[]>([]);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [recentErr, setRecentErr] = useState<string | null>(null);
+
   const name = channel.channel_name ?? channel.channel_id;
   const expiry = expiryState(channel.lease_expires_at);
 
   useEffect(() => {
-    setVideos([]); setVideosErr(null); setVideosLoading(true);
+    setTopVideos([]); setTopErr(null); setTopLoading(true);
+    channelsApi.topVideos(channel.channel_id, orderBy)
+      .then((res) => setTopVideos(res.videos ?? []))
+      .catch((e: unknown) => setTopErr(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setTopLoading(false));
+  }, [channel.channel_id, orderBy]);
+
+  useEffect(() => {
+    if (tab !== "recent") return;
+    setRecentVideos([]); setRecentErr(null); setRecentLoading(true);
     channelsApi.recentVideos(channel.channel_id)
-      .then((res) => setVideos(res.videos ?? []))
-      .catch((e: unknown) => setVideosErr(e instanceof Error ? e.message : "Failed to load"))
-      .finally(() => setVideosLoading(false));
-  }, [channel.channel_id]);
+      .then((res) => setRecentVideos(res.videos ?? []))
+      .catch((e: unknown) => setRecentErr(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setRecentLoading(false));
+  }, [channel.channel_id, tab]);
 
   async function handleUnsubscribe() {
     setRemoving(true);
@@ -302,49 +413,88 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
         </div>
       </div>
 
-      {/* Recent videos */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
-        <p className="mb-3 text-[11px] font-bold uppercase tracking-[.14em] text-zinc-600">Recent Videos</p>
-        {videosLoading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-[10px] border border-white/[.06] bg-white/[.02] p-2.5">
-                <Skeleton className="h-[52px] w-[88px] shrink-0 rounded-[8px] bg-white/[.05]" />
-                <div className="flex-1 space-y-1.5">
-                  <Skeleton className="h-3 w-3/4 bg-white/[.04]" />
-                  <Skeleton className="h-2.5 w-1/2 bg-white/[.03]" />
-                </div>
-              </div>
+      {/* Videos tabs */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Tab bar + controls */}
+        <div className="flex items-center gap-2 border-b border-white/[.06] px-5 py-2.5">
+          <div className="flex rounded-[8px] border border-white/[.07] bg-white/[.025] p-0.5">
+            {(["top", "recent"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  "rounded-[6px] px-3 py-1 text-[11px] font-semibold transition",
+                  tab === t ? "bg-[#ff3d6a] text-white shadow" : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {t === "top" ? "⚡ Top Videos" : "🕐 Recent"}
+              </button>
             ))}
           </div>
-        ) : videosErr ? (
-          <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-[12px] text-red-400">{videosErr}</p>
-        ) : videos.length === 0 ? (
-          <p className="text-[12px] text-zinc-600">No recent videos found.</p>
-        ) : (
-          <div className="space-y-2">
-            {videos.slice(0, 5).map((v) => (
-              <div key={v.video_id} className="group flex items-center gap-3 rounded-[10px] border border-white/[.06] bg-white/[.02] p-2.5 transition hover:border-white/[.10] hover:bg-white/[.04]">
-                <div className="relative h-[52px] w-[88px] shrink-0 overflow-hidden rounded-[8px] bg-zinc-900">
-                  <img src={v.thumbnail} alt={v.title} className="h-full w-full object-cover" loading="lazy" />
-                  <div className="absolute inset-0 grid place-items-center bg-black/30 opacity-0 transition group-hover:opacity-100">
-                    <span className="text-white text-sm">▶</span>
-                  </div>
+          {tab === "top" && (
+            <>
+              <select
+                value={orderBy}
+                onChange={(e) => setOrderBy(e.target.value as "viewCount" | "date" | "rating")}
+                className="ml-auto rounded-[7px] border border-white/[.07] bg-zinc-900 px-2 py-1 text-[11px] text-zinc-400 outline-none"
+              >
+                <option value="viewCount">Most Viewed</option>
+                <option value="date">Newest</option>
+                <option value="rating">Top Rated</option>
+              </select>
+              <button
+                onClick={() => setHideClipped((p) => !p)}
+                className={cn(
+                  "rounded-[7px] border px-2.5 py-1 text-[10px] font-semibold transition",
+                  hideClipped
+                    ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                    : "border-white/[.07] bg-white/[.02] text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {hideClipped ? "✓ Hide Clipped" : "Hide Clipped"}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Video list */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {tab === "top" ? (
+            <>
+              {topLoading ? (
+                <VideoSkeleton />
+              ) : topErr ? (
+                <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-[12px] text-red-400">{topErr}</p>
+              ) : topVideos.length === 0 ? (
+                <p className="text-[12px] text-zinc-600">No videos found.</p>
+              ) : (
+                <div className="space-y-2">
+                  {topVideos
+                    .filter((v) => !hideClipped || !v.already_clipped)
+                    .map((v, idx) => (
+                      <VideoCard key={v.video_id} v={v} rank={idx + 1} showRank />
+                    ))}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 text-[12px] font-medium leading-[1.35] text-zinc-200">{v.title}</p>
-                  <p className="mt-1 text-[10px] text-zinc-600">{formatNum(v.views)} views · {formatDate(v.published)}</p>
+              )}
+            </>
+          ) : (
+            <>
+              {recentLoading ? (
+                <VideoSkeleton />
+              ) : recentErr ? (
+                <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-[12px] text-red-400">{recentErr}</p>
+              ) : recentVideos.length === 0 ? (
+                <p className="text-[12px] text-zinc-600">No recent videos found.</p>
+              ) : (
+                <div className="space-y-2">
+                  {recentVideos.map((v) => (
+                    <VideoCard key={v.video_id} v={v} />
+                  ))}
                 </div>
-                <button
-                  onClick={() => navigate(`/studio?type=youtube&url=${encodeURIComponent(v.url)}`)}
-                  className="shrink-0 rounded-[8px] border border-white/[.07] bg-white/[.03] px-2.5 py-1.5 text-[11px] font-medium text-zinc-400 transition hover:border-[#ff3d6a]/30 hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
-                >
-                  Clip ↗
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Actions */}

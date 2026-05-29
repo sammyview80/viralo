@@ -66,7 +66,22 @@ export function UniversalClipCard({
   const [playing, setPlaying] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  async function handleRetryUpload() {
+    setRetrying(true);
+    try {
+      const { videoApi } = await import("@/lib/api");
+      const updated = await videoApi.retryClipUpload(localClip.id);
+      setLocalClip(updated);
+      onClipChange?.(updated);
+    } catch {
+      // stays in failed state — user can try again
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   useEffect(() => setLocalClip(clip), [clip]);
 
@@ -172,9 +187,16 @@ export function UniversalClipCard({
           </div>
         )}
         {localClip.status === "upload_failed" && (
-          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-1.5 bg-black/70">
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-2 bg-black/70">
             <span className="text-[22px]">⚠</span>
             <span className="text-[11px] font-bold text-red-400">Upload failed</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleRetryUpload(); }}
+              disabled={retrying}
+              className="mt-0.5 rounded-[8px] border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-50"
+            >
+              {retrying ? "Retrying…" : "↻ Retry Upload"}
+            </button>
           </div>
         )}
 

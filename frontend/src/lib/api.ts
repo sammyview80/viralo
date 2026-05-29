@@ -12,12 +12,14 @@ export const token = {
     _accessToken = t;
     localStorage.setItem(LS_ACCESS, t);
     localStorage.setItem(LS_SESSION, "1"); // mark that a refresh cookie was issued
+    clearApiCaches();
   },
 
   clear: () => {
     _accessToken = null;
     localStorage.removeItem(LS_ACCESS);
     localStorage.removeItem(LS_SESSION);
+    clearApiCaches();
   },
 
   /* true if we believe a refresh cookie exists (set on every successful login/register/refresh) */
@@ -227,7 +229,12 @@ export interface ClipApiResponse {
     ai_title?: string;
     viral_reason?: string;
     viral_score?: number;
+    niche?: string;
+    topic?: string;
     platforms?: Record<string, ClipPlatformContent>;
+    trending_hashtags?: string[];
+    composite?: boolean;
+    source_clip_ids?: string[];
   } | null;
   upload_attempts: number | null;
   upload_error: string | null;
@@ -262,6 +269,7 @@ export interface ClipConfig {
   duration_max?: number;
   duration_min?: number;
   output_quality?: "source" | "1080p" | "720p" | "480p";
+  precision_mode?: boolean;
 }
 
 export const videoApi = {
@@ -285,9 +293,10 @@ export const videoApi = {
   clips:   (videoId: string, page = 1, per_page = 100) =>
     videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?video_id=${videoId}&page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page)),
-  listClips: (page = 1, per_page = 24, minViralityScore?: number) => {
+  listClips: (page = 1, per_page = 24, minViralityScore?: number, sortBy?: "created_at" | "score") => {
     const qs = new URLSearchParams({ page: String(page), per_page: String(per_page) });
     if (minViralityScore !== undefined) qs.set("min_virality_score", String(minViralityScore));
+    if (sortBy) qs.set("sort_by", sortBy);
     return videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?${qs}`)
       .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page));
   },
@@ -313,6 +322,10 @@ export const videoApi = {
     }
     return res.blob();
   },
+  mergeAiClips: (clipIds: string[]) =>
+    videoReq<{ task_id: string; message: string }>("POST", "/clips/merge-ai", { clip_ids: clipIds }),
+  retryClipUpload: (clipId: string) =>
+    videoReq<ClipApiResponse>("POST", `/clips/${clipId}/retry-upload`),
 };
 
 /* ─── Platform service (port 8006) ─── */
@@ -406,6 +419,10 @@ export type SocialAccountListResponse = PaginatedResponse<SocialAccount>;
 // Deduplicate concurrent listAccounts calls — both SocialConnectBanner and BulkPublishModal call this on mount
 let _accountsInflight: Promise<SocialAccount[]> | null = null;
 let _accountsCache: { data: SocialAccount[]; at: number } | null = null;
+function clearApiCaches() {
+  _accountsInflight = null;
+  _accountsCache = null;
+}
 function _listAccountsCached(): Promise<SocialAccount[]> {
   if (_accountsCache && Date.now() - _accountsCache.at < 30_000) return Promise.resolve(_accountsCache.data);
   if (_accountsInflight) return _accountsInflight;
@@ -487,6 +504,10 @@ export interface ChannelVideo {
   url: string;
   thumbnail: string;
   views: string | null;
+  likes?: string | null;
+  comments?: string | null;
+  duration?: string | null;
+  already_clipped?: boolean;
 }
 
 export const channelsApi = {
@@ -498,6 +519,10 @@ export const channelsApi = {
   unsubscribe: (channelId: string) => platformReq<void>("DELETE", `/websub/channels/${channelId}`),
   recentVideos: (channelId: string) =>
     platformReq<{ channel_id: string; videos: ChannelVideo[] }>("GET", `/websub/channels/${channelId}/videos`),
+  topVideos: (channelId: string, order: "viewCount" | "date" | "rating" = "viewCount") =>
+    platformReq<{ channel_id: string; videos: ChannelVideo[]; order: string }>(
+      "GET", `/websub/channels/${channelId}/top-videos?order=${order}&max_results=25`
+    ),
 };
 
 export const notificationApi = {
