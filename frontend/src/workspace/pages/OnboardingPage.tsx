@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { onboarding, token } from "@/lib/api";
 import { navigate } from "@/lib/router";
+import { ViraloLogo } from "@/components/ViraloLogo";
 
 /* ─── Constants ─── */
 const PLATFORMS = [
@@ -71,12 +72,7 @@ function Progress({ step }: { step: number }) {
     <div className="flex-none px-7 pb-0 pt-6">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="grid h-7 w-7 place-items-center rounded-[8px] bg-gradient-to-br from-[#ff3d6a] to-[#ff7a3d]">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-            </svg>
-          </div>
-          <span className="font-display text-[15px] font-bold">viralo</span>
+          <ViraloLogo size={28} wordmark textSize="text-[15px]" />
         </div>
         <span className="text-[12px] font-medium text-zinc-500">Step {step} of {TOTAL_STEPS}</span>
       </div>

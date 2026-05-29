@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { ReactNode, InputHTMLAttributes } from "react";
+import { ViraloLogo } from "@/components/ViraloLogo";
 
 /* ─── Page shell ─── */
 export function AuthShell({
@@ -33,12 +34,7 @@ export function AuthShell({
       <div className="relative z-10 w-full max-w-[420px]">
         {/* Logo */}
         <div className="mb-6 flex flex-col items-center gap-3 sm:mb-8">
-          <div className="grid h-10 w-10 place-items-center rounded-[11px] bg-gradient-to-br from-[#ff4d78] to-[#ff8040] shadow-[0_6px_24px_rgba(255,61,106,.35),inset_0_1px_0_rgba(255,255,255,.2)]">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-            </svg>
-          </div>
-          <span className="font-display text-xl font-bold tracking-tight">viralo</span>
+          <ViraloLogo size={40} wordmark textSize="text-xl" />
         </div>
 
         {/* Card */}

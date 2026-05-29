@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f84778"/>
+      <stop offset="100%" stop-color="#ff8c3a"/>
+    </linearGradient>
+    <clipPath id="rounded">
+      <rect width="32" height="32" rx="8" ry="8"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="32" height="32" rx="8" ry="8" fill="url(#bg)"/>
+
+  <g clip-path="url(#rounded)">
+    <!-- Speed lines (left) -->
+    <line x1="1.5" y1="13" x2="6" y2="13" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+    <line x1="2.5" y1="16.5" x2="6.5" y2="16.5" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="1.5" y1="20" x2="5.5" y2="20" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+
+    <!-- Circular orbit arc (bottom-left to top-right) -->
+    <path d="M6.5 22 A10 10 0 1 1 24 9" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+    <!-- Arrowhead on orbit -->
+    <polyline points="20.5,6 24,9 20.5,11.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+    <!-- Play triangle (center) -->
+    <polygon points="12,10.5 12,21.5 22,16" fill="white"/>
+
+    <!-- Growth arrow (top-right) -->
+    <line x1="22" y1="7.5" x2="28" y2="3" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+    <polyline points="24.5,3 28,3 28,6.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.9"/>
+  </g>
+</svg>

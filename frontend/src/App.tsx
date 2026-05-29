@@ -8,6 +8,7 @@ import { OAuthCallbackPage } from "@/workspace/pages/OAuthCallbackPage";
 const OnboardingPage = lazy(() => import("@/workspace/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 import { useAuth, hydrate } from "@/stores/auth";
 import { usePathname } from "@/lib/router";
+import { ViraloIcon } from "@/components/ViraloLogo";
 
 const AUTH_ROUTES = ["/login", "/register"];
 
@@ -21,11 +22,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#080b12]">
-        <div className="grid h-10 w-10 place-items-center rounded-[11px] bg-gradient-to-br from-[#ff4d78] to-[#ff8040] shadow-[0_6px_24px_rgba(255,61,106,.35)]">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-          </svg>
-        </div>
+        <ViraloIcon size={40} />
         <div className="h-5 w-5 rounded-full border-2 border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
       </div>
     );
