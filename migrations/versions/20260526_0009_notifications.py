@@ -30,7 +30,7 @@ def upgrade() -> None:
     op.add_column("notifications", sa.Column("user_id", UUID(as_uuid=True), nullable=True))
     op.add_column("notifications", sa.Column("action_url", sa.Text(), nullable=True))
     op.add_column("notifications", sa.Column("read_at", sa.TIMESTAMP(timezone=True), nullable=True))
-    op.add_column("notifications", sa.Column("metadata", sa_pg.JSONB(), nullable=True))
+    op.execute("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS metadata JSONB")
 
     op.create_table(
         "push_subscriptions",

@@ -290,6 +290,121 @@ async def channel_recent_videos(
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.get("/websub/channels/{channel_id}/top-videos")
+async def channel_top_videos(
+    channel_id: str,
+    max_results: int = Query(default=25, le=50),
+    order: str = Query(default="viewCount"),  # viewCount | date | rating
+    db: AsyncSession = Depends(get_tenant_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    """Fetch top videos for a channel via YouTube Data API v3.
+    Returns videos with already_clipped flag based on existing jobs in this tenant."""
+    import os
+    import httpx
+
+    api_key = os.getenv("YOUTUBE_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="YOUTUBE_API_KEY not configured")
+
+    channels_url = "https://www.googleapis.com/youtube/v3/channels"
+    playlist_url = "https://www.googleapis.com/youtube/v3/playlistItems"
+    videos_url = "https://www.googleapis.com/youtube/v3/videos"
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        # Step 1: get uploads playlist ID for this channel (1 quota unit)
+        ch_resp = await client.get(channels_url, params={
+            "key": api_key,
+            "id": channel_id,
+            "part": "contentDetails",
+        })
+        if ch_resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"YouTube channels API error: {ch_resp.text[:200]}")
+        ch_items = ch_resp.json().get("items", [])
+        if not ch_items:
+            return {"channel_id": channel_id, "videos": [], "order": order}
+        uploads_playlist = ch_items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+        # Step 2: list videos from uploads playlist (1 quota unit per page)
+        # Fetch up to max_results items; for viewCount sort we need more items to sort client-side
+        fetch_count = 50 if order == "viewCount" else max_results
+        pl_resp = await client.get(playlist_url, params={
+            "key": api_key,
+            "playlistId": uploads_playlist,
+            "part": "contentDetails",
+            "maxResults": min(fetch_count, 50),
+        })
+        if pl_resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"YouTube playlistItems API error: {pl_resp.text[:200]}")
+        video_ids = [
+            item["contentDetails"]["videoId"]
+            for item in pl_resp.json().get("items", [])
+        ]
+
+        if not video_ids:
+            return {"channel_id": channel_id, "videos": [], "order": order}
+
+        # Step 3: get full stats + snippet for those IDs (1 quota unit per 50)
+        stats_resp = await client.get(videos_url, params={
+            "key": api_key,
+            "id": ",".join(video_ids),
+            "part": "snippet,statistics,contentDetails",
+        })
+        if stats_resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"YouTube videos API error: {stats_resp.text[:200]}")
+
+        stats_data = stats_resp.json()
+
+    # Step 3: check which video IDs are already clipped in this tenant
+    if video_ids:
+        rows = await db.execute(
+            text(
+                "SELECT source_url FROM videos "
+                "WHERE source_url IS NOT NULL AND source_type = 'youtube_url' "
+                "AND status != 'deleted'"
+            )
+        )
+        clipped_urls = {r[0] for r in rows.fetchall()}
+        clipped_ids = {url.split("v=")[-1].split("&")[0] for url in clipped_urls if "v=" in url}
+    else:
+        clipped_ids = set()
+
+    # Build response
+    videos = []
+    for item in stats_data.get("items", []):
+        vid_id = item["id"]
+        snippet = item.get("snippet", {})
+        stats = item.get("statistics", {})
+        duration_raw = item.get("contentDetails", {}).get("duration", "PT0S")
+
+        thumbnails = snippet.get("thumbnails", {})
+        thumb = (
+            thumbnails.get("maxres", thumbnails.get("high", thumbnails.get("medium", {}))).get("url", "")
+        )
+
+        videos.append({
+            "video_id": vid_id,
+            "title": snippet.get("title", ""),
+            "published": snippet.get("publishedAt", ""),
+            "url": f"https://www.youtube.com/watch?v={vid_id}",
+            "thumbnail": thumb,
+            "views": stats.get("viewCount"),
+            "likes": stats.get("likeCount"),
+            "comments": stats.get("commentCount"),
+            "duration": duration_raw,
+            "already_clipped": vid_id in clipped_ids,
+        })
+
+    # Sort client-side (playlist order = newest first; we fetched 50 to sort by views)
+    if order == "viewCount":
+        videos.sort(key=lambda v: int(v["views"] or 0), reverse=True)
+    elif order == "rating":
+        videos.sort(key=lambda v: int(v["likes"] or 0), reverse=True)
+    # order == "date" → already newest-first from playlist
+
+    return {"channel_id": channel_id, "videos": videos[:max_results], "order": order}
+
+
 @router.delete("/websub/channels/{channel_id}", status_code=204)
 async def remove_channel(
     channel_id: str,
