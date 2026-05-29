@@ -3,7 +3,18 @@ import type { ComponentType, HTMLAttributes } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useQuery } from "@/lib/query";
 import { cn } from "@/lib/utils";
+import {
+  platformApi,
+  videoApi,
+  type AnalyticsOverview,
+  type ClipApiResponse,
+  type ScheduledPost,
+  type VideoResponse,
+} from "@/lib/api";
+import { navigate } from "@/lib/router";
 import { Shell } from "@/workspace/Shell";
 
 type IconProps = HTMLAttributes<HTMLSpanElement>;
@@ -35,33 +46,6 @@ const TrendingUp = icon("^");
 const Upload = icon("^");
 const WandSparkles = icon("*");
 
-const videos = [
-  {
-    title: "5 morning habits that changed my life",
-    status: "Ready",
-    date: "12 min ago",
-    dur: "0:47",
-    plats: ["tt", "ig", "yt"],
-    grad: "from-[#ff3d6a] to-[#ff7a3d]",
-  },
-  {
-    title: "Why your last 3 hooks flopped and the fix",
-    status: "Processing",
-    date: "32 min ago",
-    dur: "1:08",
-    plats: ["tt", "ig"],
-    grad: "from-[#3daaff] to-[#7b66ff]",
-  },
-  {
-    title: "The $0 setup every creator should steal",
-    status: "Ready",
-    date: "2 hr ago",
-    dur: "0:58",
-    plats: ["yt", "tt", "tw"],
-    grad: "from-[#22c55e] to-[#3daaff]",
-  },
-];
-
 const workflows = [
   {
     name: "Daily TikTok from Reddit trending",
@@ -86,13 +70,15 @@ const workflows = [
   },
 ];
 
-const upcoming = [
-  { plat: "tt", cap: "5 morning habits that changed my life", date: "Today", time: "09:00" },
-  { plat: "ig", cap: "Why your last 3 hooks flopped", date: "Today", time: "15:30" },
-  { plat: "yt", cap: "The $0 setup every creator should steal", date: "Tomorrow", time: "08:15" },
-];
-
 const chartBars = [42, 55, 38, 70, 64, 82, 74, 93, 88, 106, 98, 118, 110, 132, 126, 149, 136, 158];
+
+const GRAD_POOL = [
+  "from-[#ff3d6a] to-[#ff7a3d]",
+  "from-[#3daaff] to-[#7b66ff]",
+  "from-[#22c55e] to-[#3daaff]",
+  "from-[#a855f7] to-[#3daaff]",
+  "from-[#f59e0b] to-[#ef4444]",
+];
 
 function Platform({ id, size = "sm" }: { id: string; size?: "xs" | "sm" }) {
   const map: Record<string, [string, string]> = {
@@ -100,6 +86,10 @@ function Platform({ id, size = "sm" }: { id: string; size?: "xs" | "sm" }) {
     ig: ["◎", "bg-gradient-to-br from-fuchsia-500 to-orange-400 text-white border-white/10"],
     yt: ["▶", "bg-red-500 text-white border-red-300/20"],
     tw: ["𝕏", "bg-zinc-100 text-zinc-950 border-white/20"],
+    tiktok: ["♪", "bg-zinc-950 text-white border-white/10"],
+    instagram: ["◎", "bg-gradient-to-br from-fuchsia-500 to-orange-400 text-white border-white/10"],
+    youtube: ["▶", "bg-red-500 text-white border-red-300/20"],
+    twitter: ["𝕏", "bg-zinc-100 text-zinc-950 border-white/20"],
   };
   const [label, cls] = map[id] ?? map.tt;
   return (
@@ -116,38 +106,89 @@ function Platform({ id, size = "sm" }: { id: string; size?: "xs" | "sm" }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const ready = status === "Ready";
+  const ready = status === "Ready" || status === "completed" || status === "ready";
+  const label = ready ? "Ready" : status === "processing" ? "Processing" : status;
   return (
     <Badge variant={ready ? "ready" : "warn"}>
       <span className={cn("h-1.5 w-1.5 rounded-full", ready ? "bg-emerald-300" : "bg-amber-300")} />
-      {status}
+      {label}
     </Badge>
   );
 }
 
+function formatDuration(sec: number | null): string {
+  if (!sec) return "";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function formatRelative(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return `${Math.floor(hrs / 24)} days ago`;
+}
+
+function formatScheduledDate(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isToday = d.toDateString() === now.toDateString();
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+  const date = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return { date, time };
+}
 
 function StatStrip() {
-  const stats = [
-    ["Views", "this week", "482K", "+18%"],
-    ["Engagement", "rate", "7.2%", "+2%"],
-    ["Followers", "gained", "+3.8K", "+13%"],
-    ["Virality", "average", "68", "+8%"],
-  ];
+  const { data, loading } = useQuery<AnalyticsOverview>(
+    "dashboard:analytics:overview",
+    () => platformApi.analyticsOverview("7d"),
+  );
+
+  const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K` : String(n);
+
+  const stats: [string, string, string, string][] = data
+    ? [
+        ["Views", "this week", fmt(data.total_views), ""],
+        ["Engagement", "rate", `${data.engagement_rate.toFixed(1)}%`, ""],
+        ["Likes", "total", fmt(data.total_likes), ""],
+        ["Posts", "published", String(data.posts_count), ""],
+      ]
+    : [
+        ["Views", "this week", "—", ""],
+        ["Engagement", "rate", "—", ""],
+        ["Likes", "total", "—", ""],
+        ["Posts", "published", "—", ""],
+      ];
+
   return (
     <div className="grid overflow-hidden rounded-[14px] border border-white/[.06] bg-[#0e121b] sm:grid-cols-2 xl:grid-cols-4">
-      {stats.map(([label, sub, val, delta], index) => (
+      {stats.map(([label, sub, val], index) => (
         <div key={label} className="border-white/[.06] p-6 sm:border-r sm:last:border-r-0">
           <div className="mb-2.5 flex gap-1 text-[10.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">
             {label} <em className="font-normal normal-case tracking-normal opacity-60">{sub}</em>
           </div>
-          <div className="mb-2.5 font-display text-3xl font-bold leading-none tracking-[-.03em]">{val}</div>
-          <div className="flex items-center gap-2 text-[10.5px]">
-            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-400/10 px-2 py-0.5 font-semibold text-emerald-300">
-              <TrendingUp className="h-2.5 w-2.5" />
-              {delta}
-            </span>
-            <span className="text-zinc-600">vs last week</span>
-          </div>
+          {loading ? (
+            <Skeleton className="mb-2.5 h-9 w-24" />
+          ) : (
+            <div className="mb-2.5 font-display text-3xl font-bold leading-none tracking-[-.03em]">{val}</div>
+          )}
+          {loading ? (
+            <Skeleton className="h-4 w-16" />
+          ) : (
+            <div className="flex items-center gap-2 text-[10.5px]">
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-400/10 px-2 py-0.5 font-semibold text-emerald-300">
+                <TrendingUp className="h-2.5 w-2.5" />
+                live
+              </span>
+              <span className="text-zinc-600">7-day period</span>
+            </div>
+          )}
           {index === 3 ? <span className="sr-only">end</span> : null}
         </div>
       ))}
@@ -169,41 +210,91 @@ function SectionTitle({ title, action }: { title: string; action?: string }) {
   );
 }
 
+function VideoListSkeleton() {
+  return (
+    <div>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="grid grid-cols-[52px_1fr_auto] items-center gap-3.5 px-2 py-2.5 border-b border-white/[.05] last:border-0">
+          <Skeleton className="h-[34px] w-[52px] rounded-[7px]" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-3.5 w-3/4" />
+            <Skeleton className="h-3 w-1/3" />
+          </div>
+          <Skeleton className="h-5 w-16 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function VideoList() {
+  const { data, loading } = useQuery(
+    "dashboard:videos:recent",
+    () => videoApi.list(1, 5),
+  );
+
+  const videos = data?.items ?? [];
+
   return (
     <Card className="p-5">
-      <SectionTitle title="Recent videos" action="Open library" />
-      <div>
-        {videos.map((video, index) => (
-          <div
-            key={video.title}
-            className={cn(
-              "grid grid-cols-[52px_1fr_auto] items-center gap-3.5 px-2 py-2.5",
-              index < videos.length - 1 && "border-b border-white/[.05]",
-            )}
-          >
-            <div className={cn("relative grid h-[34px] w-[52px] place-items-center overflow-hidden rounded-[7px] bg-gradient-to-br", video.grad)}>
-              <Play className="h-2.5 w-2.5 fill-white" />
-              <span className="absolute bottom-0.5 right-1 font-mono text-[8px] font-semibold text-white/85">
-                {video.dur}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium">{video.title}</div>
-              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
-                <span>{video.date}</span>
-                <span className="opacity-40">·</span>
-                <span className="flex gap-1">
-                  {video.plats.map((p) => (
-                    <Platform key={p} id={p} size="xs" />
-                  ))}
-                </span>
-              </div>
-            </div>
-            <StatusBadge status={video.status} />
-          </div>
-        ))}
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-[13px] font-semibold text-zinc-300">Recent videos</h3>
+        <a onClick={() => navigate("/clips")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+          Open library <ChevronRight className="h-3 w-3" />
+        </a>
       </div>
+      {loading ? (
+        <VideoListSkeleton />
+      ) : videos.length === 0 ? (
+        <p className="py-4 text-center text-sm text-zinc-600">No videos yet</p>
+      ) : (
+        <div>
+          {videos.map((video: VideoResponse, index: number) => {
+            const plats: string[] = video.clip_config?.platforms ?? [];
+            const grad = GRAD_POOL[index % GRAD_POOL.length];
+            return (
+              <div
+                key={video.id}
+                onClick={() => navigate(`/projects/${video.id}`)}
+                className={cn(
+                  "grid cursor-pointer grid-cols-[52px_1fr_auto] items-center gap-3.5 px-2 py-2.5 transition hover:bg-white/[.03] rounded-lg",
+                  index < videos.length - 1 && "border-b border-white/[.05]",
+                )}
+              >
+                <div className={cn("relative grid h-[34px] w-[52px] place-items-center overflow-hidden rounded-[7px] bg-gradient-to-br", grad)}>
+                  {video.thumbnail_url ? (
+                    <img src={video.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                  ) : (
+                    <Play className="h-2.5 w-2.5 fill-white" />
+                  )}
+                  {video.duration_sec ? (
+                    <span className="absolute bottom-0.5 right-1 font-mono text-[8px] font-semibold text-white/85">
+                      {formatDuration(video.duration_sec)}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-medium">{video.title ?? "Untitled"}</div>
+                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
+                    <span>{formatRelative(video.created_at)}</span>
+                    {plats.length > 0 && (
+                      <>
+                        <span className="opacity-40">·</span>
+                        <span className="flex gap-1">
+                          {plats.slice(0, 3).map((p) => (
+                            <Platform key={p} id={p} size="xs" />
+                          ))}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <StatusBadge status={video.status} />
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Card>
   );
 }
@@ -211,7 +302,12 @@ function VideoList() {
 function Workflows() {
   return (
     <Card className="p-5">
-      <SectionTitle title="Automations" action="Manage" />
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-[13px] font-semibold text-zinc-300">Automations</h3>
+        <a onClick={() => navigate("/workflows")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+          Manage <ChevronRight className="h-3 w-3" />
+        </a>
+      </div>
       <div>
         {workflows.map((workflow, index) => (
           <div
@@ -244,60 +340,75 @@ function Workflows() {
 }
 
 function ViralityCard() {
+  const { data, loading } = useQuery(
+    "dashboard:clips:top",
+    () => videoApi.listClips(1, 1, undefined, "score"),
+  );
+
+  const clip: ClipApiResponse | null = data?.items?.[0] ?? null;
+  const score = clip?.clip_metadata?.viral_score ?? clip?.score ?? null;
+  const title = clip?.clip_metadata?.ai_title ?? clip?.title ?? "—";
+  const circumference = 2 * Math.PI * 34;
+  const dashOffset = score != null ? circumference * (1 - score / 100) : circumference;
+
   return (
     <Card className="border-[#ff3d6a]/15 bg-[linear-gradient(135deg,rgba(255,61,106,.07),rgba(255,61,106,.02)_60%,transparent)] p-5">
       <div className="grid items-center gap-5 sm:grid-cols-[66px_1fr_auto]">
-        <div className="relative grid h-[94px] w-[66px] place-items-center overflow-hidden rounded-[10px] border border-white/10 bg-gradient-to-br from-[#ff3d6a] via-[#ff7a3d] to-[#ffb347]">
+        <div className="relative grid h-[94px] w-[66px] place-items-center overflow-hidden rounded-[10px] border border-white/10 bg-gradient-to-br from-[#ff3d6a] via-[#ff7a3d] to-[#3daaff]">
+          {clip?.thumbnail_url ? (
+            <img src={clip.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          ) : null}
           <div className="grid h-7 w-7 place-items-center rounded-full bg-white/90">
             <Play className="h-3 w-3 fill-zinc-950 text-zinc-950" />
-          </div>
-          <div className="absolute bottom-1 left-1 flex items-center gap-1 text-[8.5px] font-semibold">
-            <CircleDot className="h-2 w-2" />
-            412K
           </div>
         </div>
         <div>
           <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[.1em] text-[#ff3d6a]">Top performer</div>
-          <h2 className="mb-3 font-display text-sm font-bold leading-snug">5 morning habits that changed my life</h2>
-          <div className="mb-3 flex gap-5">
-            {[
-              ["412.8K", "views"],
-              ["38.2K", "likes"],
-              ["11.4%", "eng."],
-            ].map(([value, label]) => (
-              <div key={label}>
-                <div className="font-display text-sm font-bold">{value}</div>
-                <div className="text-[10px] font-semibold uppercase tracking-[.07em] text-zinc-600">{label}</div>
+          {loading ? (
+            <>
+              <Skeleton className="mb-3 h-10 w-3/4" />
+              <Skeleton className="h-8 w-48" />
+            </>
+          ) : (
+            <>
+              <h2 className="mb-3 font-display text-sm font-bold leading-snug">{title}</h2>
+              <div className="flex gap-2">
+                <Button size="sm">
+                  <Sparkles className="h-3 w-3" />
+                  Remix
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => navigate("/analytics")}>
+                  Analytics
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
               </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm">
-              <Sparkles className="h-3 w-3" />
-              Remix
-            </Button>
-            <Button size="sm" variant="ghost">
-              Analytics
-              <ChevronRight className="h-3 w-3" />
-            </Button>
-          </div>
+            </>
+          )}
         </div>
         <div className="relative h-[76px] w-[76px]">
-          <svg className="-rotate-90" height="76" width="76">
-            <circle cx="38" cy="38" fill="none" r="34" stroke="rgba(255,255,255,.06)" strokeWidth="5.5" />
-            <circle
-              cx="38"
-              cy="38"
-              fill="none"
-              r="34"
-              stroke="#ff3d6a"
-              strokeDasharray="213.6"
-              strokeDashoffset="47"
-              strokeLinecap="round"
-              strokeWidth="5.5"
-            />
-          </svg>
-          <div className="absolute inset-0 grid place-items-center font-display text-lg font-bold">78</div>
+          {loading ? (
+            <Skeleton className="h-[76px] w-[76px] rounded-full" />
+          ) : (
+            <>
+              <svg className="-rotate-90" height="76" width="76">
+                <circle cx="38" cy="38" fill="none" r="34" stroke="rgba(255,255,255,.06)" strokeWidth="5.5" />
+                <circle
+                  cx="38"
+                  cy="38"
+                  fill="none"
+                  r="34"
+                  stroke="#ff3d6a"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={dashOffset}
+                  strokeLinecap="round"
+                  strokeWidth="5.5"
+                />
+              </svg>
+              <div className="absolute inset-0 grid place-items-center font-display text-lg font-bold">
+                {score != null ? Math.round(score) : "—"}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </Card>
@@ -333,22 +444,60 @@ function UsageBars() {
   );
 }
 
+function UpcomingPostsSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[9px] border border-white/[.055] bg-white/[.025] p-2.5">
+          <Skeleton className="h-7 w-7 rounded-[5px]" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-3 w-2/3" />
+            <Skeleton className="h-2.5 w-1/4" />
+          </div>
+          <Skeleton className="h-4 w-10" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function UpcomingPosts() {
+  const { data, loading } = useQuery(
+    "dashboard:posts:upcoming",
+    () => platformApi.listPosts({ status: "pending", per_page: 5 }),
+  );
+
+  const posts = data?.items ?? [];
+
   return (
     <Card className="p-5">
-      <SectionTitle title="Upcoming posts" action="Calendar" />
-      <div className="space-y-2">
-        {upcoming.map((post) => (
-          <div key={post.cap} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[9px] border border-white/[.055] bg-white/[.025] p-2.5">
-            <Platform id={post.plat} />
-            <div className="min-w-0">
-              <div className="truncate text-[12.5px] font-medium">{post.cap}</div>
-              <div className="mt-0.5 text-[11px] text-zinc-500">{post.date}</div>
-            </div>
-            <div className="font-mono text-[11.5px] font-semibold text-zinc-300">{post.time}</div>
-          </div>
-        ))}
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-[13px] font-semibold text-zinc-300">Upcoming posts</h3>
+        <a onClick={() => navigate("/scheduler")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+          Calendar <ChevronRight className="h-3 w-3" />
+        </a>
       </div>
+      {loading ? (
+        <UpcomingPostsSkeleton />
+      ) : posts.length === 0 ? (
+        <p className="py-4 text-center text-sm text-zinc-600">No scheduled posts</p>
+      ) : (
+        <div className="space-y-2">
+          {posts.map((post: ScheduledPost) => {
+            const { date, time } = formatScheduledDate(post.scheduled_at);
+            return (
+              <div key={post.id} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[9px] border border-white/[.055] bg-white/[.025] p-2.5">
+                <Platform id={post.platform} />
+                <div className="min-w-0">
+                  <div className="truncate text-[12.5px] font-medium">{post.caption ?? "—"}</div>
+                  <div className="mt-0.5 text-[11px] text-zinc-500">{date}</div>
+                </div>
+                <div className="font-mono text-[11.5px] font-semibold text-zinc-300">{time}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Card>
   );
 }
@@ -362,7 +511,7 @@ function ChartCard() {
           <CardTitle>Audience growth</CardTitle>
           <p className="mt-1 text-xs text-zinc-500">Views, engagement and follower lift across active channels.</p>
         </div>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/analytics")}>
           Export
         </Button>
       </CardHeader>
@@ -396,48 +545,29 @@ function ChartCard() {
 function StudioPanel() {
   return (
     <Card className="overflow-hidden">
-      <div className="grid lg:grid-cols-[1.05fr_.95fr]">
-        <div className="p-4 sm:p-6">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 px-3 py-1 text-[11px] font-semibold text-rose-200">
-            <WandSparkles className="h-3 w-3" />
-            Creator studio
+      <div>
+        <div className="flex items-center justify-between gap-8 p-4 sm:p-6">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 px-3 py-1 text-[11px] font-semibold text-rose-200">
+              <WandSparkles className="h-3 w-3" />
+              Creator studio
+            </div>
+            <h1 className="max-w-[680px] font-display text-3xl font-extrabold tracking-tight text-balance sm:text-5xl">
+              Turn any idea into viral short videos.
+            </h1>
+            <p className="mt-4 max-w-xl text-sm leading-7 text-zinc-400">
+              Plan hooks, generate scripts, produce clips, schedule posts and monitor performance from one focused workspace.
+            </p>
           </div>
-          <h1 className="max-w-[680px] font-display text-3xl font-extrabold tracking-tight text-balance sm:text-5xl">
-            Turn any idea into viral short videos.
-          </h1>
-          <p className="mt-4 max-w-xl text-sm leading-7 text-zinc-400">
-            Plan hooks, generate scripts, produce clips, schedule posts and monitor performance from one focused workspace.
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button>
+          <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
+            <Button onClick={() => navigate("/studio")}>
               <Clapperboard className="h-4 w-4" />
               New video
             </Button>
-            <Button variant="secondary">
+            <Button variant="secondary" onClick={() => navigate("/upload")}>
               <Upload className="h-4 w-4" />
               Upload source
             </Button>
-          </div>
-        </div>
-        <div className="relative min-h-[260px] border-t border-white/[.06] bg-[#111725] p-4 sm:p-6 lg:border-l lg:border-t-0">
-          <div className="absolute right-8 top-8 h-24 w-24 rounded-full bg-[#3daaff]/15 blur-3xl" />
-          <div className="relative mx-auto max-w-[280px] rounded-[22px] border border-white/10 bg-zinc-950 p-2 shadow-2xl">
-            <div className="aspect-[9/16] overflow-hidden rounded-[16px] bg-gradient-to-br from-[#ff3d6a] via-[#ff7a3d] to-[#3daaff] p-4">
-              <div className="flex justify-between text-[10px] font-semibold text-white/80">
-                <span>00:47</span>
-                <span>9:16</span>
-              </div>
-              <div className="mt-20 rounded-xl bg-black/25 p-3 backdrop-blur sm:mt-28">
-                <div className="text-lg font-black leading-5">5 habits that changed my mornings</div>
-                <div className="mt-2 h-1.5 w-24 rounded-full bg-white/70" />
-                <div className="mt-1.5 h-1.5 w-16 rounded-full bg-white/50" />
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="h-12 rounded-lg bg-white/20" />
-                <div className="h-12 rounded-lg bg-white/30" />
-                <div className="h-12 rounded-lg bg-white/15" />
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -448,7 +578,7 @@ function StudioPanel() {
 export function Dashboard() {
   return (
     <Shell active="dashboard">
-      <StudioPanel />
+      {/* <StudioPanel /> */}
       <StatStrip />
       <div className="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-4 sm:space-y-6">
@@ -463,10 +593,15 @@ export function Dashboard() {
           <UsageBars />
           <UpcomingPosts />
           <Card className="p-5">
-            <SectionTitle title="AI agents" />
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-[13px] font-semibold text-zinc-300">AI agents</h3>
+              <a onClick={() => navigate("/brainstorm")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+                Open <ChevronRight className="h-3 w-3" />
+              </a>
+            </div>
             <div className="space-y-3">
               {["Trend scout", "Hook critic", "Script writer", "Caption editor"].map((agent, index) => (
-                <div key={agent} className="flex items-center justify-between rounded-[9px] border border-white/[.055] bg-white/[.025] p-3">
+                <div key={agent} onClick={() => navigate("/brainstorm")} className="flex cursor-pointer items-center justify-between rounded-[9px] border border-white/[.055] bg-white/[.025] p-3 transition hover:bg-white/[.04]">
                   <div className="flex items-center gap-3">
                     <div className="grid h-8 w-8 place-items-center rounded-lg bg-white/[.05] text-zinc-300">
                       <Sparkles className="h-3.5 w-3.5" />
@@ -486,4 +621,3 @@ export function Dashboard() {
     </Shell>
   );
 }
-
