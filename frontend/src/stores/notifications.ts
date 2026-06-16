@@ -99,10 +99,18 @@ export function connectSSE(): () => void {
 
   let stopped = false;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryCount = 0;
 
   async function connect() {
     if (stopped) return;
     const t = token.get();
+
+    const getDelay = () => {
+      const d = Math.min(60000, 1000 * Math.pow(2, retryCount));
+      retryCount++;
+      return d;
+    };
+
     if (!t) {
       retryTimer = setTimeout(connect, 3000);
       return;
@@ -118,9 +126,12 @@ export function connectSSE(): () => void {
       });
 
       if (!response.ok || !response.body) {
-        if (!stopped) retryTimer = setTimeout(connect, 3000);
+        if (!stopped) retryTimer = setTimeout(connect, getDelay());
         return;
       }
+
+      // Reset on success
+      retryCount = 0;
 
       const stream = response.body.pipeThrough(new TextDecoderStream());
       reader = stream.getReader();
@@ -150,12 +161,12 @@ export function connectSSE(): () => void {
         }
       }
     } catch {
-      // ignore
+      // network error
     } finally {
       try { reader?.cancel(); } catch { /* ignore */ }
     }
 
-    if (!stopped) retryTimer = setTimeout(connect, 3000);
+    if (!stopped) retryTimer = setTimeout(connect, getDelay());
   }
 
   connect();

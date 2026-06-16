@@ -47,7 +47,7 @@ async def get_tenant_db(
         try:
             # PostgreSQL SET doesn't support bind params — UUID is safe to embed directly
             tid = str(token.tenant_id)
-            await session.execute(text(f"SET LOCAL app.current_tenant = '{tid}'"))
+            await session.execute(text("SELECT set_config('app.current_tenant', :tid, true)"), {"tid": tid})
             yield session
             await session.commit()
         except Exception:

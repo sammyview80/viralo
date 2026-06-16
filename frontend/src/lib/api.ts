@@ -235,6 +235,7 @@ export interface ClipApiResponse {
     trending_hashtags?: string[];
     composite?: boolean;
     source_clip_ids?: string[];
+    aspect_ratio?: string;
   } | null;
   upload_attempts: number | null;
   upload_error: string | null;
@@ -270,6 +271,11 @@ export interface ClipConfig {
   duration_min?: number;
   output_quality?: "source" | "1080p" | "720p" | "480p";
   precision_mode?: boolean;
+  template_id?: string | null;
+  music?: boolean;
+  music_track?: string | null;
+  voiceover?: boolean;
+  occasion?: string | null;
 }
 
 export const videoApi = {
@@ -598,4 +604,103 @@ export const agentApi = {
     agentReq<{ status: string; session_id: string }>("POST", `/sessions/${id}/run`),
   deleteSession: (id: string) =>
     agentReq<void>("DELETE", `/sessions/${id}`),
+};
+
+// ─── Billing API (via core service) ───
+export interface PlanInfo {
+  id: string;
+  name: string;
+  price_monthly: number;
+  videos_per_month: number;  // -1 = unlimited
+  storage_gb: number;
+  brainstorm: boolean;
+  workflows: boolean;
+  channels: boolean;
+  watermark: boolean;
+  accounts_per_platform: number;
+  video_duration_limit_min: number | null;
+}
+
+export interface SubscriptionInfo {
+  plan_name: string;
+  status: string;
+  billing_cycle: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  videos_used: number;
+  storage_bytes_used: number;
+  brainstorm_used: number;
+}
+
+export interface EsewaQR {
+  merchant_id: string;
+  amount_npr: number;
+  product_id: string;
+  plan_name: string;
+  instructions: string;
+}
+
+// ─── Trends API (via agent service) ───
+export interface VideoMeta {
+  platform: "youtube" | "tiktok" | "web" | string;
+  video_id: string;
+  title: string;
+  url: string;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  duration_sec: number | null;
+  published_at: string | null;
+  channel: string | null;
+  hashtags: string[];
+  thumbnail: string | null;
+  description: string;
+}
+
+export interface PlatformSummary {
+  youtube_count: number;
+  tiktok_count: number;
+  web_count: number;
+  total: number;
+  from_cache: boolean;
+}
+
+export interface TrendSearchResponse {
+  topic: string;
+  from_cache: boolean;
+  summary: PlatformSummary;
+  top_by_views: VideoMeta[];
+  common_hashtags: string[];
+  youtube: VideoMeta[];
+  tiktok: VideoMeta[];
+  web: VideoMeta[];
+  analysis?: {
+    insights: string;
+    suggested_topics: string[];
+  };
+}
+
+export const trendsApi = {
+  search: (topic: string, platforms?: string[], forceRefresh?: boolean) => {
+    const qs = new URLSearchParams({ topic });
+    (platforms ?? ["youtube", "tiktok", "web"]).forEach((p) => qs.append("platforms", p));
+    if (forceRefresh) qs.set("force_refresh", "true");
+    return agentReq<TrendSearchResponse>("GET", `/trends/search?${qs}`);
+  },
+  clearCache: (topic?: string) =>
+    agentReq<{ deleted: number }>(
+      "DELETE",
+      `/trends/cache${topic ? `?topic=${encodeURIComponent(topic)}` : ""}`,
+    ),
+};
+
+export const billingApi = {
+  plans: () => req<PlanInfo[]>("GET", "/billing/plans", undefined, { auth: false }),
+  subscription: () => req<SubscriptionInfo>("GET", "/billing/subscription"),
+  checkout: (plan_name: string, billing_cycle: string, success_url: string, cancel_url: string) =>
+    req<{ checkout_url: string }>("POST", "/billing/checkout", { plan_name, billing_cycle, success_url, cancel_url }),
+  confirm: (session_id: string) =>
+    req<{ status: string; plan: string }>("POST", "/billing/confirm", { session_id }),
+  esewaQR: (plan_name: string) =>
+    req<EsewaQR>("GET", `/billing/esewa-qr?plan=${plan_name}`),
 };

@@ -11,6 +11,7 @@ export type PageKey =
   | "onboarding"
   | "analytics"
   | "trending"
-  | "settings";
+  | "settings"
+  | "billing";
 
 export type Tone = "rose" | "blue" | "green" | "violet" | "orange";

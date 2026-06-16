@@ -315,8 +315,20 @@ async def skip_onboarding(
     db: AsyncSession = Depends(get_db_no_rls),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    """
-    Skip remaining steps and finalize with whatever data is buffered.
-    Subdomain is still required (from step 1).
-    """
+    """Skip remaining steps. Auto-generates subdomain if niche step was not completed."""
+    data = await _load_data(redis, token.sub)
+
+    if not data.get("subdomain"):
+        # Generate a unique subdomain from user_id so skip always succeeds
+        slug = token.sub.replace("-", "")[:12]
+        candidate = f"workspace-{slug}"
+        # Ensure uniqueness
+        existing = await db.execute(select(Tenant).where(Tenant.subdomain == candidate))
+        if existing.scalar_one_or_none():
+            candidate = f"ws-{token.sub.replace('-', '')[:16]}"
+        data["subdomain"] = candidate
+        if not data.get("niche"):
+            data["niche"] = "general"
+        await _save_data(redis, token.sub, data)
+
     return await finalize_onboarding(token=token, db=db, redis=redis)

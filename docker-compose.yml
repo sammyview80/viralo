@@ -32,6 +32,7 @@ services:
       POSTGRES_DB: viralo
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD-SHELL", "pg_isready -U viralo"]
@@ -223,12 +224,111 @@ services:
 
   # ── Workers ───────────────────────────────────────────────────────────────
 
-  celery-video:
+  celery-video-pipeline:
     <<: *service-defaults
     build:
       context: .
       dockerfile: services/video/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.ai,viralo.video.pipeline,viralo.video.upload --concurrency=1 --loglevel=info
+    command: celery -A workers.celery_app worker -Q viralo.video.pipeline --concurrency=4 --loglevel=info
+    mem_limit: 8g
+    memswap_limit: 8g
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  celery-video-ai:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.video.ai --concurrency=2 --loglevel=info
+    mem_limit: 8g
+    memswap_limit: 8g
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  celery-video-upload:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.video.upload --concurrency=8 --pool=threads --loglevel=info
+    mem_limit: 2g
+    memswap_limit: 2g
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  celery-video-generate:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.video.generate --concurrency=2 --loglevel=info
     mem_limit: 4g
     memswap_limit: 4g
     environment:

@@ -20,7 +20,8 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.auth import decode_token
-from shared.deps import get_current_user, get_redis, get_tenant_db
+from shared.deps import get_current_user, get_db_no_rls, get_redis, get_tenant_db
+from shared.plan_gate import check_storage_quota, increment_storage_used
 from shared.schemas.auth import TokenPayload
 from video.models import Clip, Video
 from video.schemas import (
@@ -260,6 +261,7 @@ async def upload_video(
     config: str = Form(default="{}"),  # JSON-encoded ClipConfig
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
+    pub_db: AsyncSession = Depends(get_db_no_rls),
 ):
     if not file.content_type or not file.content_type.startswith("video/"):
         raise HTTPException(
@@ -283,6 +285,10 @@ async def upload_video(
     async with aiofiles.open(tmp_path, "wb") as f:
         while chunk := await file.read(1024 * 1024):
             await f.write(chunk)
+
+    # Enforce storage quota before accepting the upload
+    file_size = Path(tmp_path).stat().st_size
+    await check_storage_quota(pub_db, tenant_id, additional_bytes=file_size)
 
     # Upload source to persistent storage so retry can re-use it
     original_storage_key: str | None = None
@@ -309,11 +315,16 @@ async def upload_video(
     db.add(video)
     await db.commit()
 
+    # Track storage usage (non-fatal if this fails)
+    try:
+        await increment_storage_used(pub_db, tenant_id, file_size)
+    except Exception:
+        pass
+
     celery_app = _get_celery()
     task = celery_app.send_task(
         "workers.tasks.video.process_uploaded_video",
         args=[str(tenant_id), str(video_id), tmp_path, clip_config.model_dump()],
-        queue="viralo.video.generate",
     )
     await db.execute(update(Video).where(Video.id == video_id).values(celery_task_id=task.id))
     await db.commit()
@@ -348,7 +359,6 @@ async def import_youtube(
     task = celery_app.send_task(
         "workers.tasks.video.process_youtube_video",
         args=[str(tenant_id), str(video_id), body.url, clip_config.model_dump()],
-        queue="viralo.video.generate",
     )
     await db.execute(update(Video).where(Video.id == video_id).values(celery_task_id=task.id))
     await db.commit()
@@ -669,7 +679,6 @@ async def retry_video(
         task = celery_app.send_task(
             "workers.tasks.video.process_youtube_video",
             args=[str(tenant_id), str(video_id), video.source_url, clip_config],
-            queue="viralo.video.generate",
         )
     else:
         if not video.original_storage_key:
@@ -680,7 +689,6 @@ async def retry_video(
         task = celery_app.send_task(
             "workers.tasks.video.process_uploaded_video",
             args=[str(tenant_id), str(video_id), video.original_storage_key, clip_config],
-            queue="viralo.video.generate",
         )
 
     video.celery_task_id = task.id
@@ -724,7 +732,6 @@ async def generate_viral_clips(
     task = celery_app.send_task(
         "workers.tasks.video.generate_viral_clips",
         args=[str(tenant_id), str(video_id), cfg],
-        queue="viralo.video.generate",
     )
 
     await db.execute(
@@ -875,7 +882,6 @@ async def concat_clips(
     task = celery_app.send_task(
         "workers.tasks.video.concat_top_clips",
         args=[tenant_id, str(body.video_id), clip_ids],
-        queue="viralo.video.generate",
     )
     return {"task_id": task.id, "clip_ids": clip_ids, "message": "Concatenation queued"}
 
@@ -910,7 +916,6 @@ async def merge_ai_clips_endpoint(
     task = celery_app.send_task(
         "workers.tasks.video.merge_ai_clips",
         args=[tenant_id, clip_ids],
-        queue="viralo.video.generate",
     )
     return {"task_id": task.id, "clip_ids": clip_ids, "message": "MergeAI queued — merged clips will appear in your library when ready"}
 
@@ -982,7 +987,6 @@ async def retry_clip_upload(
     celery_app.send_task(
         "workers.tasks.video.upload_clip_to_storage",
         args=[str(clip_id), clip_path, token.tenant_id, job_id],
-        queue="viralo.video.generate",
     )
     return clip
 

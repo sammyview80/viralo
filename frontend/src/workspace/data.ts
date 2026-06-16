@@ -20,6 +20,7 @@ export const nav: Array<{
   { key: "integrations", label: "Integrations",  href: "/integrations", icon: "Globe",                  group: "Account" },
   { key: "channels",     label: "Channels",      href: "/channels",     icon: "Video",                  group: "Account" },
   { key: "onboarding",   label: "Onboarding",    href: "/onboarding",   icon: "Bolt",                   group: "Account" },
+  { key: "billing",      label: "Billing",       href: "/billing",      icon: "CreditCard",             group: "Account" },
   { key: "settings",     label: "Settings",      href: "/settings",     icon: "Gear",                   group: "Account" },
 ];
 
