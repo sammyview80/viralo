@@ -54,11 +54,21 @@ def _dispatch(event_type: str, payload: dict) -> None:
         send_notification.delay(
             tenant_id,
             None,
-            "workflow_complete",
+            "workflow_failed",
             "Workflow run failed",
             f"Workflow '{payload.get('name', '')}' failed.",
             action_url=f"/workflows/{payload.get('workflow_id')}/runs/{payload.get('run_id')}",
             metadata=payload,
+        )
+    elif event_type == "video.failed":
+        send_notification.delay(
+            tenant_id,
+            user_id=None,
+            type="video_failed",
+            title="Video processing failed",
+            body=payload.get("error", "Your video could not be processed."),
+            action_url=f"/projects/{payload.get('video_id')}",
+            metadata={"video_id": payload.get("video_id")},
         )
     elif event_type == "quota.exceeded":
         send_notification.delay(

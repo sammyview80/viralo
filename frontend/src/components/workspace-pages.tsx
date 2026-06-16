@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { nav } from "@/workspace/data";
 import type { PageKey } from "@/workspace/types";
+import { PlanGate } from "@/components/PlanGate";
 
 const AnalyticsPage    = lazy(() => import("@/workspace/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
 const BrainstormPage   = lazy(() => import("@/workspace/pages/BrainstormPage").then((m) => ({ default: m.BrainstormPage })));
@@ -15,21 +16,23 @@ const StudioPage       = lazy(() => import("@/workspace/pages/StudioPage").then(
 const TrendingPage     = lazy(() => import("@/workspace/pages/TrendingPage").then((m) => ({ default: m.TrendingPage })));
 const UploadPage       = lazy(() => import("@/workspace/pages/UploadPage").then((m) => ({ default: m.UploadPage })));
 const WorkflowsPage    = lazy(() => import("@/workspace/pages/WorkflowsPage").then((m) => ({ default: m.WorkflowsPage })));
+const BillingPage      = lazy(() => import("@/workspace/pages/BillingPage").then((m) => ({ default: m.BillingPage })));
 
 const pages: Record<PageKey, React.ReactNode> = {
   studio:       <StudioPage />,
   clips:        <ClipsPage />,
   projects:     <ProjectsPage />,
   upload:       <UploadPage />,
-  brainstorm:   <BrainstormPage />,
-  workflows:    <WorkflowsPage />,
+  brainstorm:   <PlanGate feature="brainstorm"   minPlan="starter"><BrainstormPage /></PlanGate>,
+  workflows:    <PlanGate feature="workflows"    minPlan="creator"><WorkflowsPage /></PlanGate>,
   scheduler:    <SchedulerPage />,
-  integrations: <IntegrationsPage />,
-  channels:     <ChannelsPage />,
+  integrations: <PlanGate feature="integrations" minPlan="pro"><IntegrationsPage /></PlanGate>,
+  channels:     <PlanGate feature="channels"     minPlan="creator"><ChannelsPage /></PlanGate>,
   onboarding:   <OnboardingPage />,
   analytics:    <AnalyticsPage />,
   trending:     <TrendingPage />,
   settings:     <SettingsPage />,
+  billing:      <BillingPage />,
 };
 
 const PageFallback = () => (

@@ -178,7 +178,7 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
         # Fetch all active subscriptions for this channel
         subs = db.execute(
             text("""
-                SELECT id, tenant_id, auto_publish, auto_publish_config
+                SELECT id, tenant_id, auto_publish, auto_publish_config, name
                 FROM channel_subscriptions
                 WHERE channel_id = :cid AND active = true
             """),
@@ -202,9 +202,10 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
 
     # Trigger video pipeline for each tenant subscribed to this channel
     from workers.tasks.video import process_youtube_video
+    from workers.tasks.notification import send_notification
     jobs = []
     for sub in subs:
-        sub_id, tenant_id, auto_publish, pub_cfg = sub
+        sub_id, tenant_id, auto_publish, pub_cfg, channel_name = sub
         job_id = str(uuid.uuid4())
         cfg = {
             "num_clips": 5,
@@ -230,6 +231,20 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
         jobs.append({"tenant_id": str(tenant_id), "job_id": job_id})
         log.info("WebSub: triggered pipeline job=%s tenant=%s video=%s", job_id, tenant_id, video_id)
 
+        try:
+            ch_label = channel_name or channel_id
+            send_notification.delay(
+                str(tenant_id),
+                user_id=None,
+                type="channel_video",
+                title=f"New video from {ch_label}",
+                body="A new video is being processed and clips will be ready soon.",
+                action_url=f"/projects/{job_id}",
+                metadata={"channel_id": channel_id, "video_id": video_id, "job_id": job_id},
+            )
+        except Exception:
+            log.warning("WebSub: failed to send channel_video notification for tenant %s", tenant_id)
+
     return {"triggered": len(jobs), "jobs": jobs}
 
 
@@ -239,7 +254,7 @@ def verify_websub_signature(body: bytes, signature_header: str) -> bool:
         return False
     try:
         method, sig = signature_header.split("=", 1)
-        expected = hmac.new(WEBSUB_SECRET.encode(), body, hashlib.sha1).hexdigest()  # type: ignore[attr-defined]
+        expected = hmac.new(WEBSUB_SECRET.encode(), body, hashlib.sha1).hexdigest()
         return hmac.compare_digest(expected, sig)
     except Exception:
         return False

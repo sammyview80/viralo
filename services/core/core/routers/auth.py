@@ -25,11 +25,12 @@ RATE_LIMIT_WINDOW = 900  # 15 minutes
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
+    import os
     response.set_cookie(
         key=REFRESH_COOKIE,
         value=token,
         httponly=True,
-        secure=False,  # True in production
+        secure=os.getenv("ENVIRONMENT", "development") != "development",
         samesite="lax",
         max_age=REFRESH_TOKEN_DAYS * 86400,
         path="/api/v1/auth",
@@ -43,10 +44,21 @@ def _clear_refresh_cookie(response: Response) -> None:
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     body: RegisterRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db_no_rls),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    # Rate limit registrations per IP (10 per hour) — proxy-aware
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    reg_key = f"register_attempts:{ip}"
+    reg_count = await redis.incr(reg_key)
+    if reg_count == 1:
+        await redis.expire(reg_key, 3600)
+    if reg_count > 10:
+        raise HTTPException(status_code=429, detail="Too many registration attempts. Try again later.")
+
     # Check email unique
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
@@ -86,8 +98,9 @@ async def login(
     db: AsyncSession = Depends(get_db_no_rls),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    # Rate limiting
-    ip = request.client.host if request.client else "unknown"
+    # Rate limiting — use X-Forwarded-For (proxy-aware)
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
     rate_key = f"login_attempts:{ip}"
     attempts = await redis.incr(rate_key)
     if attempts == 1:
@@ -95,10 +108,12 @@ async def login(
     if attempts > RATE_LIMIT_MAX:
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again in 15 minutes.")
 
-    # Validate credentials
+    # Validate credentials — always call verify_password to prevent timing oracle
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
-    if not user or not user.hashed_password or not verify_password(body.password, user.hashed_password):
+    _dummy_hash = "$2b$12$GXSGFakXXXXXXXXXXXXXXuXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    password_ok = verify_password(body.password, user.hashed_password if user and user.hashed_password else _dummy_hash)
+    if not user or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")

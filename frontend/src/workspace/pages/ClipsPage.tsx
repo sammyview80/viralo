@@ -138,7 +138,7 @@ const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay 
           <span className="rounded-full bg-white/[.035] px-2 py-1">{tags.length} tags</span>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
           {clipStart && clipEnd && <span className="rounded-full bg-white/[.035] px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
-          <span className="rounded-full bg-white/[.035] px-2 py-1">9:16</span>
+          <span className="rounded-full bg-white/[.035] px-2 py-1">{clip.clip_metadata?.aspect_ratio ?? "9:16"}</span>
         </div>
 
         <div className="h-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
@@ -390,9 +390,12 @@ function ShortsPlayer({ clip }: { clip: ClipApiResponse }) {
   const content = clip.clip_metadata?.platforms?.[platform];
   const description = content?.description ?? clip.title ?? "";
   const tags = content?.tags ?? [];
+  const aspectRatioStr = clip.clip_metadata?.aspect_ratio ?? "9:16";
+  const aspectRatioCss = aspectRatioStr === "1:1" ? "1/1" : aspectRatioStr === "16:9" ? "16/9" : aspectRatioStr === "4:5" ? "4/5" : "9/16";
+  const playerWidth = aspectRatioStr === "16:9" ? 240 : aspectRatioStr === "1:1" ? 160 : 160;
   return (
     <div className="select-none">
-      <div className="relative mx-auto overflow-hidden rounded-[24px] bg-black shadow-[0_0_0_2px_rgba(255,255,255,.1),0_12px_40px_rgba(0,0,0,.7)]" style={{ width: 160, aspectRatio: "9/16" }}>
+      <div className="relative mx-auto overflow-hidden rounded-[24px] bg-black shadow-[0_0_0_2px_rgba(255,255,255,.1),0_12px_40px_rgba(0,0,0,.7)]" style={{ width: playerWidth, aspectRatio: aspectRatioCss }}>
         {hasVideo ? <video ref={videoRef} src={clip.storage_url!} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" poster={clip.thumbnail_url ?? undefined} />
           : clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
           : <div className="absolute inset-0 bg-gradient-to-br from-rose-600/60 to-violet-700/60" />}

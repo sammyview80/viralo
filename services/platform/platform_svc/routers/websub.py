@@ -142,8 +142,10 @@ async def list_channels(
                    auto_publish, active, subscribed_at, lease_expires_at,
                    last_video_id, last_notified_at, created_at
             FROM channel_subscriptions
+            WHERE tenant_id = :tid
             ORDER BY created_at DESC
-        """)
+        """),
+        {"tid": current_user.tenant_id},
     )
     rows = result.fetchall()
     return [dict(r._mapping) for r in rows]
@@ -412,8 +414,8 @@ async def remove_channel(
     current_user: TokenPayload = Depends(get_current_user),
 ):
     await db.execute(
-        text("UPDATE channel_subscriptions SET active = false, updated_at = now() WHERE channel_id = :cid"),
-        {"cid": channel_id},
+        text("UPDATE channel_subscriptions SET active = false, updated_at = now() WHERE channel_id = :cid AND tenant_id = :tid"),
+        {"cid": channel_id, "tid": current_user.tenant_id},
     )
     await db.commit()
     _subscribe(channel_id, mode="unsubscribe")

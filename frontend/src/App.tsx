@@ -51,6 +51,17 @@ export default function App() {
     return <Suspense fallback={null}><OnboardingPage /></Suspense>;
   }
 
+  /* ── Billing success legacy redirect (/billing/success?session_id=...) ── */
+  if (path === "/billing/success") {
+    const sp = new URLSearchParams(window.location.search);
+    const sid = sp.get("session_id") ?? "";
+    window.location.replace(`/billing?success=1&session_id=${sid}`);
+    return null;
+  }
+
+  /* ── Billing page ── */
+  if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage page="billing" />;
+
   /* ── Upload page (not in sidebar) and project detail ── */
   if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage page="upload" />;
 

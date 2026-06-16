@@ -22,7 +22,7 @@ const PAGE_LABELS: Record<string, string> = {
 };
 
 /* ─── Sidebar ─── */
-function Sidebar({ active, collapsed, onCollapse }: { active: ActiveKey; collapsed: boolean; onCollapse: () => void }) {
+function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; collapsed: boolean; onCollapse: () => void; isPro: boolean }) {
   const navGroups = groups.map((g) => ({ label: g, items: nav.filter((n) => n.group === g) }));
 
   return (
@@ -130,7 +130,7 @@ function Sidebar({ active, collapsed, onCollapse }: { active: ActiveKey; collaps
       </nav>
 
       {/* Upgrade footer */}
-      {!collapsed && (
+      {!collapsed && !isPro && (
         <div className="flex-none border-t border-white/[.055] p-2">
           <div className="overflow-hidden rounded-[12px] border border-[rgba(255,61,90,.25)] bg-gradient-to-br from-[rgba(255,61,90,.18)] to-[rgba(255,122,61,.08)] p-3.5">
             <h4 className="font-display text-[12.5px] font-semibold">Upgrade to Pro</h4>
@@ -195,15 +195,21 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
     return cleanup;
   }, []);
 
+  // Update document title
+  useEffect(() => {
+    document.title = active === "dashboard" ? "Viralo" : `${PAGE_LABELS[active] ?? active} | Viralo`;
+  }, [active]);
+
   const title = PAGE_LABELS[active] ?? active;
   const sideW = collapsed ? 62 : 216;
   const shellStyle = { "--sidebar-width": `${sideW}px` } as CSSProperties;
   const initials = (user?.full_name ?? user?.email ?? "U").charAt(0).toUpperCase();
+  const isPro = (user?.plan ?? "").toLowerCase().includes("pro");
 
   return (
     <div className="relative min-h-screen" style={shellStyle}>
       <ToastContainer />
-      <Sidebar active={active} collapsed={collapsed} onCollapse={() => setCollapsed((c) => !c)} />
+      <Sidebar active={active} collapsed={collapsed} onCollapse={() => setCollapsed((c) => !c)} isPro={isPro} />
       <MobileNav active={active} />
 
       {/* Topbar */}
@@ -224,6 +230,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
             <Icons.Search size={14} />
           </span>
           <input
+            aria-label="Search videos, workflows…"
             className="w-full rounded-[9px] border border-white/[.07] bg-white/[.04] px-9 py-2 text-[12.5px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_4px_rgba(255,61,106,.08)]"
             placeholder="Search videos, workflows…"
           />
@@ -232,7 +239,10 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
 
         <div className="ml-auto flex items-center gap-1.5">
           <NotificationBell />
-          <button className="grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-white/[.08] text-zinc-400 transition hover:border-white/[.13] hover:bg-[#141926] hover:text-zinc-200">
+          <button
+            aria-label="Help"
+            className="grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-white/[.08] text-zinc-400 transition hover:border-white/[.13] hover:bg-[#141926] hover:text-zinc-200"
+          >
             <Icons.Help size={15} />
           </button>
           <div className="relative">
