@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/lib/router";
-import { videoApi, token as authToken, type VideoResponse } from "@/lib/api";
+import { videoApi, token as authToken, API_BASES, type VideoResponse } from "@/lib/api";
 import { Pagination } from "../components/Pagination";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
 
-const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
+const VIDEO_SSE_BASE = API_BASES.video;
 
 /* ─── helpers ─── */
 

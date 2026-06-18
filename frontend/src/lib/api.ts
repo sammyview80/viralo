@@ -1,6 +1,13 @@
 import { clearQueryCache } from "./query";
 
-const BASE = import.meta.env.VITE_API_BASE ?? "/core-api";
+export const API_BASES = {
+  core:     import.meta.env.VITE_API_BASE      ?? "/core-api",
+  video:    import.meta.env.VITE_VIDEO_BASE    ?? "/video-api",
+  platform: import.meta.env.VITE_PLATFORM_BASE ?? "/platform-api",
+  agent:    import.meta.env.VITE_AGENT_BASE    ?? "/agent-api",
+} as const;
+
+const BASE = API_BASES.core;
 const LS_ACCESS  = "viralo_access_token";
 const LS_SESSION = "viralo_has_session"; // flag: refresh cookie likely valid
 
@@ -182,7 +189,7 @@ function createServiceClient(getBase: () => string) {
 }
 
 /* ─── Video service (port 8003) ─── */
-const videoReq = createServiceClient(() => import.meta.env.VITE_VIDEO_BASE ?? "/video-api");
+const videoReq = createServiceClient(() => API_BASES.video);
 
 export interface VideoResponse {
   id: string;
@@ -321,7 +328,7 @@ export const videoApi = {
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
   downloadZip: async (clipIds: string[], zipName?: string): Promise<Blob> => {
-    const base = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
+    const base = API_BASES.video;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
     const res = await fetch(`${base}/clips/download-zip`, {
@@ -361,7 +368,7 @@ export const videoApi = {
 };
 
 /* ─── Platform service (port 8006) ─── */
-const platformReq = createServiceClient(() => import.meta.env.VITE_PLATFORM_BASE ?? "/platform-api");
+const platformReq = createServiceClient(() => API_BASES.platform);
 
 /* ─── Platform types ─── */
 export interface SocialAccount {
@@ -598,7 +605,7 @@ export const notificationApi = {
 };
 
 /* ─── Agent API (via nginx) ─── */
-const agentReq = createServiceClient(() => import.meta.env.VITE_AGENT_BASE ?? "/agent-api");
+const agentReq = createServiceClient(() => API_BASES.agent);
 
 export interface TagSuggestRequest {
   topic: string;
