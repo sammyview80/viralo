@@ -208,7 +208,7 @@ async def _oembed_inspect(video_id: str, url: str) -> dict:
     return await _asyncio.get_event_loop().run_in_executor(None, _fetch_sync)
 
 
-@router.post("/video/youtube/inspect", response_model=YouTubeInspectResponse)
+@router.post("/youtube/inspect", response_model=YouTubeInspectResponse)
 async def inspect_youtube(
     body: YouTubeInspectRequest,
     token: TokenPayload = Depends(get_current_user),
@@ -284,7 +284,7 @@ async def inspect_youtube(
     )
 
 
-@router.post("/video/upload", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/upload", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_video(
     file: UploadFile = File(...),
     title: str = Form(...),
@@ -365,7 +365,7 @@ async def upload_video(
     return VideoResponse.model_validate(video)
 
 
-@router.post("/video/youtube", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/youtube", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)
 async def import_youtube(
     body: YouTubeImportRequest,
     token: TokenPayload = Depends(get_current_user),
@@ -408,7 +408,7 @@ async def import_youtube(
 # SSE progress stream
 # ---------------------------------------------------------------------------
 
-@router.get("/video/progress/{job_id}")
+@router.get("/progress/{job_id}")
 async def video_progress(
     job_id: str,
     token: str | None = Query(None, alias="token"),
@@ -1138,7 +1138,7 @@ class SuggestTitleRequest(_BaseModel):
     segment_count: int = 5
 
 
-@router.post("/video/ranking", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/ranking", status_code=status.HTTP_202_ACCEPTED)
 async def create_ranking(
     req: CreateRankingRequest,
     token: TokenPayload = Depends(get_current_user),
@@ -1201,7 +1201,7 @@ async def create_ranking(
     return {"video_id": str(video_id), "job_id": job_id}
 
 
-@router.post("/video/ranking/suggest-title")
+@router.post("/ranking/suggest-title")
 async def suggest_ranking_title(
     req: SuggestTitleRequest,
     token: TokenPayload = Depends(get_current_user),

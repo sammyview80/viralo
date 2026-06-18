@@ -23,8 +23,8 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-app.include_router(videos.router, prefix="/api/v1")
-app.include_router(viral.router, prefix="/api/v1")
+app.include_router(videos.router, prefix="/api/v1/video")
+app.include_router(viral.router, prefix="/api/v1/video")
 
 # Serve local storage files at /storage — created on startup if missing
 storage_path = Path(LOCAL_STORAGE_DIR)

@@ -21,9 +21,9 @@ app.add_middleware(
 )
 app.add_middleware(TenantMiddleware)
 
-app.include_router(sessions.router, prefix="/api/v1")
-app.include_router(tags.router, prefix="/api/v1")
-app.include_router(trends.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1/agent")
+app.include_router(tags.router, prefix="/api/v1/agent")
+app.include_router(trends.router, prefix="/api/v1/agent")
 app.include_router(ws.router)
 
 

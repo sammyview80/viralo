@@ -575,7 +575,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
 
     const cleanups = activeJobs.map((job) => {
       const es = new EventSource(
-        `${VIDEO_SSE_BASE}/video/progress/${job.jobId}?token=${encodeURIComponent(t)}`
+        `${VIDEO_SSE_BASE}/progress/${job.jobId}?token=${encodeURIComponent(t)}`
       );
       es.onmessage = (e) => {
         try {

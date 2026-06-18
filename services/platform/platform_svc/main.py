@@ -22,12 +22,12 @@ app.add_middleware(
 )
 app.add_middleware(TenantMiddleware)
 
-app.include_router(social_accounts.router, prefix="/api/v1")
-app.include_router(scheduling.router, prefix="/api/v1")
-app.include_router(notifications.router, prefix="/api/v1")
-app.include_router(analytics.router, prefix="/api/v1")
-app.include_router(push.router, prefix="/api/v1")
-app.include_router(websub.router, prefix="/api/v1")
+app.include_router(social_accounts.router, prefix="/api/v1/platform")
+app.include_router(scheduling.router, prefix="/api/v1/platform")
+app.include_router(notifications.router, prefix="/api/v1/platform")
+app.include_router(analytics.router, prefix="/api/v1/platform")
+app.include_router(push.router, prefix="/api/v1/platform")
+app.include_router(websub.router, prefix="/api/v1/platform")
 
 
 @app.get("/health")
