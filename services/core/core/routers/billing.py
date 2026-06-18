@@ -1,9 +1,12 @@
+import hmac
 import os
 import uuid
 from datetime import datetime, timezone
 
+from typing import Literal
+
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,13 +31,11 @@ PLAN_ORDER = ["free", "starter", "pro", "creator", "unlimited"]
 
 class CheckoutRequest(BaseModel):
     plan_name: str
-    billing_cycle: str = "monthly"
-    success_url: str | None = None
-    cancel_url: str | None = None
+    billing_cycle: Literal["monthly", "yearly"] = "monthly"
 
 
 class EsewaVerifyRequest(BaseModel):
-    tenant_id: str
+    tenant_id: str | None = None
     plan_name: str
     reference: str
 
@@ -73,7 +74,7 @@ async def get_subscription(
 
     tenant_id = uuid.UUID(str(token.tenant_id))
     sub_result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
+        select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1)
     )
     sub = sub_result.scalar_one_or_none()
 
@@ -191,13 +192,18 @@ async def confirm_checkout(
     # Verify session belongs to requesting tenant
     if not tenant_id_str or str(token.tenant_id) != tenant_id_str:
         raise HTTPException(status_code=403, detail="Session does not belong to your account")
+    if not plan_id_str:
+        raise HTTPException(status_code=400, detail="Invalid checkout session: missing plan")
 
-    tenant_id = uuid.UUID(tenant_id_str)
-    plan_id = uuid.UUID(plan_id_str)
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+        plan_id = uuid.UUID(plan_id_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid checkout session metadata")
     stripe_sub_id = session.get("subscription")
     stripe_customer_id = session.get("customer")
 
-    existing = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    existing = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1))
     sub = existing.scalar_one_or_none()
     now = datetime.now(timezone.utc)
 
@@ -251,13 +257,16 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db_no_
         if not tenant_id_str or not plan_id_str:
             return {"status": "ignored"}
 
-        tenant_id = uuid.UUID(tenant_id_str)
-        plan_id = uuid.UUID(plan_id_str)
+        try:
+            tenant_id = uuid.UUID(tenant_id_str)
+            plan_id = uuid.UUID(plan_id_str)
+        except ValueError:
+            return {"status": "ignored"}
         stripe_sub_id = session.get("subscription")
         stripe_customer_id = session.get("customer")
 
         existing = await db.execute(
-            select(Subscription).where(Subscription.tenant_id == tenant_id)
+            select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1)
         )
         sub = existing.scalar_one_or_none()
 
@@ -318,18 +327,29 @@ async def esewa_verify(
     body: EsewaVerifyRequest,
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_no_rls),
+    x_esewa_verify_secret: str | None = Header(default=None, alias="X-Esewa-Verify-Secret"),
 ):
     if not token.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant associated with account")
+
+    tenant_id = uuid.UUID(str(token.tenant_id))
+    if body.tenant_id and str(tenant_id) != str(uuid.UUID(body.tenant_id)):
+        raise HTTPException(status_code=403, detail="Cannot verify payment for another tenant")
+
+    manual_secret = os.getenv("ESEWA_MANUAL_VERIFY_SECRET")
+    if not manual_secret or not x_esewa_verify_secret or not hmac.compare_digest(x_esewa_verify_secret, manual_secret):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="eSewa payments require server-side verification before activation.",
+        )
 
     plan_result = await db.execute(select(Plan).where(Plan.name == body.plan_name))
     plan = plan_result.scalar_one_or_none()
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
 
-    tenant_id = uuid.UUID(body.tenant_id)
     existing = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
+        select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1)
     )
     sub = existing.scalar_one_or_none()
 

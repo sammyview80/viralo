@@ -18,8 +18,12 @@ interface PlanGateProps {
 export function PlanGate({ feature, minPlan, children }: PlanGateProps) {
   const { features, loading, isAtLeast } = usePlan();
 
-  // While loading: optimistic — show children
-  if (loading) return <>{children}</>;
+  // While loading, avoid mounting gated children that may trigger protected side effects.
+  if (loading) {
+    return (
+      <div className="min-h-[320px] w-full animate-pulse rounded-xl border border-white/[.07] bg-[#0e1420]" />
+    );
+  }
 
   const featureVal = features[feature];
   const hasAccess = featureVal === true && isAtLeast(minPlan);
@@ -28,9 +32,13 @@ export function PlanGate({ feature, minPlan, children }: PlanGateProps) {
 
   return (
     <div className="relative min-h-[320px] w-full overflow-hidden rounded-xl border border-white/[.07] bg-[#0e1420]">
-      {/* Blurred content behind overlay */}
-      <div className="pointer-events-none select-none blur-sm opacity-30" aria-hidden>
-        {children}
+      {/* Placeholder only: do not mount gated children without entitlement. */}
+      <div className="pointer-events-none select-none opacity-30" aria-hidden>
+        <div className="m-4 grid gap-3">
+          <div className="h-12 rounded-xl bg-white/[.04]" />
+          <div className="h-32 rounded-xl bg-white/[.035]" />
+          <div className="h-12 rounded-xl bg-white/[.04]" />
+        </div>
       </div>
 
       {/* Upgrade overlay */}

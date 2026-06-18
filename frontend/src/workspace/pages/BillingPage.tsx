@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Shell } from "../Shell";
 import { billingApi, PlanInfo, SubscriptionInfo, EsewaQR } from "@/lib/api";
 import { useQuery, invalidate } from "@/lib/query";
 
@@ -348,7 +347,7 @@ export function BillingPage() {
     : [];
 
   return (
-    <Shell active="billing">
+    <>
       <div className="space-y-8">
         {/* Header */}
         <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Billing</h1>
@@ -463,6 +462,6 @@ export function BillingPage() {
       {esewaTarget && (
         <EsewaModal plan={esewaTarget} onClose={() => setEsewaTarget(null)} />
       )}
-    </Shell>
+    </>
   );
 }

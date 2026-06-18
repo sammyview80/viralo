@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Shell } from "../Shell";
+
 import { trendsApi, type VideoMeta, type TrendSearchResponse } from "@/lib/api";
+import { navigate } from "@/lib/router";
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ function PlatformBadge({ platform }: { platform: string }) {
 
 // ── Video card ────────────────────────────────────────────────────────────────
 
-function VideoCard({ video, rank }: { video: VideoMeta; rank?: number }) {
+function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: number; searchQuery?: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -118,6 +119,17 @@ function VideoCard({ video, rank }: { video: VideoMeta; rank?: number }) {
     e.stopPropagation();
     const studioUrl = `/studio?type=${video.platform}&url=${encodeURIComponent(video.url)}`;
     window.location.href = studioUrl;
+  }
+
+  function handleSubscribe(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuOpen(false);
+    const channelUrl = video.channel_url ?? video.url;
+    const params = new URLSearchParams();
+    params.set("channel_url", channelUrl);
+    if (searchQuery) params.set("q", searchQuery);
+    navigate(`/channels?${params.toString()}`);
   }
 
   return (
@@ -205,6 +217,18 @@ function VideoCard({ video, rank }: { video: VideoMeta; rank?: number }) {
               </svg>
               Clip it
             </button>
+            {video.platform === "youtube" && (
+              <button
+                onClick={handleSubscribe}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-white/80
+                           hover:bg-white/[.06] hover:text-white transition"
+              >
+                <svg viewBox="0 0 16 16" className="size-3.5 fill-current text-red-400">
+                  <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm1 10H7V8H5l3-4 3 4H9v3z"/>
+                </svg>
+                Subscribe to channel
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -327,12 +351,26 @@ function AiAnalysis({ analysis, onSearch }: {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+const HISTORY_KEY = "viralo:trending:history";
+const MAX_HISTORY = 10;
+
+function loadHistory(): string[] {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]"); } catch { return []; }
+}
+function saveToHistory(q: string) {
+  const prev = loadHistory().filter((h) => h.toLowerCase() !== q.toLowerCase());
+  localStorage.setItem(HISTORY_KEY, JSON.stringify([q, ...prev].slice(0, MAX_HISTORY)));
+}
+function clearHistory() { localStorage.removeItem(HISTORY_KEY); }
+
 export function TrendingPage() {
-  const [query, setQuery] = useState("");
+  const initialQuery = new URLSearchParams(window.location.search).get("q") ?? "";
+  const [query, setQuery] = useState(initialQuery);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TrendSearchResponse | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("all");
+  const [history, setHistory] = useState<string[]>(loadHistory);
 
   const doSearch = useCallback(async (topic: string, forceRefresh = false) => {
     const t = topic.trim();
@@ -344,11 +382,18 @@ export function TrendingPage() {
     try {
       const res = await trendsApi.search(t, undefined, forceRefresh);
       setResult(res);
+      saveToHistory(t);
+      setHistory(loadHistory());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Search failed");
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    if (initialQuery) doSearch(initialQuery);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Videos to show based on active tab
@@ -363,8 +408,8 @@ export function TrendingPage() {
     : [];
 
   return (
-    <Shell active="trending">
-      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
+    <>
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
 
         {/* Header */}
         <div>
@@ -402,37 +447,76 @@ export function TrendingPage() {
             Search
           </button>
           {result && (
-            <button
-              onClick={() => doSearch(query, true)}
-              disabled={loading}
-              title="Force refresh — bypass cache"
-              className="flex h-11 w-11 items-center justify-center rounded-xl border
-                         border-white/[.08] bg-white/[.04] text-white/50 transition
-                         hover:border-white/20 hover:text-white/80 disabled:opacity-40"
-            >
-              <RefreshIcon spinning={loading} />
-            </button>
+            <>
+              <button
+                onClick={() => doSearch(query, true)}
+                disabled={loading}
+                title="Force refresh — bypass cache"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border
+                           border-white/[.08] bg-white/[.04] text-white/50 transition
+                           hover:border-white/20 hover:text-white/80 disabled:opacity-40"
+              >
+                <RefreshIcon spinning={loading} />
+              </button>
+              <button
+                onClick={() => { setResult(null); setQuery(""); }}
+                title="Clear results"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border
+                           border-white/[.08] bg-white/[.04] text-white/50 transition
+                           hover:border-red-500/30 hover:text-red-400"
+              >
+                ✕
+              </button>
+            </>
           )}
         </div>
 
-        {/* Suggestions */}
+        {/* History + Suggestions */}
         {!result && !loading && (
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/30">
-              Suggested searches
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {SUGGESTED.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => doSearch(s)}
-                  className="rounded-full border border-white/[.08] bg-white/[.04] px-3
-                             py-1.5 text-xs text-white/60 transition hover:border-[#ff3d6a]/40
-                             hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
-                >
-                  {s}
-                </button>
-              ))}
+          <div className="space-y-4">
+            {history.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-medium uppercase tracking-wider text-white/30">Recent searches</p>
+                  <button
+                    onClick={() => { clearHistory(); setHistory([]); }}
+                    className="text-[10px] text-white/30 transition hover:text-white/60"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {history.map((h) => (
+                    <button
+                      key={h}
+                      onClick={() => doSearch(h)}
+                      className="flex items-center gap-1.5 rounded-full border border-white/[.08] bg-white/[.04] px-3
+                                 py-1.5 text-xs text-white/70 transition hover:border-[#ff3d6a]/40
+                                 hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
+                    >
+                      <span className="text-white/30">↺</span>{h}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/30">
+                Suggested searches
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {SUGGESTED.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => doSearch(s)}
+                    className="rounded-full border border-white/[.08] bg-white/[.04] px-3
+                               py-1.5 text-xs text-white/60 transition hover:border-[#ff3d6a]/40
+                               hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -491,6 +575,7 @@ export function TrendingPage() {
                     key={`${v.platform}-${v.video_id}-${i}`}
                     video={v}
                     rank={activeTab === "all" ? i + 1 : undefined}
+                    searchQuery={query}
                   />
                 ))}
               </div>
@@ -530,6 +615,6 @@ export function TrendingPage() {
           </div>
         )}
       </div>
-    </Shell>
+    </>
   );
 }

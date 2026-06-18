@@ -16,6 +16,10 @@ Be direct, opinionated, and actionable. Write like a seasoned content strategist
 Trend score: {trend_confidence}
 Competitor opportunity score: {opportunity_score}
 Monetization score: {monetization_score}
+Trend research: {trend_summary}
+Competitor research: {competitor_summary}
+Monetization research: {monetization_summary}
+Audience research: {audience_summary}
 Top video ideas: {top_ideas}
 
 Write the niche verdict."""),
@@ -34,6 +38,10 @@ async def synthesizer_fn(state: BrainstormState, config: RunnableConfig) -> dict
     trend_confidence = state.get("trend_data", {}).get("confidence_score", "N/A")
     opportunity_score = state.get("competitor_data", {}).get("opportunity_score", "N/A")
     monetization_score = state.get("monetization_data", {}).get("monetization_score", "N/A")
+    trend_summary = str(state.get("trend_data", {}))[:800]
+    competitor_summary = str(state.get("competitor_data", {}))[:700]
+    monetization_summary = str(state.get("monetization_data", {}))[:700]
+    audience_summary = str(state.get("audience_data", {}))[:700]
     top_ideas = str(state.get("video_ideas", [])[:3])[:600]
 
     verdict = ""
@@ -42,6 +50,10 @@ async def synthesizer_fn(state: BrainstormState, config: RunnableConfig) -> dict
         "trend_confidence": trend_confidence,
         "opportunity_score": opportunity_score,
         "monetization_score": monetization_score,
+        "trend_summary": trend_summary,
+        "competitor_summary": competitor_summary,
+        "monetization_summary": monetization_summary,
+        "audience_summary": audience_summary,
         "top_ideas": top_ideas,
     }):
         content = getattr(chunk, "content", "") or ""

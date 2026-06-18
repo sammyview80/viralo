@@ -1,10 +1,14 @@
 import json
 import logging
+import uuid
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 
 from shared.auth import decode_token
+from shared.db import AsyncSessionLocal
+from agent.models import BrainstormSession
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
@@ -25,9 +29,23 @@ async def websocket_endpoint(
         if payload.get("type") != "access":
             await websocket.close(code=4001)
             return
+        session_uuid = uuid.UUID(session_id)
+        tenant_uuid = uuid.UUID(str(payload.get("tenant_id")))
     except Exception:
         await websocket.close(code=4001)
         return
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(BrainstormSession.id).where(
+                BrainstormSession.id == session_uuid,
+                BrainstormSession.tenant_id == tenant_uuid,
+                BrainstormSession.status != "deleted",
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            await websocket.close(code=4003)
+            return
 
     await websocket.accept()
 

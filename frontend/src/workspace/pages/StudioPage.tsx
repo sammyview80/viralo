@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { platforms } from "../data";
-import { Shell } from "../Shell";
 import { ChipRow, Panel, Phone, Ring, SelectLike } from "../components";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -613,7 +612,7 @@ export function StudioPage() {
   }, [clipConfig]);
 
   return (
-    <Shell active="studio">
+    <>
       {ytModalOpen && (
         <YoutubeImportModal
           initialUrl={ytInitialUrl}
@@ -790,6 +789,6 @@ export function StudioPage() {
         )}
 
       </div>
-    </Shell>
+    </>
   );
 }

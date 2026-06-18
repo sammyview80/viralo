@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Shell } from "../Shell";
 import { platformApi, type SocialAccount, type ScheduledPost, type CalendarDay } from "@/lib/api";
 import { Pagination } from "../components/Pagination";
 
@@ -651,7 +650,7 @@ function ScheduleModal({
 }: {
   accounts: SocialAccount[];
   onClose: () => void;
-  onSubmit: (data: { clip_id: string; social_account_id: string; platform: string; scheduled_at: string; caption: string; hashtags: string[] }) => Promise<void>;
+  onSubmit: (data: { clip_id: string; social_account_id: string; platform: string; scheduled_at: string; caption: string; hashtags: string[]; platform_kwargs?: Record<string, unknown> }) => Promise<void>;
 }) {
   const [clipId, setClipId] = useState("");
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
@@ -661,8 +660,15 @@ function ScheduleModal({
   });
   const [caption, setCaption] = useState("");
   const [hashtagsRaw, setHashtagsRaw] = useState("");
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytDescription, setYtDescription] = useState("");
+  const [ytTagsRaw, setYtTagsRaw] = useState("");
+  const [ytMadeForKids, setYtMadeForKids] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const selectedAcc = accounts.find((a) => a.id === accountId);
+  const isYouTube = ["youtube", "shorts"].includes(selectedAcc?.platform?.toLowerCase() ?? "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -674,6 +680,12 @@ function ScheduleModal({
     try {
       const hashtags = hashtagsRaw.split(",").map((h) => h.trim().replace(/^#/, "")).filter(Boolean);
       const acc = accounts.find((a) => a.id === accountId);
+      const platform_kwargs: Record<string, unknown> | undefined = isYouTube ? {
+        title: ytTitle.trim() || undefined,
+        description: ytDescription.trim() || undefined,
+        tags: ytTagsRaw.split(",").map((t) => t.trim().replace(/^#/, "")).filter(Boolean),
+        made_for_kids: ytMadeForKids,
+      } : undefined;
       await onSubmit({
         clip_id: clipId.trim(),
         social_account_id: accountId,
@@ -681,6 +693,7 @@ function ScheduleModal({
         scheduled_at: new Date(scheduledAt).toISOString(),
         caption,
         hashtags,
+        platform_kwargs,
       });
       onClose();
     } catch (err: unknown) {
@@ -762,6 +775,59 @@ function ScheduleModal({
               onChange={(e) => setHashtagsRaw(e.target.value)}
             />
           </div>
+
+          {isYouTube && (
+            <>
+              <div>
+                <label className={labelCls}>YouTube Title</label>
+                <input
+                  className={inputCls}
+                  placeholder="Video title (defaults to caption)"
+                  value={ytTitle}
+                  onChange={(e) => setYtTitle(e.target.value)}
+                  maxLength={100}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>YouTube Description</label>
+                <textarea
+                  className={cn(inputCls, "min-h-[80px] resize-none")}
+                  placeholder="Video description (defaults to caption)"
+                  value={ytDescription}
+                  onChange={(e) => setYtDescription(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Tags (comma-separated)</label>
+                <input
+                  className={inputCls}
+                  placeholder="funny, animals, trending"
+                  value={ytTagsRaw}
+                  onChange={(e) => setYtTagsRaw(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-[9px] border border-white/[.07] bg-[#0b101a] px-3 py-2.5">
+                <span className="text-sm text-zinc-300">Made for kids</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={ytMadeForKids}
+                  onClick={() => setYtMadeForKids((v) => !v)}
+                  className={cn(
+                    "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                    ytMadeForKids ? "bg-[#ff3d6a]" : "bg-zinc-700"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition-transform",
+                      ytMadeForKids ? "translate-x-4" : "translate-x-0"
+                    )}
+                  />
+                </button>
+              </div>
+            </>
+          )}
 
           {error && (
             <p className="rounded-[8px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
@@ -1091,6 +1157,7 @@ export function SchedulerPage() {
     scheduled_at: string;
     caption: string;
     hashtags: string[];
+    platform_kwargs?: Record<string, unknown>;
   }) {
     const post = await platformApi.schedulePost(data);
     const enriched: ScheduledPost = { ...post };
@@ -1111,7 +1178,7 @@ export function SchedulerPage() {
   const totalPostsThisMonth = calendarData.reduce((sum, cd) => sum + cd.posts.length, 0);
 
   return (
-    <Shell active="scheduler">
+    <>
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0e1420]">
         {/* Header */}
         <div className="flex flex-col items-stretch gap-3 border-b border-white/[.07] bg-[#0b101a] p-3 sm:p-4 lg:flex-row lg:flex-wrap lg:items-center">
@@ -1399,7 +1466,7 @@ export function SchedulerPage() {
           onSubmit={handleSchedule}
         />
       )}
-    </Shell>
+    </>
   );
 }
 

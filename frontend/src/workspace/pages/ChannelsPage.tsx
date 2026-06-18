@@ -1,9 +1,134 @@
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Shell } from "../Shell";
-import { channelsApi, type ChannelSubscription, type ChannelVideo } from "@/lib/api";
+import { channelsApi, type ChannelSubscription, type ChannelVideo, type AutoPublishConfig, DEFAULT_AUTO_PUBLISH_CONFIG } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
+
+const ASPECT_RATIOS = ["9:16", "1:1", "16:9", "4:5"];
+const PLATFORM_OPTIONS = ["tiktok", "instagram", "youtube", "twitter", "linkedin", "facebook"];
+
+function AutoPublishForm({
+  config,
+  onChange,
+}: {
+  config: AutoPublishConfig;
+  onChange: (c: AutoPublishConfig) => void;
+}) {
+  function set<K extends keyof AutoPublishConfig>(key: K, val: AutoPublishConfig[K]) {
+    onChange({ ...config, [key]: val });
+  }
+
+  function togglePlatform(p: string) {
+    const has = config.platforms.includes(p);
+    set("platforms", has ? config.platforms.filter((x) => x !== p) : [...config.platforms, p]);
+  }
+
+  return (
+    <div className="space-y-3 rounded-[11px] border border-blue-500/20 bg-blue-500/[.04] p-4">
+      <p className="text-[11px] font-bold uppercase tracking-[.1em] text-blue-400">Auto-Publish Config</p>
+
+      {/* Clips + aspect ratio */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="mb-1 block text-[10px] text-zinc-500">Clips per video</label>
+          <input
+            type="number" min={1} max={10} value={config.num_clips}
+            onChange={(e) => set("num_clips", parseInt(e.target.value) || 4)}
+            className="h-8 w-full rounded-[7px] border border-white/[.07] bg-[#111827] px-2 text-[12px] text-white outline-none focus:border-blue-500/40"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-zinc-500">Aspect ratio</label>
+          <select
+            value={config.aspect_ratio}
+            onChange={(e) => set("aspect_ratio", e.target.value)}
+            className="h-8 w-full rounded-[7px] border border-white/[.07] bg-[#111827] px-2 text-[12px] text-white outline-none"
+          >
+            {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Publish per day + interval */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="mb-1 block text-[10px] text-zinc-500">Posts per day</label>
+          <input
+            type="number" min={1} max={20} value={config.publish_per_day}
+            onChange={(e) => set("publish_per_day", parseInt(e.target.value) || 3)}
+            className="h-8 w-full rounded-[7px] border border-white/[.07] bg-[#111827] px-2 text-[12px] text-white outline-none focus:border-blue-500/40"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-zinc-500">Interval (hours)</label>
+          <input
+            type="number" min={1} max={24} value={config.publish_interval_hours}
+            onChange={(e) => set("publish_interval_hours", parseInt(e.target.value) || 8)}
+            className="h-8 w-full rounded-[7px] border border-white/[.07] bg-[#111827] px-2 text-[12px] text-white outline-none focus:border-blue-500/40"
+          />
+        </div>
+      </div>
+
+      {/* Clip duration */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="mb-1 block text-[10px] text-zinc-500">Min clip (sec)</label>
+          <input
+            type="number" min={10} max={300} value={config.min_clip_duration}
+            onChange={(e) => set("min_clip_duration", parseInt(e.target.value) || 30)}
+            className="h-8 w-full rounded-[7px] border border-white/[.07] bg-[#111827] px-2 text-[12px] text-white outline-none focus:border-blue-500/40"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-zinc-500">Max clip (sec)</label>
+          <input
+            type="number" min={10} max={300} value={config.max_clip_duration}
+            onChange={(e) => set("max_clip_duration", parseInt(e.target.value) || 60)}
+            className="h-8 w-full rounded-[7px] border border-white/[.07] bg-[#111827] px-2 text-[12px] text-white outline-none focus:border-blue-500/40"
+          />
+        </div>
+      </div>
+
+      {/* Platforms */}
+      <div>
+        <label className="mb-1.5 block text-[10px] text-zinc-500">Publish to</label>
+        <div className="flex flex-wrap gap-1.5">
+          {PLATFORM_OPTIONS.map((p) => (
+            <button
+              key={p} type="button"
+              onClick={() => togglePlatform(p)}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[11px] font-medium capitalize transition",
+                config.platforms.includes(p)
+                  ? "border-blue-500/40 bg-blue-500/15 text-blue-300"
+                  : "border-white/[.07] bg-white/[.03] text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Caption template */}
+      <div>
+        <label className="mb-1 block text-[10px] text-zinc-500">Caption template</label>
+        <input
+          type="text" value={config.caption_template}
+          onChange={(e) => set("caption_template", e.target.value)}
+          placeholder="#viral #shorts"
+          className="h-8 w-full rounded-[7px] border border-white/[.07] bg-[#111827] px-2 text-[12px] text-white placeholder:text-zinc-600 outline-none focus:border-blue-500/40"
+        />
+      </div>
+
+      {/* Burn captions */}
+      <label className="flex cursor-pointer select-none items-center gap-2 text-[12px] text-zinc-400">
+        <input type="checkbox" checked={config.burn_captions} onChange={(e) => set("burn_captions", e.target.checked)} className="h-3.5 w-3.5 rounded accent-blue-500" />
+        Burn captions into clips
+      </label>
+    </div>
+  );
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -53,9 +178,10 @@ function avatarGradient(seed: string) {
 }
 
 /* ─── Add channel modal ─── */
-function AddChannelModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [urlInput, setUrlInput] = useState("");
+function AddChannelModal({ onClose, onSuccess, initialUrl }: { onClose: () => void; onSuccess: () => void; initialUrl?: string }) {
+  const [urlInput, setUrlInput] = useState(initialUrl ?? "");
   const [autoPublish, setAutoPublish] = useState(false);
+  const [apConfig, setApConfig] = useState<AutoPublishConfig>({ ...DEFAULT_AUTO_PUBLISH_CONFIG });
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [resolved, setResolved] = useState<{ channel_id: string; channel_name: string } | null>(null);
@@ -77,7 +203,12 @@ function AddChannelModal({ onClose, onSuccess }: { onClose: () => void; onSucces
     if (!urlInput.trim()) { setErr("Channel URL or ID is required"); return; }
     setLoading(true); setErr(null);
     try {
-      await channelsApi.subscribe({ channel_id: urlInput.trim(), channel_url: urlInput.trim(), auto_publish: autoPublish });
+      await channelsApi.subscribe({
+        channel_id: urlInput.trim(),
+        channel_url: urlInput.trim(),
+        auto_publish: autoPublish,
+        auto_publish_config: autoPublish ? apConfig : undefined,
+      });
       onSuccess();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Failed to subscribe");
@@ -87,7 +218,7 @@ function AddChannelModal({ onClose, onSuccess }: { onClose: () => void; onSucces
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-[460px] overflow-hidden rounded-[18px] border border-white/[.10] bg-[#0e1420] shadow-[0_32px_80px_rgba(0,0,0,.6)]"
+      <div className="w-full max-w-[480px] max-h-[90vh] overflow-y-auto rounded-[18px] border border-white/[.10] bg-[#0e1420] shadow-[0_32px_80px_rgba(0,0,0,.6)]"
         style={{ animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}>
         <div className="flex items-center justify-between border-b border-white/[.07] px-5 py-4">
           <div>
@@ -128,6 +259,10 @@ function AddChannelModal({ onClose, onSuccess }: { onClose: () => void; onSucces
             <input type="checkbox" checked={autoPublish} onChange={(e) => setAutoPublish(e.target.checked)} className="h-4 w-4 rounded accent-[#ff3d6a]" />
             Auto-publish clips from this channel
           </label>
+
+          {autoPublish && (
+            <AutoPublishForm config={apConfig} onChange={setApConfig} />
+          )}
 
           {err && <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-[12px] text-red-400">{err}</p>}
 
@@ -320,6 +455,12 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
 }) {
   const [removing, setRemoving] = useState(false);
   const [renewing, setRenewing] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [editingConfig, setEditingConfig] = useState(false);
+  const [apEnabled, setApEnabled] = useState(channel.auto_publish);
+  const [apConfig, setApConfig] = useState<AutoPublishConfig>(
+    channel.auto_publish_config ?? { ...DEFAULT_AUTO_PUBLISH_CONFIG }
+  );
   const [tab, setTab] = useState<"top" | "recent">("top");
   const [orderBy, setOrderBy] = useState<"viewCount" | "date" | "rating">("viewCount");
   const [hideClipped, setHideClipped] = useState(false);
@@ -371,6 +512,18 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
     } finally { setRenewing(false); }
   }
 
+  async function handleSaveConfig() {
+    setSavingConfig(true);
+    try {
+      await channelsApi.update(channel.channel_id, {
+        auto_publish: apEnabled,
+        auto_publish_config: apConfig,
+      });
+      setEditingConfig(false);
+      onRefresh();
+    } finally { setSavingConfig(false); }
+  }
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {/* Header */}
@@ -411,6 +564,70 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Auto-publish config section */}
+      <div className="border-b border-white/[.06] px-5 py-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-bold uppercase tracking-[.1em] text-zinc-500">Auto-Publish</p>
+          <div className="flex items-center gap-2">
+            {editingConfig ? (
+              <>
+                <button onClick={() => setEditingConfig(false)}
+                  className="rounded-[7px] border border-white/[.07] px-2.5 py-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition">
+                  Cancel
+                </button>
+                <button onClick={handleSaveConfig} disabled={savingConfig}
+                  className="rounded-[7px] bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-50 transition">
+                  {savingConfig ? "Saving…" : "Save"}
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setEditingConfig(true)}
+                className="rounded-[7px] border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white transition">
+                Edit
+              </button>
+            )}
+          </div>
+        </div>
+
+        {editingConfig ? (
+          <>
+            <label className="flex cursor-pointer select-none items-center gap-2 text-[12px] text-zinc-300">
+              <input type="checkbox" checked={apEnabled} onChange={(e) => setApEnabled(e.target.checked)} className="h-3.5 w-3.5 rounded accent-[#ff3d6a]" />
+              Enable auto-publish
+            </label>
+            {apEnabled && <AutoPublishForm config={apConfig} onChange={setApConfig} />}
+          </>
+        ) : (
+          <div className="space-y-1.5 text-[12px]">
+            <div className="flex justify-between text-zinc-500">
+              <span>Status</span>
+              {apEnabled
+                ? <span className="text-blue-400 font-medium">Enabled</span>
+                : <span className="text-zinc-600">Disabled</span>}
+            </div>
+            {apEnabled && (
+              <>
+                <div className="flex justify-between text-zinc-500">
+                  <span>Clips</span><span className="text-zinc-300">{apConfig.num_clips} · {apConfig.aspect_ratio}</span>
+                </div>
+                <div className="flex justify-between text-zinc-500">
+                  <span>Per day</span><span className="text-zinc-300">{apConfig.publish_per_day} posts · every {apConfig.publish_interval_hours}h</span>
+                </div>
+                <div className="flex justify-between text-zinc-500">
+                  <span>Clip length</span><span className="text-zinc-300">{apConfig.min_clip_duration}–{apConfig.max_clip_duration}s</span>
+                </div>
+                {apConfig.platforms.length > 0 && (
+                  <div className="flex justify-between text-zinc-500">
+                    <span>Platforms</span>
+                    <span className="text-zinc-300 capitalize">{apConfig.platforms.join(", ")}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Videos tabs */}
@@ -514,10 +731,14 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
 
 /* ─── Page ─── */
 export default function ChannelsPage() {
+  const params = new URLSearchParams(window.location.search);
+  const initialChannelUrl = params.get("channel_url") ?? undefined;
+  const redirectQuery = params.get("q") ?? undefined;
+
   const [channels, setChannels] = useState<ChannelSubscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(!!initialChannelUrl);
   const [search, setSearch] = useState("");
   const [success, setSuccess] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "inactive" | "auto" | "soon" | "expired">("all");
@@ -535,10 +756,21 @@ export default function ChannelsPage() {
 
   useEffect(() => { load(); }, []);
 
+  function redirectBack() {
+    if (redirectQuery) {
+      navigate(`/trending?q=${encodeURIComponent(redirectQuery)}`);
+    }
+  }
+
   function handleSuccess() {
     setShowForm(false); setSuccess(true);
     load();
-    setTimeout(() => setSuccess(false), 3000);
+    setTimeout(() => { setSuccess(false); redirectBack(); }, 1500);
+  }
+
+  function handleModalClose() {
+    setShowForm(false);
+    redirectBack();
   }
 
   function handleUnsubscribe(id: string) {
@@ -579,7 +811,7 @@ export default function ChannelsPage() {
   ];
 
   return (
-    <Shell active="channels">
+    <>
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0b1018] shadow-[0_18px_80px_rgba(0,0,0,.28)]">
 
         {/* Header */}
@@ -722,7 +954,7 @@ export default function ChannelsPage() {
         </div>
       </div>
 
-      {showForm && <AddChannelModal onClose={() => setShowForm(false)} onSuccess={handleSuccess} />}
-    </Shell>
+      {showForm && <AddChannelModal onClose={handleModalClose} onSuccess={handleSuccess} initialUrl={initialChannelUrl} />}
+    </>
   );
 }

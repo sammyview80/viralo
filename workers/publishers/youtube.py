@@ -15,7 +15,8 @@ CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET") or os.getenv("GOOGLE_CLIENT_S
 class YouTubePublisher(BasePublisher):
     def publish(self, video_path: str, caption: str, hashtags: list[str], access_token: str,
                 refresh_token: Optional[str] = None, title: str = "", description: str = "",
-                category_id: str = "22", privacy: str = "public", **kwargs) -> PublishResult:
+                tags: Optional[list] = None, category_id: str = "22", privacy: str = "public",
+                made_for_kids: bool = False, **kwargs) -> PublishResult:
         try:
             from googleapiclient.discovery import build
             from googleapiclient.http import MediaFileUpload
@@ -30,15 +31,18 @@ class YouTubePublisher(BasePublisher):
             )
             youtube = build("youtube", "v3", credentials=creds)
 
-            tags = [h.lstrip("#") for h in hashtags]
+            snippet_tags = tags if tags is not None else [h.lstrip("#") for h in hashtags]
             body = {
                 "snippet": {
                     "title": title or caption[:100],
                     "description": description or caption,
-                    "tags": tags,
+                    "tags": snippet_tags,
                     "categoryId": category_id,
                 },
-                "status": {"privacyStatus": privacy},
+                "status": {
+                    "privacyStatus": privacy,
+                    "madeForKids": made_for_kids,
+                },
             }
             media = MediaFileUpload(video_path, mimetype="video/*", resumable=True, chunksize=5 * 1024 * 1024)
             request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)

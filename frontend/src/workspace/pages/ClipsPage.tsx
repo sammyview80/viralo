@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, safeFilename, downloadUrl } from "@/lib/utils";
-import { Shell } from "../Shell";
 import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
@@ -270,8 +269,17 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
     const account = accounts.find((a) => a.id === selectedAccountId);
     if (!account) return;
     const hashtagList = hashtags.split(",").map((h) => h.trim().replace(/^#/, "")).filter(Boolean);
+    const isYouTube = ["youtube", "shorts"].includes(account.platform.toLowerCase());
+    const platformKey = platformKeyMap[account.platform.toLowerCase()] ?? account.platform.toLowerCase();
+    const platContent = clip.clip_metadata?.platforms?.[platformKey];
+    const platform_kwargs = isYouTube ? {
+      title: clip.clip_metadata?.ai_title ?? clip.title ?? undefined,
+      description: caption || platContent?.description || undefined,
+      tags: hashtagList.length > 0 ? hashtagList : (platContent?.tags ?? []),
+      made_for_kids: false,
+    } : undefined;
     setSubmitting(true); setError(null);
-    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: new Date(scheduledAt).toISOString(), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined }); setSuccess(true); setTimeout(onClose, 1500); }
+    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: new Date(scheduledAt).toISOString(), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined, platform_kwargs }); setSuccess(true); setTimeout(onClose, 1500); }
     catch (e) { setError(e instanceof Error ? e.message : "Something went wrong."); }
     finally { setSubmitting(false); }
   }
@@ -957,7 +965,7 @@ export function ClipsPage() {
   function clearFilters() { setPlatforms(new Set()); setStatuses(new Set()); setDurations(new Set()); setScores(new Set()); setPublished(new Set()); setSearch(""); setMinViralityScore(0); setPage(1); }
 
   return (
-    <Shell active="clips">
+    <>
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0b1018] shadow-[0_18px_80px_rgba(0,0,0,.28)]">
         {/* Header */}
         <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
@@ -1411,7 +1419,7 @@ export function ClipsPage() {
         />
       )}
       <EmojiOverlay emojis={emojis} />
-    </Shell>
+    </>
   );
 }
 

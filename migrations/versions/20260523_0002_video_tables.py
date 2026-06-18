@@ -54,7 +54,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE transcripts FORCE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY tenant_isolation ON transcripts
-        USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     """)
 
     # D) Create captions table
@@ -81,7 +81,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE captions FORCE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY tenant_isolation ON captions
-        USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     """)
 
 

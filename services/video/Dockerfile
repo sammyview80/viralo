@@ -6,8 +6,8 @@ FROM base AS development
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg nodejs npm \
     && rm -rf /var/lib/apt/lists/*
-# Update yt-dlp to latest and configure Node.js as JS runtime
-RUN pip install -U yt-dlp
+# Update yt-dlp to latest; curl_cffi enables TikTok impersonation
+RUN pip install -U yt-dlp curl_cffi
 COPY shared/ ./shared/
 COPY workers/ ./workers/
 COPY services/video/ ./services/video/
@@ -19,8 +19,8 @@ FROM base AS production
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg nodejs npm \
     && rm -rf /var/lib/apt/lists/*
-# Update yt-dlp to latest and configure Node.js as JS runtime
-RUN pip install -U yt-dlp
+# Update yt-dlp to latest; curl_cffi enables TikTok impersonation
+RUN pip install -U yt-dlp curl_cffi
 COPY shared/ ./shared/
 COPY workers/ ./workers/
 COPY services/video/ ./services/video/

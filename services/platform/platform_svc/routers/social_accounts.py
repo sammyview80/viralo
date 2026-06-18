@@ -228,7 +228,7 @@ def _exchange_code(platform: str, code: str, redirect_uri: str, code_verifier: s
                 "code": code,
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
-                "code_verifier": "challenge",  # PKCE — caller must provide; defaulted for basic flows
+                "code_verifier": code_verifier or "",  # frontend must send the per-flow verifier
             },
             headers={
                 "Authorization": f"Basic {credentials}",
@@ -442,6 +442,7 @@ async def oauth_connect(
     else:
         account = SocialAccount(
             id=uuid.uuid4(),
+            tenant_id=uuid.UUID(token.tenant_id),
             platform=platform,
             platform_user_id=platform_user_id,
             platform_username=platform_username,

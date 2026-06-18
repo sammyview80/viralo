@@ -22,6 +22,21 @@ SYNC_PG_URL = SYNC_DATABASE_URL.replace("postgresql+asyncpg", "postgresql")
 redis_client = redis_sync.from_url(REDIS_URL)
 engine = create_engine(SYNC_DATABASE_URL, pool_pre_ping=True)
 
+AGENT_ORDER = [
+    "viral_search_agent",
+    "trend_agent",
+    "competitor_agent",
+    "monetization_agent",
+    "audience_agent",
+    "content_agent",
+    "synthesizer",
+]
+
+NEXT_AGENT = {
+    agent: AGENT_ORDER[index + 1] if index + 1 < len(AGENT_ORDER) else None
+    for index, agent in enumerate(AGENT_ORDER)
+}
+
 
 @contextmanager
 def _get_session(tenant_id: str | None = None):
@@ -39,7 +54,15 @@ def _get_session(tenant_id: str | None = None):
 def _update_session(tenant_id: str, session_id: str, **kwargs) -> None:
     if not kwargs:
         return
-    set_parts = ", ".join(f"{k} = :{k}" for k in kwargs)
+    set_exprs = []
+    for key in kwargs:
+        if key == "agents_completed":
+            set_exprs.append(f"{key} = CAST(:{key} AS text[])")
+        elif key == "video_ideas":
+            set_exprs.append(f"{key} = CAST(:{key} AS jsonb)")
+        else:
+            set_exprs.append(f"{key} = :{key}")
+    set_parts = ", ".join(set_exprs)
     with _get_session(tenant_id) as session:
         session.execute(
             text(f"UPDATE brainstorm_sessions SET {set_parts}, updated_at = NOW() WHERE id = CAST(:sid AS uuid)"),
@@ -51,7 +74,7 @@ def _save_agent_message(tenant_id: str, session_id: str, agent: str, msg_type: s
     with _get_session(tenant_id) as session:
         session.execute(
             text("""
-                INSERT INTO agent_messages (id, tenant_id, session_id, agent, msg_type, content, metadata, created_at)
+                INSERT INTO agent_messages (id, tenant_id, session_id, agent, msg_type, content, msg_metadata, created_at)
                 VALUES (gen_random_uuid(), CAST(:tid AS uuid), CAST(:sid AS uuid), :agent, :msg_type, :content, CAST(:msg_metadata AS jsonb), NOW())
             """),
             {
@@ -151,7 +174,13 @@ def _run_session_sync(tenant_id: str, session_id: str):
                 {"tid": thread_id, "sid": session_id},
             )
 
-    _update_session(tenant_id, session_id, status="running", current_agent="trend_agent")
+    _update_session(
+        tenant_id,
+        session_id,
+        status="running",
+        current_agent=AGENT_ORDER[0],
+        agents_completed=[],
+    )
 
     try:
         asyncio.run(_run_graph(tenant_id, session_id, topic, thread_id, tenant))
@@ -214,10 +243,33 @@ async def _run_graph(tenant_id: str, session_id: str, topic: str, thread_id: str
 
         # Check if checkpoint exists — resume if yes, start fresh if no
         checkpoint_tuple = await checkpointer.aget_tuple(config)
-        if checkpoint_tuple and checkpoint_tuple.checkpoint:
-            result = await app.ainvoke(None, config=config)
-        else:
-            result = await app.ainvoke(initial_state, config=config)
+        graph_input = None if checkpoint_tuple and checkpoint_tuple.checkpoint else initial_state
+        result = initial_state.copy()
+        completed_agents: list[str] = []
+
+        async for update in app.astream(graph_input, config=config, stream_mode="updates"):
+            if not isinstance(update, dict):
+                continue
+
+            for agent_name, values in update.items():
+                if agent_name not in AGENT_ORDER:
+                    continue
+                if isinstance(values, dict):
+                    result.update(values)
+                if agent_name not in completed_agents:
+                    completed_agents.append(agent_name)
+
+                _update_session(
+                    tenant_id,
+                    session_id,
+                    status="running",
+                    current_agent=NEXT_AGENT[agent_name],
+                    agents_completed=completed_agents,
+                )
+
+        state_snapshot = await app.aget_state(config)
+        if isinstance(state_snapshot.values, dict):
+            result.update(state_snapshot.values)
 
     # Persist results
     video_ideas = result.get("video_ideas", [])

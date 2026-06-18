@@ -207,13 +207,17 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
     for sub in subs:
         sub_id, tenant_id, auto_publish, pub_cfg, channel_name = sub
         job_id = str(uuid.uuid4())
+        ap_cfg = pub_cfg or {}
         cfg = {
-            "num_clips": 5,
-            "platforms": ["tiktok", "reels", "shorts"],
+            "max_clips": int(ap_cfg.get("num_clips", 4)),
+            "aspect_ratio": ap_cfg.get("aspect_ratio", "9:16"),
+            "platforms": ap_cfg.get("platforms", ["tiktok", "reels", "shorts"]),
+            "duration_min": int(ap_cfg.get("min_clip_duration", 30)),
+            "duration_max": int(ap_cfg.get("max_clip_duration", 60)),
             "output_quality": "source",
-            "burn_captions": False,
+            "burn_captions": bool(ap_cfg.get("burn_captions", False)),
             "auto_publish": auto_publish,
-            "auto_publish_config": pub_cfg or {},
+            "auto_publish_config": ap_cfg,
             "source": "websub",
             "channel_id": channel_id,
         }

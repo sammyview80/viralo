@@ -43,6 +43,9 @@ async def get_current_user(
 async def get_tenant_db(
     token: TokenPayload = Depends(get_current_user),
 ) -> AsyncGenerator[AsyncSession, None]:
+    from fastapi import HTTPException as _HTTPException
+    if not token.tenant_id:
+        raise _HTTPException(status_code=403, detail="Onboarding incomplete — no workspace associated with this account")
     async with AsyncSessionLocal() as session:
         try:
             # PostgreSQL SET doesn't support bind params — UUID is safe to embed directly

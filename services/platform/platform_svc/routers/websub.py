@@ -120,6 +120,7 @@ class ChannelResponse(BaseModel):
     channel_name: str | None
     channel_url: str | None
     auto_publish: bool
+    auto_publish_config: dict
     active: bool
     subscribed_at: datetime | None
     lease_expires_at: datetime | None
@@ -139,7 +140,7 @@ async def list_channels(
     result = await db.execute(
         text("""
             SELECT id, channel_id, channel_name, channel_url,
-                   auto_publish, active, subscribed_at, lease_expires_at,
+                   auto_publish, auto_publish_config, active, subscribed_at, lease_expires_at,
                    last_video_id, last_notified_at, created_at
             FROM channel_subscriptions
             WHERE tenant_id = :tid
@@ -148,7 +149,13 @@ async def list_channels(
         {"tid": current_user.tenant_id},
     )
     rows = result.fetchall()
-    return [dict(r._mapping) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r._mapping)
+        if d.get("auto_publish_config") is None:
+            d["auto_publish_config"] = {}
+        out.append(d)
+    return out
 
 
 async def _resolve_channel_id(input_str: str) -> tuple[str, str]:
@@ -156,7 +163,7 @@ async def _resolve_channel_id(input_str: str) -> tuple[str, str]:
     Resolve any YouTube URL / @handle / UCxxxxxx to (channel_id, channel_name).
     Tries yt-dlp channel page scrape via oEmbed then RSS probe.
     """
-    import httpx, re as _re
+    import os, httpx, re as _re
 
     s = input_str.strip()
 
@@ -182,28 +189,67 @@ async def _resolve_channel_id(input_str: str) -> tuple[str, str]:
     elif _re.match(r'^@?([\w.-]+)$', s):
         handle = s.lstrip('@')
 
+    _YT_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    def _extract_channel_from_html(html: str, fallback_name: str = "") -> tuple[str, str] | None:
+        cid_match = (
+            _re.search(r'"externalId":"(UC[\w-]{22})"', html) or
+            _re.search(r'"externalChannelId":"(UC[\w-]{22})"', html) or
+            _re.search(r'"channelId":"(UC[\w-]{22})"', html) or
+            _re.search(r'"browseId":"(UC[\w-]{22})"', html)
+        )
+        name_match = (
+            _re.search(r'"og:title" content="([^"]+)"', html) or
+            _re.search(r'"channelName":"([^"]+)"', html) or
+            _re.search(r'"author":"([^"]+)"', html)
+        )
+        if cid_match:
+            name = name_match.group(1) if name_match else fallback_name
+            return cid_match.group(1), name
+        return None
+
+    # Handle YouTube watch URLs — use YouTube Data API to get channel from video
+    vid_m = _re.search(r'(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})', s)
+    if vid_m:
+        vid_id = vid_m.group(1)
+        yt_key = os.getenv("YOUTUBE_API_KEY", "")
+        if yt_key:
+            try:
+                async with httpx.AsyncClient(timeout=10) as c:
+                    r = await c.get(
+                        "https://www.googleapis.com/youtube/v3/videos",
+                        params={"part": "snippet", "id": vid_id, "key": yt_key},
+                    )
+                items = r.json().get("items", [])
+                if items:
+                    snip = items[0]["snippet"]
+                    cid = snip.get("channelId", "")
+                    name = snip.get("channelTitle", "")
+                    if cid:
+                        return cid, name
+            except Exception:
+                pass
+        # Fallback: scrape video page
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
+                r = await c.get(s, headers=_YT_HEADERS)
+            result = _extract_channel_from_html(r.text)
+            if result:
+                return result
+        except Exception:
+            pass
+
     if handle:
         url = f"https://www.youtube.com/@{handle}"
         try:
             async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
-                r = await c.get(url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-                    "Accept-Language": "en-US,en;q=0.9",
-                })
-            # Extract channelId from page HTML
-            cid_match = (
-                _re.search(r'"externalId":"(UC[\w-]{22})"', r.text) or
-                _re.search(r'"channelId":"(UC[\w-]{22})"', r.text) or
-                _re.search(r'"browseId":"(UC[\w-]{22})"', r.text)
-            )
-            name_match = (
-                _re.search(r'"og:title" content="([^"]+)"', r.text) or
-                _re.search(r'"channelName":"([^"]+)"', r.text) or
-                _re.search(r'"author":"([^"]+)"', r.text)
-            )
-            if cid_match:
-                name = name_match.group(1) if name_match else handle
-                return cid_match.group(1), name
+                r = await c.get(url, headers=_YT_HEADERS)
+            result = _extract_channel_from_html(r.text, handle)
+            if result:
+                return result
         except Exception:
             pass
 
@@ -238,6 +284,38 @@ async def add_channel(
         queue="viralo.post.publish",
     )
     return {"channel_id": channel_id, "channel_name": channel_name, "status": "subscribing"}
+
+
+class UpdateChannelRequest(BaseModel):
+    auto_publish: bool | None = None
+    auto_publish_config: dict | None = None
+
+
+@router.patch("/websub/channels/{channel_id}", status_code=200)
+async def update_channel(
+    channel_id: str,
+    req: UpdateChannelRequest,
+    db: AsyncSession = Depends(get_tenant_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    import json as _json
+    sets = []
+    params: dict = {"cid": channel_id, "tid": current_user.tenant_id}
+    if req.auto_publish is not None:
+        sets.append("auto_publish = :ap")
+        params["ap"] = req.auto_publish
+    if req.auto_publish_config is not None:
+        sets.append("auto_publish_config = :cfg")
+        params["cfg"] = _json.dumps(req.auto_publish_config)
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    sets.append("updated_at = now()")
+    await db.execute(
+        text(f"UPDATE channel_subscriptions SET {', '.join(sets)} WHERE channel_id = :cid AND tenant_id = :tid"),
+        params,
+    )
+    await db.commit()
+    return {"channel_id": channel_id, "updated": True}
 
 
 @router.get("/websub/channels/{channel_id}/videos")
