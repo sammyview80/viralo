@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { nav, groups } from "./data";
 import type { PageKey } from "./types";
 import { useAuth, logout } from "@/stores/auth";
+import { usePlan } from "@/hooks/usePlan";
 import { navigate } from "@/lib/router";
 import { NotificationBell } from "./components/NotificationBell";
 import { ToastContainer } from "./components/ToastContainer";
@@ -18,7 +19,7 @@ const PAGE_LABELS: Record<string, string> = {
   studio: "Video Studio", clips: "Clips", projects: "Projects", upload: "Uploader",
   brainstorm: "Brainstorm", workflows: "Workflow Builder", scheduler: "Scheduler",
   analytics: "Analytics", trending: "Trending", integrations: "Integrations",
-  settings: "Settings", onboarding: "Onboarding",
+  settings: "Settings", onboarding: "Onboarding", ranking: "Video Ranking",
 };
 
 /* ─── Sidebar ─── */
@@ -188,6 +189,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
   const [collapsed, setCollapsed] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const { user } = useAuth();
+  const { isAtLeast } = usePlan();
 
   useEffect(() => {
     fetchUnreadCount();
@@ -204,7 +206,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
   const sideW = collapsed ? 62 : 216;
   const shellStyle = { "--sidebar-width": `${sideW}px` } as CSSProperties;
   const initials = (user?.full_name ?? user?.email ?? "U").charAt(0).toUpperCase();
-  const isPro = (user?.plan ?? "").toLowerCase().includes("pro");
+  const isPro = isAtLeast("pro");
 
   return (
     <div className="relative min-h-screen" style={shellStyle}>

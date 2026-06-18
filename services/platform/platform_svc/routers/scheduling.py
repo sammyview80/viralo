@@ -107,6 +107,7 @@ async def create_scheduled_post(
         caption=body.caption,
         hashtags=body.hashtags,
         clip_storage_url=clip_storage_url,
+        platform_kwargs=body.platform_kwargs,
     )
     db.add(post)
     await db.commit()

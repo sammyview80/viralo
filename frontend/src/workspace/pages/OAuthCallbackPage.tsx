@@ -4,13 +4,17 @@ import { platformApi } from "@/lib/api";
 const REDIRECT = import.meta.env.VITE_OAUTH_REDIRECT
   || `${window.location.origin}/oauth/callback`;
 
-function detectPlatform(params: URLSearchParams): string | null {
-  const state = params.get("state");
-  if (state) return state;
-  // Google doesn't return state if we forgot to send it — detect by iss
-  const iss = params.get("iss") ?? "";
-  if (iss.includes("google") || iss.includes("accounts.google")) return "youtube";
-  return null;
+function readOAuthAttempt(state: string): { platform: string; codeVerifier?: string | null } | null {
+  try {
+    const raw = sessionStorage.getItem("oauth_state");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { platform?: string; state?: string; codeVerifier?: string | null };
+    if (parsed.state !== state || !parsed.platform) return null;
+    sessionStorage.removeItem("oauth_state");
+    return { platform: parsed.platform, codeVerifier: parsed.codeVerifier ?? null };
+  } catch {
+    return null;
+  }
 }
 
 export function OAuthCallbackPage() {
@@ -21,7 +25,9 @@ export function OAuthCallbackPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
-    const plat = detectPlatform(params);
+    const state = params.get("state");
+    const attempt = state ? readOAuthAttempt(state) : null;
+    const plat = attempt?.platform ?? null;
 
     if (!code) {
       setStatus("error");
@@ -37,9 +43,8 @@ export function OAuthCallbackPage() {
     setPlatform(plat);
 
     const extra: Record<string, string> = {};
-    if (plat === "tiktok") {
-      const cv = sessionStorage.getItem("tiktok_cv");
-      if (cv) { extra.code_verifier = cv; sessionStorage.removeItem("tiktok_cv"); }
+    if (plat === "tiktok" && attempt?.codeVerifier) {
+      extra.code_verifier = attempt.codeVerifier;
     }
 
     platformApi

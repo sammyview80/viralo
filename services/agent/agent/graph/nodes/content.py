@@ -19,9 +19,10 @@ estimated_views_potential (low/medium/high/viral), virality_score (0-100), reaso
     ("human", """Topic: {topic}
 Trends: {trend_summary}
 Gaps: {gaps_summary}
+Monetization: {monetization_summary}
 Audience: {audience_summary}
 
-Generate 10 viral video ideas."""),
+Generate 10 viral video ideas that balance trend momentum, audience fit, and monetization potential."""),
 ])
 
 
@@ -33,6 +34,7 @@ async def content_agent_fn(state: BrainstormState, config: RunnableConfig) -> di
 
     trend_summary = str(state.get("trend_data", {}))[:400]
     gaps_summary = str(state.get("competitor_data", {}).get("content_gaps", []))[:300]
+    monetization_summary = str(state.get("monetization_data", {}))[:400]
     audience_summary = str(state.get("audience_data", {}))[:400]
 
     await broadcast(redis, session_id, "content_agent", "agent_message",
@@ -43,6 +45,7 @@ async def content_agent_fn(state: BrainstormState, config: RunnableConfig) -> di
         "topic": topic,
         "trend_summary": trend_summary,
         "gaps_summary": gaps_summary,
+        "monetization_summary": monetization_summary,
         "audience_summary": audience_summary,
     }):
         content = getattr(chunk, "content", "") or ""

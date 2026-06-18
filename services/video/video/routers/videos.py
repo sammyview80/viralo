@@ -9,6 +9,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 import aiofiles
 import httpx
@@ -107,8 +108,37 @@ def _ytdlp_fetch_json(url: str, timeout: int = 30) -> dict:
 
 router = APIRouter(tags=["video"])
 
+_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 
-# ---------------------------------------------------------------------------
+
+def _validate_youtube_url(url: str) -> str:
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in _YOUTUBE_HOSTS:
+        raise ValueError("Only HTTPS YouTube URLs are supported")
+    if host == "youtu.be":
+        if not parsed.path.strip("/"):
+            raise ValueError("YouTube URL is missing a video id")
+    elif parsed.path != "/watch" or "v=" not in parsed.query:
+        raise ValueError("YouTube URL must be a watch URL")
+    return url.strip()
+
+
+def _storage_url_to_relative_path(storage_url: str) -> str | None:
+    if not storage_url.startswith("/storage/"):
+        return None
+    rel = storage_url[len("/storage/"):]
+    if not rel or ".." in Path(rel).parts or Path(rel).is_absolute():
+        return None
+    return rel
+
+
+def _decode_access_token(raw_token: str) -> TokenPayload:
+    payload = decode_token(raw_token)
+    if payload.get("type") != "access":
+        raise ValueError("Invalid token type")
+    return TokenPayload(**payload)
+
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -282,12 +312,16 @@ async def upload_video(
     safe_name = Path(file.filename).name if file.filename else "upload.mp4"
     tmp_path = str(tmp_dir / safe_name)
 
+    max_upload_bytes = int(os.getenv("MAX_VIDEO_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024)))
+    file_size = 0
     async with aiofiles.open(tmp_path, "wb") as f:
         while chunk := await file.read(1024 * 1024):
+            file_size += len(chunk)
+            if file_size > max_upload_bytes:
+                raise HTTPException(status_code=413, detail="Video upload exceeds the maximum allowed size.")
             await f.write(chunk)
 
     # Enforce storage quota before accepting the upload
-    file_size = Path(tmp_path).stat().st_size
     await check_storage_quota(pub_db, tenant_id, additional_bytes=file_size)
 
     # Upload source to persistent storage so retry can re-use it
@@ -296,10 +330,8 @@ async def upload_video(
         from shared.storage.base import get_storage
         storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
         storage_key = f"originals/{tenant_id}/{video_id}/{safe_name}"
-        async with aiofiles.open(tmp_path, "rb") as sf:
-            content = await sf.read()
-        import io as _io
-        original_storage_key = await storage.upload(_io.BytesIO(content), storage_key, file.content_type or "video/mp4")
+        with open(tmp_path, "rb") as sf:
+            original_storage_key = await storage.upload(sf, storage_key, file.content_type or "video/mp4")
     except Exception:
         pass  # non-fatal — retry just won't work for uploads
 
@@ -339,6 +371,11 @@ async def import_youtube(
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
+    try:
+        body.url = _validate_youtube_url(body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
     video_id = uuid.uuid4()
     tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
     clip_config = body.config
@@ -376,14 +413,27 @@ async def video_progress(
     job_id: str,
     token: str | None = Query(None, alias="token"),
     redis: aioredis.Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db_no_rls),
 ):
-    # EventSource cannot send custom headers; accept token as query param
+    # EventSource cannot send custom headers; accept token as query param.
+    # Treat it as a short-lived bearer and still enforce tenant ownership of the job.
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
     try:
-        decode_token(token)
+        payload = _decode_access_token(token)
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    owner = await db.execute(
+        select(Video.id).where(
+            Video.celery_task_id == job_id,
+            Video.tenant_id == uuid.UUID(payload.tenant_id),
+            Video.status != "deleted",
+        )
+    )
+    if owner.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
     async def event_generator():
         import time as _time
         pubsub = redis.pubsub()
@@ -428,9 +478,52 @@ async def video_progress(
 # Video CRUD
 # ---------------------------------------------------------------------------
 
+@router.get("/videos/clipping", response_model=VideoListResponse)
+async def list_clipping_videos(
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    tenant_id = uuid.UUID(token.tenant_id)
+    excl = or_(Video.source_type != "ranking", Video.source_type.is_(None))
+    query = select(Video).where(Video.tenant_id == tenant_id, Video.status != "deleted", excl)
+    count_query = select(func.count()).select_from(Video).where(Video.tenant_id == tenant_id, Video.status != "deleted", excl)
+    if status:
+        query = query.where(Video.status == status)
+        count_query = count_query.where(Video.status == status)
+    total = (await db.execute(count_query)).scalar_one()
+    query = query.order_by(Video.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    videos = (await db.execute(query)).scalars().all()
+    return VideoListResponse(items=list(videos), total=total, page=page, per_page=per_page)
+
+
+@router.get("/videos/ranking", response_model=VideoListResponse)
+async def list_ranking_videos(
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    tenant_id = uuid.UUID(token.tenant_id)
+    query = select(Video).where(Video.tenant_id == tenant_id, Video.status != "deleted", Video.source_type == "ranking")
+    count_query = select(func.count()).select_from(Video).where(Video.tenant_id == tenant_id, Video.status != "deleted", Video.source_type == "ranking")
+    if status:
+        query = query.where(Video.status == status)
+        count_query = count_query.where(Video.status == status)
+    total = (await db.execute(count_query)).scalar_one()
+    query = query.order_by(Video.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    videos = (await db.execute(query)).scalars().all()
+    return VideoListResponse(items=list(videos), total=total, page=page, per_page=per_page)
+
+
 @router.get("/videos", response_model=VideoListResponse)
 async def list_videos(
     status: str | None = Query(None),
+    source_type: str | None = Query(None),
+    exclude_source_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     token: TokenPayload = Depends(get_current_user),
@@ -443,6 +536,15 @@ async def list_videos(
     if status:
         query = query.where(Video.status == status)
         count_query = count_query.where(Video.status == status)
+
+    if source_type:
+        query = query.where(Video.source_type == source_type)
+        count_query = count_query.where(Video.source_type == source_type)
+
+    if exclude_source_type:
+        cond = or_(Video.source_type != exclude_source_type, Video.source_type.is_(None))
+        query = query.where(cond)
+        count_query = count_query.where(cond)
 
     total_result = await db.execute(count_query)
     total = total_result.scalar_one()
@@ -578,9 +680,12 @@ async def delete_video(
     storage_root = Path(os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage"))
     for clip in clips:
         if clip.storage_url:
-            # storage_url is like /storage/clips/tenant/clip.mp4 — strip leading /storage/
-            rel = clip.storage_url.lstrip("/storage/").lstrip("storage/")
-            clip_path = storage_root / rel
+            rel = _storage_url_to_relative_path(clip.storage_url)
+            if not rel:
+                continue
+            clip_path = (storage_root / rel).resolve()
+            if storage_root.resolve() not in clip_path.parents:
+                continue
             try:
                 clip_path.unlink(missing_ok=True)
             except Exception:
@@ -594,10 +699,10 @@ async def delete_video(
     clip_ids = [str(c.id) for c in clips]
     if clip_ids:
         from sqlalchemy import text as sa_text
-        placeholders = ", ".join(f"CAST('{cid}' AS uuid)" for cid in clip_ids)
+        # Use ANY(:arr) with parameterized array — no string interpolation
         await db.execute(
-            sa_text(f"UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tenant_id AS uuid) AND clip_id IN ({placeholders})"),
-            {"tenant_id": str(token.tenant_id)},
+            sa_text("UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(CAST(:ids AS uuid[]))"),
+            {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
         )
 
     # Revoke running/queued Celery task before deleting
@@ -980,8 +1085,9 @@ async def retry_clip_upload(
     clip.upload_error = None
     await db.commit()
 
-    # Re-dispatch upload task — will attempt re-export from source if tmp file is gone
-    clip_path = f"/tmp/viralo-video/{token.tenant_id}/clip_{clip_id}.mp4"
+    # Re-dispatch upload task — safe path: tenant_id and clip_id are validated UUIDs
+    safe_tid = str(uuid.UUID(str(token.tenant_id)))  # reject non-UUID tenant_id
+    clip_path = str(Path("/tmp/viralo-video") / safe_tid / f"clip_{clip_id}.mp4")
     job_id = str(clip.video_id)
     celery_app = _get_celery()
     celery_app.send_task(
@@ -1005,5 +1111,102 @@ async def delete_clip(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
     clip.status = "deleted"
     await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Video ranking
+# ---------------------------------------------------------------------------
+
+class RankingSegmentRequest(_BaseModel):
+    source_type: str  # "url" or "upload"
+    url: str | None = None
+    video_id: uuid.UUID | None = None
+    start_sec: float = 0.0
+    end_sec: float = 30.0
+    segment_title: str = ""
+
+
+class CreateRankingRequest(_BaseModel):
+    title: str
+    theme: str = "classic"
+    order: str = "countdown"  # "countdown" or "ascending"
+    segments: list[RankingSegmentRequest]
+
+
+class SuggestTitleRequest(_BaseModel):
+    topic: str
+    segment_count: int = 5
+
+
+@router.post("/video/ranking", status_code=status.HTTP_202_ACCEPTED)
+async def create_ranking(
+    req: CreateRankingRequest,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    if len(req.segments) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 segments")
+    if req.theme not in ("classic", "neon", "minimal"):
+        raise HTTPException(status_code=400, detail="invalid theme")
+    if req.order not in ("countdown", "ascending"):
+        raise HTTPException(status_code=400, detail="invalid order")
+    for i, seg in enumerate(req.segments):
+        if seg.source_type == "upload" and seg.video_id is None:
+            raise HTTPException(status_code=400, detail=f"segment {i}: upload requires video_id")
+        if seg.source_type == "url":
+            if not seg.url:
+                raise HTTPException(status_code=400, detail=f"segment {i}: url required")
+            try:
+                seg.url = _validate_youtube_url(seg.url)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"segment {i}: {e}")
+        if seg.end_sec <= seg.start_sec:
+            raise HTTPException(status_code=400, detail=f"segment {i}: end_sec must exceed start_sec")
+
+    tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
+    video_id = uuid.uuid4()
+    job_id = str(uuid.uuid4())
+
+    video = Video(
+        id=video_id,
+        tenant_id=tenant_id,
+        title=req.title,
+        source_type="ranking",
+        status="queued",
+        celery_task_id=job_id,
+        video_metadata={"title": req.title, "theme": req.theme, "order": req.order},
+    )
+    db.add(video)
+    await db.commit()
+
+    segments = [
+        {
+            "source_type": s.source_type,
+            "url": s.url,
+            "video_id": str(s.video_id) if s.video_id else None,
+            "start_sec": s.start_sec,
+            "end_sec": s.end_sec,
+            "segment_title": s.segment_title or "",
+        }
+        for s in req.segments
+    ]
+
+    celery_app = _get_celery()
+    celery_app.send_task(
+        "workers.tasks.video.generate_video_ranking",
+        args=[str(tenant_id), str(video_id), segments, req.title, req.theme, req.order],
+        task_id=job_id,
+    )
+
+    return {"video_id": str(video_id), "job_id": job_id}
+
+
+@router.post("/video/ranking/suggest-title")
+async def suggest_ranking_title(
+    req: SuggestTitleRequest,
+    token: TokenPayload = Depends(get_current_user),
+):
+    from workers.tasks.video import _suggest_ranking_title
+    return _suggest_ranking_title(req.topic, req.segment_count)
 
 

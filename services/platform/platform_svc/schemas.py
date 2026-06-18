@@ -1,8 +1,10 @@
+import os
 import uuid
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +35,20 @@ class OAuthConnectRequest(BaseModel):
     redirect_uri: str
     code_verifier: str | None = None
 
+    @field_validator("redirect_uri")
+    @classmethod
+    def redirect_uri_must_be_allowed(cls, value: str) -> str:
+        allowed = [u.strip() for u in os.getenv("OAUTH_ALLOWED_REDIRECT_URIS", "").split(",") if u.strip()]
+        if not allowed:
+            frontend = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+            allowed = [f"{frontend}/oauth/callback"]
+        parsed = urlparse(value)
+        if parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1"}:
+            raise ValueError("redirect_uri must use https")
+        if value not in allowed:
+            raise ValueError("redirect_uri is not allowed")
+        return value
+
 
 class OAuthConnectResponse(BaseModel):
     account_id: uuid.UUID
@@ -51,6 +67,7 @@ class ScheduledPostCreate(BaseModel):
     scheduled_at: datetime
     caption: str | None = None
     hashtags: list[str] | None = None
+    platform_kwargs: dict | None = None
 
 
 class ScheduledPostUpdate(BaseModel):

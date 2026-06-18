@@ -27,6 +27,8 @@ class VideoMeta(BaseModel):
     duration_sec: int | None = None
     published_at: str | None = None
     channel: str | None = None
+    channel_id: str | None = None
+    channel_url: str | None = None
     hashtags: list[str] = []
     thumbnail: str | None = None
     description: str = ""

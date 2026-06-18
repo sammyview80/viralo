@@ -1,23 +1,25 @@
+import { clearQueryCache } from "./query";
+
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost/api/v1";
 const LS_ACCESS  = "viralo_access_token";
 const LS_SESSION = "viralo_has_session"; // flag: refresh cookie likely valid
 
-/* ─── Token store — access token persisted, refresh token is httpOnly cookie ─── */
-let _accessToken: string | null = localStorage.getItem(LS_ACCESS);
+/* ─── Token store — access token in sessionStorage (XSS stopgap), refresh token is httpOnly cookie ─── */
+let _accessToken: string | null = sessionStorage.getItem(LS_ACCESS);
 
 export const token = {
   get: () => _accessToken,
 
   set: (t: string) => {
     _accessToken = t;
-    localStorage.setItem(LS_ACCESS, t);
+    sessionStorage.setItem(LS_ACCESS, t);
     localStorage.setItem(LS_SESSION, "1"); // mark that a refresh cookie was issued
     clearApiCaches();
   },
 
   clear: () => {
     _accessToken = null;
-    localStorage.removeItem(LS_ACCESS);
+    sessionStorage.removeItem(LS_ACCESS);
     localStorage.removeItem(LS_SESSION);
     clearApiCaches();
   },
@@ -195,6 +197,7 @@ export interface VideoResponse {
   celery_task_id: string | null;
   clip_config: ClipConfig | null;
   error_message: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -236,6 +239,8 @@ export interface ClipApiResponse {
     composite?: boolean;
     source_clip_ids?: string[];
     aspect_ratio?: string;
+    platform_copy?: Record<string, { description: string; tags: string[] }>;
+    ranking?: boolean;
   } | null;
   upload_attempts: number | null;
   upload_error: string | null;
@@ -296,6 +301,9 @@ export const videoApi = {
   list:    (page = 1, per_page = 20) =>
     videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos?page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
+  listClipping: (page = 1, per_page = 20) =>
+    videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos/clipping?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
   clips:   (videoId: string, page = 1, per_page = 100) =>
     videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?video_id=${videoId}&page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page)),
@@ -332,6 +340,24 @@ export const videoApi = {
     videoReq<{ task_id: string; message: string }>("POST", "/clips/merge-ai", { clip_ids: clipIds }),
   retryClipUpload: (clipId: string) =>
     videoReq<ClipApiResponse>("POST", `/clips/${clipId}/retry-upload`),
+  listRanking: (page = 1, per_page = 20) =>
+    videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos/ranking?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
+  createRanking: (payload: {
+    title: string;
+    theme: string;
+    order: string;
+    segments: Array<{
+      source_type: string;
+      url?: string;
+      video_id?: string;
+      start_sec: number;
+      end_sec: number;
+      segment_title?: string;
+    }>;
+  }) => videoReq<{ video_id: string; job_id: string }>("POST", "/video/ranking", payload),
+  suggestRankingTitle: (topic: string, segment_count: number) =>
+    videoReq<{ title: string; highlight_words: string[] }>("POST", "/video/ranking/suggest-title", { topic, segment_count }),
 };
 
 /* ─── Platform service (port 8006) ─── */
@@ -370,6 +396,7 @@ export interface ScheduledPostCreate {
   scheduled_at: string; // ISO datetime
   caption?: string;
   hashtags?: string[];
+  platform_kwargs?: Record<string, unknown>;
 }
 
 export interface CalendarDay {
@@ -428,6 +455,7 @@ let _accountsCache: { data: SocialAccount[]; at: number } | null = null;
 function clearApiCaches() {
   _accountsInflight = null;
   _accountsCache = null;
+  clearQueryCache();
 }
 function _listAccountsCached(): Promise<SocialAccount[]> {
   if (_accountsCache && Date.now() - _accountsCache.at < 30_000) return Promise.resolve(_accountsCache.data);
@@ -489,12 +517,39 @@ export const platformApi = {
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
 
+export interface AutoPublishConfig {
+  num_clips: number;
+  aspect_ratio: string;
+  platforms: string[];
+  social_account_ids: string[];
+  publish_per_day: number;
+  publish_interval_hours: number;
+  caption_template: string;
+  burn_captions: boolean;
+  min_clip_duration: number;
+  max_clip_duration: number;
+}
+
+export const DEFAULT_AUTO_PUBLISH_CONFIG: AutoPublishConfig = {
+  num_clips: 4,
+  aspect_ratio: "9:16",
+  platforms: ["tiktok", "instagram"],
+  social_account_ids: [],
+  publish_per_day: 3,
+  publish_interval_hours: 8,
+  caption_template: "",
+  burn_captions: false,
+  min_clip_duration: 30,
+  max_clip_duration: 60,
+};
+
 export interface ChannelSubscription {
   id: string;
   channel_id: string;
   channel_name: string | null;
   channel_url: string | null;
   auto_publish: boolean;
+  auto_publish_config: AutoPublishConfig | null;
   active: boolean;
   subscribed_at: string | null;
   lease_expires_at: string | null;
@@ -520,8 +575,10 @@ export const channelsApi = {
   list: () => platformReq<ChannelSubscription[]>("GET", "/websub/channels"),
   resolve: (q: string) =>
     platformReq<{ channel_id: string; channel_name: string }>("GET", `/websub/resolve?q=${encodeURIComponent(q)}`),
-  subscribe: (body: { channel_id: string; channel_name?: string; channel_url?: string; auto_publish?: boolean }) =>
+  subscribe: (body: { channel_id: string; channel_name?: string; channel_url?: string; auto_publish?: boolean; auto_publish_config?: AutoPublishConfig }) =>
     platformReq<{ channel_id: string; channel_name: string; status: string }>("POST", "/websub/channels", body),
+  update: (channelId: string, body: { auto_publish?: boolean; auto_publish_config?: AutoPublishConfig }) =>
+    platformReq<{ channel_id: string; updated: boolean }>("PATCH", `/websub/channels/${channelId}`, body),
   unsubscribe: (channelId: string) => platformReq<void>("DELETE", `/websub/channels/${channelId}`),
   recentVideos: (channelId: string) =>
     platformReq<{ channel_id: string; videos: ChannelVideo[] }>("GET", `/websub/channels/${channelId}/videos`),
@@ -652,6 +709,8 @@ export interface VideoMeta {
   duration_sec: number | null;
   published_at: string | null;
   channel: string | null;
+  channel_id: string | null;
+  channel_url: string | null;
   hashtags: string[];
   thumbnail: string | null;
   description: string;

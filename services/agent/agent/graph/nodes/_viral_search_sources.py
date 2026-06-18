@@ -21,6 +21,7 @@ def _video_meta(
     views: int | None = None, likes: int | None = None,
     comments: int | None = None, duration_sec: int | None = None,
     published_at: str | None = None, channel: str | None = None,
+    channel_id: str | None = None, channel_url: str | None = None,
     hashtags: list[str] | None = None, thumbnail: str | None = None,
     description: str | None = None,
 ) -> dict:
@@ -28,7 +29,8 @@ def _video_meta(
         "platform": platform, "video_id": video_id, "title": title, "url": url,
         "views": views, "likes": likes, "comments": comments,
         "duration_sec": duration_sec, "published_at": published_at,
-        "channel": channel, "hashtags": hashtags or [],
+        "channel": channel, "channel_id": channel_id, "channel_url": channel_url,
+        "hashtags": hashtags or [],
         "thumbnail": thumbnail, "description": (description or "")[:500],
     }
 
@@ -69,6 +71,8 @@ def youtube_search(topic: str) -> list[dict]:
                 duration_sec=_iso8601_duration_to_sec(cd.get("duration", "")),
                 published_at=snip.get("publishedAt"),
                 channel=snip.get("channelTitle"),
+                channel_id=snip.get("channelId"),
+                channel_url=f"https://www.youtube.com/channel/{snip['channelId']}" if snip.get("channelId") else None,
                 hashtags=(snip.get("tags") or [])[:10],
                 thumbnail=(snip.get("thumbnails", {}).get("high", {}) or {}).get("url"),
                 description=snip.get("description", ""),
@@ -107,6 +111,8 @@ def youtube_trending_chart(region_code: str = "US", category_id: str = "28") -> 
                     item.get("contentDetails", {}).get("duration", "")),
                 published_at=snip.get("publishedAt"),
                 channel=snip.get("channelTitle"),
+                channel_id=snip.get("channelId"),
+                channel_url=f"https://www.youtube.com/channel/{snip['channelId']}" if snip.get("channelId") else None,
                 hashtags=(snip.get("tags") or [])[:10],
                 thumbnail=(snip.get("thumbnails", {}).get("high", {}) or {}).get("url"),
                 description=snip.get("description", ""),

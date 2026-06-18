@@ -65,7 +65,7 @@ class ConnectRequest(BaseModel):
 
 
 class PlanRequest(BaseModel):
-    plan: Literal["free", "starter", "pro", "agency"]
+    plan: Literal["free"]  # only free tier at registration; upgrades go through /billing/checkout
 
 
 class FinalizeResponse(BaseModel):
@@ -295,12 +295,12 @@ async def finalize_onboarding(
     # Clean up onboarding buffer
     await redis.delete(_redis_key(token.sub))
 
-    # Issue new token with tenant_id
+    # Issue new token — always free tier; upgrades only via Stripe billing
     access_token = create_access_token(
         user_id=str(user.id),
         tenant_id=str(tenant.id),
         email=user.email,
-        plan=data.get("plan", "free"),
+        plan="free",
     )
 
     return FinalizeResponse(

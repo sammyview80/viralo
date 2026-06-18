@@ -1823,6 +1823,321 @@ def _draw_hook_overlay(img, t_in_clip: float, hook_text: str, hook_duration_sec:
     return img
 
 
+RANKING_THEMES = {
+    "classic": {
+        "num_fill": (255, 218, 0),
+        "title_fill": (255, 255, 255),
+        "stroke_fill": (0, 0, 0),
+        "stroke_width": 4,
+        "bg_fill": (0, 0, 0, 160),
+    },
+    "neon": {
+        "num_fill": (0, 255, 180),
+        "title_fill": (255, 255, 255),
+        "stroke_fill": (0, 80, 60),
+        "stroke_width": 4,
+        "bg_fill": (10, 10, 30, 180),
+    },
+    "minimal": {
+        "num_fill": (255, 255, 255),
+        "title_fill": (220, 220, 220),
+        "stroke_fill": (30, 30, 30),
+        "stroke_width": 3,
+        "bg_fill": (0, 0, 0, 120),
+    },
+}
+
+
+def _draw_ranking_overlay(
+    img,
+    rank_number: int,
+    title_text: str,
+    theme_name: str,
+    width: int,
+    height: int,
+    total: int = 1,
+    all_labels: list = None,
+    revealed_ranks: set = None,
+):
+    """
+    Overlay matching reference style (Image #16):
+    - Title: left-aligned top, bold, 2 lines (line2 in theme highlight color)
+    - Rank list: left-aligned, bottom 45% of frame, compact tight spacing
+    - Active rank: number in rank-specific color, label WHITE, slightly larger
+    - Revealed ranks: number in rank-specific color dimmed, label white dimmed, same size as active
+    - Hidden ranks: number only, heavily dimmed, no label
+    """
+    from PIL import Image, ImageDraw
+
+    theme = RANKING_THEMES.get(theme_name, RANKING_THEMES["classic"])
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    sw = theme["stroke_width"]
+    left_x = int(width * 0.04)
+
+    rank_colors = [
+        (255, 218, 0),    # 1 - yellow
+        (255, 140, 0),    # 2 - orange
+        (180, 220, 60),   # 3 - yellow-green
+        (120, 200, 255),  # 4 - light blue
+        (220, 120, 255),  # 5 - purple
+        (100, 220, 200),  # 6+
+    ]
+
+    # ── Title: centered, top of frame ────────────────────────────────────────
+    title = (title_text or "").strip()
+    if title:
+        title_sz = int(width * 0.07)
+        title_font = _load_font(title_sz)
+        words = title.split()
+        mid = max(1, len(words) // 2)
+        line1 = " ".join(words[:mid])
+        line2 = " ".join(words[mid:])
+        ty = int(height * 0.03)
+        for line_idx, line in enumerate([line1, line2]):
+            if not line:
+                continue
+            tb = draw.textbbox((0, 0), line, font=title_font)
+            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+            tx = (width - tw) // 2   # centered
+            fill = theme["num_fill"] if line_idx == 1 else theme["title_fill"]
+            for dx in range(-sw, sw + 1):
+                for dy in range(-sw, sw + 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    draw.text((tx + dx, ty + dy), line, font=title_font, fill=(0, 0, 0, 200))
+            draw.text((tx, ty), line, font=title_font, fill=fill)
+            ty += th + int(height * 0.008)
+
+    # ── Rank list: compact block, bottom 45% ─────────────────────────────────
+    revealed_set = set(revealed_ranks) if revealed_ranks else {rank_number}
+
+    # Uniform base font size — active slightly larger, capped so list fits frame
+    base_sz   = min(int(width * 0.060), int(height * 0.045))
+    active_sz = min(int(width * 0.078), int(height * 0.058))
+    line_gap  = int(active_sz * 1.30)   # tight line spacing
+
+    # Position block so it ends near bottom
+    block_h = line_gap * total
+    section_top = int(height * 0.96) - block_h
+    section_top = max(int(height * 0.55), section_top)
+
+    base_font   = _load_font(base_sz)
+    active_font = _load_font(active_sz)
+
+    for i in range(1, total + 1):
+        is_active  = (i == rank_number)
+        is_hidden  = i not in revealed_set
+        color_idx  = min(i - 1, len(rank_colors) - 1)
+        base_color = rank_colors[color_idx]
+        font       = active_font if is_active else base_font
+        label_str  = f"{i}."
+
+        if is_active:
+            num_fill    = (*base_color, 255)
+            lbl_fill    = (255, 255, 255, 255)
+            stroke_a    = 220
+        elif not is_hidden:  # revealed
+            num_fill    = (*base_color, 200)
+            lbl_fill    = (220, 220, 220, 200)
+            stroke_a    = 150
+        else:  # hidden
+            num_fill    = (*base_color, 80)
+            lbl_fill    = (200, 200, 200, 80)
+            stroke_a    = 40
+
+        y = section_top + (i - 1) * line_gap
+
+        # Measure number width for label x offset
+        tb_num = draw.textbbox((0, 0), label_str, font=font)
+        num_w = tb_num[2] - tb_num[0]
+
+        sw_use = sw if is_active else max(1, sw - 1)
+
+        # Draw number
+        for dx in range(-sw_use, sw_use + 1):
+            for dy in range(-sw_use, sw_use + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                draw.text((left_x + dx, y + dy), label_str, font=font, fill=(0, 0, 0, stroke_a))
+        draw.text((left_x, y), label_str, font=font, fill=num_fill)
+
+        # Draw label (only for revealed+active ranks)
+        if not is_hidden and all_labels and len(all_labels) >= i:
+            seg_label = (all_labels[i - 1] or "").strip()
+            if seg_label:
+                lx = left_x + num_w + int(width * 0.02)
+                max_lbl_w = width - lx - int(width * 0.04)  # 4% right margin
+                # Truncate label until it fits within max_lbl_w
+                while len(seg_label) > 1:
+                    lb = draw.textbbox((0, 0), seg_label, font=font)
+                    if lb[2] - lb[0] <= max_lbl_w:
+                        break
+                    seg_label = seg_label[:-1].rstrip()
+                for dx in range(-sw_use, sw_use + 1):
+                    for dy in range(-sw_use, sw_use + 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        draw.text((lx + dx, y + dy), seg_label, font=font, fill=(0, 0, 0, stroke_a))
+                draw.text((lx, y), seg_label, font=font, fill=lbl_fill)
+
+    return Image.alpha_composite(img, overlay)
+
+
+def _render_ranking_segment(
+    source_path: str,
+    start_sec: float,
+    end_sec: float,
+    rank_number: int,
+    title_text: str,
+    theme_name: str,
+    out_path: str,
+    target_w: int = 1080,
+    target_h: int = 1920,
+    total: int = 1,
+    all_labels: list = None,
+    revealed_ranks: set = None,
+) -> None:
+    """Two-pass: ffmpeg trim/crop/scale → h264 intermediate, then PyAV ranking overlay burn."""
+    import av
+    import tempfile
+
+    duration = max(1.0, float(end_sec) - float(start_sec))
+    seek_start = max(0.0, float(start_sec) - 2.0)
+    seek_offset = float(start_sec) - seek_start
+
+    # Probe source dims for crop math
+    src_w = src_h = 0
+    try:
+        with av.open(source_path) as probe:
+            vs = next((s for s in probe.streams if s.type == "video"), None)
+            if vs is not None:
+                src_w = vs.codec_context.width or 0
+                src_h = vs.codec_context.height or 0
+    except Exception:
+        pass
+
+    vf_parts = []
+    if src_w and src_h and src_w > src_h:
+        crop_h = src_h
+        crop_w = int(src_h * 9 / 16) & ~1
+        x_off = (src_w - crop_w) // 2
+        vf_parts.append(f"crop={crop_w}:{crop_h}:{x_off}:0")
+    elif src_w and src_h and src_h > src_w:
+        crop_w = src_w
+        crop_h = int(src_w * 16 / 9) & ~1
+        if crop_h <= src_h:
+            y_off = (src_h - crop_h) // 2
+            vf_parts.append(f"crop={crop_w}:{crop_h}:0:{y_off}")
+    vf_parts.append(f"scale={target_w}:{target_h}:flags=lanczos")
+    vf_str = ",".join(vf_parts)
+
+    v_chain = f"[0:v:0]trim=start={seek_offset}:duration={duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+    filter_complex = (
+        f"{v_chain};"
+        f"[0:a:0]atrim=start={seek_offset}:duration={duration},asetpts=PTS-STARTPTS[aout]"
+    )
+
+    tmp_h264 = str(Path(out_path).parent / f"_tmp_rank_{Path(out_path).name}")
+    cmd1 = [
+        "ffmpeg", "-y", "-threads", "2",
+        "-ss", str(seek_start),
+        "-i", source_path,
+        "-filter_complex", filter_complex,
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-r", "30",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2",
+        "-avoid_negative_ts", "make_zero",
+        tmp_h264,
+    ]
+    r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=180)
+    if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
+        # Retry without audio map (source may have no audio track)
+        v_only = f"[0:v:0]trim=start={seek_offset}:duration={duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+        cmd1_noaudio = [
+            "ffmpeg", "-y", "-threads", "2", "-ss", str(seek_start), "-i", source_path,
+            "-filter_complex", v_only, "-map", "[vout]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p", "-r", "30",
+            "-avoid_negative_ts", "make_zero", tmp_h264,
+        ]
+        r1 = subprocess.run(cmd1_noaudio, capture_output=True, text=True, timeout=180)
+        if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
+            err = r1.stderr
+            excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
+            raise RuntimeError(f"ranking segment pass1 failed (rc={r1.returncode}): {excerpt}")
+
+    try:
+        with av.open(tmp_h264) as src, av.open(out_path, "w", format="mp4") as dst:
+            v_stream = next((s for s in src.streams if s.type == "video"), None)
+            a_stream = next((s for s in src.streams if s.type == "audio"), None)
+            if v_stream is None:
+                raise RuntimeError("ranking intermediate has no video stream")
+
+            fps = int(round(float(v_stream.average_rate or 30)))
+            out_v = dst.add_stream("h264", rate=fps)
+            out_v.width = target_w
+            out_v.height = target_h
+            out_v.pix_fmt = "yuv420p"
+            out_v.options = {"crf": "23", "preset": "veryfast", "movflags": "+faststart"}
+
+            out_a = None
+            if a_stream is not None:
+                a_rate = a_stream.sample_rate or 44100
+                a_layout = a_stream.layout.name if a_stream.layout else "stereo"
+                out_a = dst.add_stream("aac", rate=a_rate, layout=a_layout)
+
+            frame_idx = 0
+            for packet in src.demux(*([v_stream] + ([a_stream] if a_stream else []))):
+                if packet.stream is v_stream:
+                    for frame in packet.decode():
+                        img = frame.to_image()
+                        img = _draw_ranking_overlay(img, rank_number, title_text, theme_name, target_w, target_h, total=total, all_labels=all_labels, revealed_ranks=revealed_ranks)
+                        img = img.convert("RGB")
+                        new_frame = av.VideoFrame.from_image(img)
+                        new_frame.pts = frame_idx
+                        new_frame.time_base = Fraction(1, fps)
+                        frame_idx += 1
+                        for pkt in out_v.encode(new_frame):
+                            dst.mux(pkt)
+                        del img, new_frame
+                elif out_a is not None and packet.stream is a_stream:
+                    if packet.dts is None:
+                        continue
+                    for aframe in packet.decode():
+                        aframe.pts = None
+                        for apkt in out_a.encode(aframe):
+                            dst.mux(apkt)
+
+            for pkt in out_v.encode(None):
+                dst.mux(pkt)
+            if out_a is not None:
+                for apkt in out_a.encode(None):
+                    dst.mux(apkt)
+
+        if not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
+            raise RuntimeError(f"ranking segment produced empty file: {out_path}")
+    finally:
+        Path(tmp_h264).unlink(missing_ok=True)
+
+
+def _suggest_ranking_title(topic: str, segment_count: int) -> dict:
+    prompt = f"""Generate a catchy title for a Top {segment_count} ranking video about: {topic}
+Return JSON: {{"title": "...", "highlight_words": ["word1", "word2"]}}
+Title should be punchy, 4-8 words, like "Ranking The Best Goals In Football History"."""
+    try:
+        result = _call_llm_json([{"role": "user", "content": prompt}], max_tokens=100)
+        if isinstance(result, dict) and "title" in result:
+            return result
+    except Exception:
+        pass
+    return {"title": f"Top {segment_count} {topic}", "highlight_words": []}
+
+
 def _generate_voiceover_script(clip: ClipResult, viral_type: str, content_type: str) -> str:
     """Generate a 15-25 word punchy narrator script for this clip via LLM."""
     prompt = f"""Write a punchy 15-25 word voiceover narration for a viral short-form video clip.
@@ -1883,64 +2198,24 @@ def _enhance_clip_quality(clip_path: str, out_path: str, src_width: int) -> str:
 
     Returns out_path on success, clip_path on ffmpeg failure.
     """
-    try:
-        import cv2
-
-        # Stage 1 (optional): OpenCV frame-level sharpening for low-res sources.
-        cv_enhanced = clip_path
-        if src_width < 720:
-            tmp_cv = out_path + "_cv_tmp.mp4"
-            cap = cv2.VideoCapture(clip_path)
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            # INTER_LANCZOS4 2× upscale each frame then sharpen via unsharp kernel
-            tw, th = w * 2, h * 2
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            writer = cv2.VideoWriter(tmp_cv, fourcc, fps, (tw, th))
-            import numpy as np
-            kernel = np.array([[0, -0.5, 0], [-0.5, 3, -0.5], [0, -0.5, 0]], dtype=np.float32)
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                up = cv2.resize(frame, (tw, th), interpolation=cv2.INTER_LANCZOS4)
-                sharp = cv2.filter2D(up, -1, kernel)
-                writer.write(sharp)
-            cap.release()
-            writer.release()
-            if Path(tmp_cv).exists() and Path(tmp_cv).stat().st_size > 1000:
-                cv_enhanced = tmp_cv
-    except Exception as e:
-        logging.warning("OpenCV enhancement skipped: %s", e)
-        cv_enhanced = clip_path
-
-    # Stage 2: ffmpeg sharpening + color grade.
-    # unsharp: luma sharpen (la=0.5), mild chroma sharpen (ca=0.2)
-    # eq: saturation boost + slight contrast lift for sports vibrancy
     vf = "unsharp=lx=5:ly=5:la=0.5:cx=3:cy=3:ca=0.2,eq=saturation=1.2:contrast=1.06:gamma=0.97"
     cmd = [
         "ffmpeg", "-y",
-        "-i", cv_enhanced,
+        "-i", clip_path,
         "-vf", vf,
-        "-c:v", "libx264", "-crf", "16", "-preset", "slow",
+        "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
         "-c:a", "copy",
         "-movflags", "+faststart",
         out_path,
     ]
     try:
-        r = subprocess.run(cmd, capture_output=True, timeout=300)
+        r = subprocess.run(cmd, capture_output=True, timeout=120)
         if r.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 1000:
-            # Clean up OpenCV temp if used
-            if cv_enhanced != clip_path:
-                Path(cv_enhanced).unlink(missing_ok=True)
             return out_path
         logging.warning("_enhance_clip_quality ffmpeg failed (rc=%d): %s", r.returncode, r.stderr[-200:])
     except Exception as e:
         logging.warning("_enhance_clip_quality failed: %s", e)
 
-    if cv_enhanced != clip_path:
-        Path(cv_enhanced).unlink(missing_ok=True)
     return clip_path
 
 
@@ -2132,9 +2407,24 @@ def _render_clip_streamcopy(
     else:
         filter_complex = v_chain
         maps = ["-map", "[vout]"]
+    # Use -ss before -i for fast keyframe seek; trim filter then does precise frame-accurate cut
+    seek_start = max(0.0, clip_start - 2.0)  # seek 2s before clip for keyframe landing
+    seek_offset = clip_start - seek_start     # adjust trim to account for seek overshoot
+    if seek_offset > 0:
+        # Rebuild filter_complex with adjusted trim times relative to seek position
+        v_chain2 = f"[0:v:0]trim=start={seek_offset}:duration={clip_duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+        if meta.has_audio:
+            filter_complex = (
+                f"{v_chain2};"
+                f"[0:a:0]atrim=start={seek_offset}:duration={clip_duration},asetpts=PTS-STARTPTS[aout]"
+            )
+        else:
+            filter_complex = v_chain2
+
     cmd = [
         "ffmpeg", "-y",
         "-threads", "2",
+        "-ss", str(seek_start),  # fast seek before input
         "-i", source_path,
         "-filter_complex", filter_complex,
         *maps,
@@ -2149,7 +2439,7 @@ def _render_clip_streamcopy(
         output_path,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     out_ok = Path(output_path).exists() and Path(output_path).stat().st_size >= 1000
     if result.returncode != 0 or not out_ok:
         err = result.stderr
@@ -2251,15 +2541,39 @@ def _render_clip_ffmpeg_captions(
     else:
         filter_complex = v_chain
         maps = ["-map", "[vout]"]
+    # Fast seek before input; adjust trim times relative to seek landing point
+    seek_start1 = max(0.0, clip_start - 2.0)
+    seek_off1 = clip_start - seek_start1
+    if seek_off1 > 0:
+        if use_blur_fill:
+            trim1 = f"trim=start={seek_off1}:duration={clip_duration},setpts=PTS-STARTPTS"
+            v_chain = (
+                f"[0:v:0]{trim1},split=2[main_raw][bg_raw];"
+                f"[bg_raw]scale={tw}:{th}:force_original_aspect_ratio=increase,"
+                f"crop={tw}:{th},boxblur=10:4[bg];"
+                f"[main_raw]scale={tw}:{th}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:(H-h)/2[vout]"
+            )
+        else:
+            v_chain = f"[0:v:0]trim=start={seek_off1}:duration={clip_duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+        if meta.has_audio:
+            filter_complex = (
+                f"{v_chain};"
+                f"[0:a:0]atrim=start={seek_off1}:duration={clip_duration},asetpts=PTS-STARTPTS[aout]"
+            )
+        else:
+            filter_complex = v_chain
+
     cmd1 = [
         "ffmpeg", "-y",
-        "-threads", "2",       # cap per-process threads → reduces peak memory
+        "-threads", "2",
+        "-ss", str(seek_start1),  # fast seek before input
         "-i", source_path,
         "-filter_complex", filter_complex,
         *maps,
         "-c:v", "libx264",
         "-crf", "18",
-        "-preset", "ultrafast",  # lowest memory usage; quality fine for intermediate
+        "-preset", "ultrafast",
         "-profile:v", "baseline",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
@@ -2270,7 +2584,7 @@ def _render_clip_ffmpeg_captions(
     ]
 
     try:
-        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=240)
+        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=180)
         if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
             err = r1.stderr
             excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
@@ -2300,38 +2614,43 @@ def _render_clip_ffmpeg_captions(
                 logging.warning("zoompan pass failed (rc=%d) — skipping zoom: %s", rz.returncode, rz.stderr[-200:])
                 Path(tmp_zoomed).unlink(missing_ok=True)
 
-        # Pass 2: PyAV caption burn on the h264 intermediate
-        # Build a synthetic meta for the h264 file (same dims, h264 codec)
-        h264_meta = VideoMeta(
-            width=target_width,
-            height=target_height,
-            fps=meta.fps,
-            duration=duration,
-            codec="h264",
-            has_audio=meta.has_audio,
-        )
-        # Captions are already absolute-time in the original clip context;
-        # _render_clip clips them to clip window internally
-        _render_clip(
-            source_path=tmp_h264,
-            clip=ClipResult(
-                start=0.0,
-                end=duration,
-                score=clip.score,
-                title=clip.title,
-                reason=clip.reason,
-            ),
-            output_path=output_path,
-            captions=captions,
-            style=style,
-            target_width=target_width,
-            target_height=target_height,
-            crop_mode=None,  # already cropped/scaled in pass 1
-            meta=h264_meta,
-            burn_captions=True,
-            hook_text=hook_text,
-            hook_duration_sec=hook_duration_sec,
-        )
+        # Pass 2: caption burn — only run PyAV loop when captions or hook overlay needed.
+        # When no captions/hook, streamcopy the h264 intermediate (zero re-encode cost).
+        needs_pass2 = bool(captions) or bool(hook_text)
+        if needs_pass2:
+            h264_meta = VideoMeta(
+                width=target_width,
+                height=target_height,
+                fps=meta.fps,
+                duration=duration,
+                codec="h264",
+                has_audio=meta.has_audio,
+            )
+            _render_clip(
+                source_path=tmp_h264,
+                clip=ClipResult(
+                    start=0.0,
+                    end=duration,
+                    score=clip.score,
+                    title=clip.title,
+                    reason=clip.reason,
+                ),
+                output_path=output_path,
+                captions=captions,
+                style=style,
+                target_width=target_width,
+                target_height=target_height,
+                crop_mode=None,
+                meta=h264_meta,
+                burn_captions=True,
+                hook_text=hook_text,
+                hook_duration_sec=hook_duration_sec,
+            )
+        else:
+            # No captions or hook — rename/move intermediate directly, no re-encode
+            import shutil
+            shutil.move(tmp_h264, output_path)
+            tmp_h264 = output_path  # prevent finally from deleting it
     finally:
         try:
             Path(tmp_h264).unlink(missing_ok=True)
@@ -3007,20 +3326,6 @@ def _export_clip(
             except Exception:
                 pass
 
-    # Quality enhancement: sharpening + color grade (always on; OpenCV SR for low-res sources)
-    enhance_msg = "upscaling + sharpening (OpenCV SR)" if meta.width < 720 else "sharpening + color grade"
-    _prog("enhance", 85, f"Clip {clip_index+1}/{clip_total}: {enhance_msg}…")
-    enhanced_path = str(Path(clip_path).parent / f"clip_{clip_id}_enhanced.mp4")
-    result = _enhance_clip_quality(clip_path, enhanced_path, src_width=meta.width)
-    if result == enhanced_path:
-        try:
-            Path(clip_path).unlink(missing_ok=True)
-        except Exception:
-            pass
-        clip_path = enhanced_path
-    else:
-        Path(enhanced_path).unlink(missing_ok=True)
-
     try:
         _generate_thumbnail(source_path, clip, thumb_path)
     except Exception:
@@ -3330,6 +3635,36 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     except Exception as e:
         errors.append(f"pytubefix: {e}")
 
+    # RapidAPI TikTok fallback — handles IP-blocked TikTok URLs
+    rapidapi_key = os.getenv("RAPIDAPI_TIKTOK_KEY", "")
+    if rapidapi_key and "tiktok" in url.lower():
+        try:
+            import urllib.request as _urllib_req
+            import json as _json
+            api_url = f"https://tiktok-video-no-watermark2.p.rapidapi.com/?url={url}&hd=1"
+            req = _urllib_req.Request(api_url, headers={
+                "x-rapidapi-host": "tiktok-video-no-watermark2.p.rapidapi.com",
+                "x-rapidapi-key": rapidapi_key,
+            })
+            with _urllib_req.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read())
+            video_url = (
+                data.get("data", {}).get("hdplay")
+                or data.get("data", {}).get("play")
+                or data.get("data", {}).get("wmplay")
+            )
+            if not video_url:
+                raise ValueError(f"No video URL in response: {list(data.get('data', {}).keys())}")
+            dl_req = _urllib_req.Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
+            with _urllib_req.urlopen(dl_req, timeout=120) as resp:
+                with open(out_path, "wb") as f:
+                    f.write(resp.read())
+            if Path(out_path).stat().st_size > 0:
+                return
+            errors.append("RapidAPI TikTok: downloaded file is empty")
+        except Exception as e:
+            errors.append(f"RapidAPI TikTok: {e}")
+
     raise RuntimeError("YouTube download failed after all strategies.\n" + "\n".join(errors))
 
 
@@ -3404,6 +3739,76 @@ def _parse_vtt_to_words(vtt: str) -> list[WordTimestamp]:
         else:
             i += 1
     return words
+
+
+def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
+    """Create ScheduledPost records for auto-publish after a WebSub-triggered pipeline."""
+    from datetime import datetime, timezone, timedelta
+    import uuid as _uuid
+
+    platforms = ap_cfg.get("platforms", [])
+    social_account_ids = ap_cfg.get("social_account_ids", [])
+    publish_per_day = max(1, int(ap_cfg.get("publish_per_day", 3)))
+    interval_hours = max(1, int(ap_cfg.get("publish_interval_hours", 8)))
+    caption_template = ap_cfg.get("caption_template", "")
+
+    if not platforms and not social_account_ids:
+        logging.info("_auto_schedule_clips: no platforms/accounts configured, skipping")
+        return
+
+    with Session(engine) as db:
+        # Resolve social_account_ids — fetch matching accounts for this tenant
+        if social_account_ids:
+            id_list = ",".join(f"'{sid}'" for sid in social_account_ids if sid)
+            rows = db.execute(
+                text(f"SELECT id, platform FROM social_accounts WHERE tenant_id = :tid AND is_active = true AND id IN ({id_list})"),
+                {"tid": tenant_id},
+            ).fetchall()
+        elif platforms:
+            placeholders = ",".join(f"'{p}'" for p in platforms)
+            rows = db.execute(
+                text(f"SELECT id, platform FROM social_accounts WHERE tenant_id = :tid AND is_active = true AND platform IN ({placeholders})"),
+                {"tid": tenant_id},
+            ).fetchall()
+        else:
+            rows = []
+
+        if not rows:
+            logging.info("_auto_schedule_clips: no active social accounts found for tenant %s", tenant_id)
+            return
+
+        now = datetime.now(timezone.utc)
+        posts_created = 0
+        slot = 0  # tracks scheduling slot across clip × account combos
+
+        for clip_id in clip_ids[:publish_per_day]:
+            for account_id, platform in rows:
+                scheduled_at = now + timedelta(hours=slot * interval_hours)
+                db.execute(
+                    text("""
+                        INSERT INTO scheduled_posts
+                            (id, tenant_id, clip_id, social_account_id, platform,
+                             status, scheduled_at, caption, created_at, updated_at)
+                        VALUES
+                            (:id, :tid, :clip_id, :acct_id, :platform,
+                             'scheduled', :scheduled_at, :caption, now(), now())
+                    """),
+                    {
+                        "id": _uuid.uuid4(),
+                        "tid": tenant_id,
+                        "clip_id": clip_id,
+                        "acct_id": account_id,
+                        "platform": platform,
+                        "scheduled_at": scheduled_at,
+                        "caption": caption_template or None,
+                    },
+                )
+                posts_created += 1
+                slot += 1
+
+        db.commit()
+
+    logging.info("_auto_schedule_clips: created %d scheduled posts for tenant %s", posts_created, tenant_id)
 
 
 def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: str, cfg: dict | None = None, yt_url: str | None = None, yt_meta: dict | None = None) -> None:
@@ -3631,10 +4036,12 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             clip_total=len(clips),
         )
 
-    # Template rendering now uses multiple ffmpeg/OpenCV passes per clip; keep
-    # per-job parallelism low to avoid multiplying worker-level concurrency into
-    # OOM/timeouts on match-length jobs.
-    max_workers = min(len(clips), 2)
+    # Hard-cap clip durations before export — prevents LLM/heuristic overruns from timing out ffmpeg
+    for clip in clips:
+        if clip.end - clip.start > max_dur:
+            clip.end = clip.start + max_dur
+
+    max_workers = min(len(clips), 3)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {executor.submit(_export_one, (i, clip)): (i, clip) for i, clip in enumerate(clips)}
         for future in as_completed(future_map):
@@ -3680,6 +4087,13 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
 
     # Cache successful result to prevent re-processing same source within 24h
     redis_client.setex(_url_key, 86400, json.dumps(clip_ids))
+
+    # Auto-schedule clips if enabled via channel subscription config
+    if cfg.get("auto_publish") and cfg.get("auto_publish_config") and clip_ids:
+        try:
+            _auto_schedule_clips(tenant_id, clip_ids, cfg["auto_publish_config"])
+        except Exception:
+            logging.exception("Auto-schedule clips failed for video %s", video_id)
 
     # Work dir cleaned up per-clip by upload_clip_to_storage; remove dir after all queued
     # (uploads may still be running — only rmtree the work_dir skeleton, not clip files)
@@ -4666,3 +5080,192 @@ Every clip index must appear in exactly one group. Use a group of [N] for clips 
             _shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return all_new_clip_ids
+
+
+def _download_stored_video(video_id: str, tenant_id: str, out_path: str) -> None:
+    """Resolve an uploaded video_id to its source file in storage and download it."""
+    with _get_session(tenant_id) as session:
+        row = session.execute(
+            text("SELECT original_storage_key FROM videos WHERE id = CAST(:vid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"vid": video_id, "tid": tenant_id},
+        ).fetchone()
+    if not row or not row[0]:
+        raise ValueError(f"Video {video_id} has no stored source")
+    from shared.storage.base import get_storage
+    storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+    asyncio.run(storage.download(row[0], out_path))
+    if not Path(out_path).exists() or Path(out_path).stat().st_size == 0:
+        raise RuntimeError(f"Downloaded source for video {video_id} is empty")
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.video.generate_video_ranking",
+    queue="viralo.video.generate",
+    acks_late=True,
+    soft_time_limit=1800,
+    time_limit=2100,
+)
+def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
+                           title: str, theme: str, order: str) -> dict:
+    """Build a ranking compilation video from 2-5 segments with rank-number overlays.
+
+    segments: list of {source_type, url?, video_id?, start_sec, end_sec}
+    order: "countdown" (badge n→1) or "ascending" (badge 1→n)
+    """
+    import tempfile
+    import shutil
+    import uuid as _uuid_mod
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    job_id = self.request.id
+    _publish_progress(job_id, "starting", 2, "processing", "Preparing ranking video...")
+
+    n = len(segments)
+    badges = list(range(n, 0, -1)) if order == "countdown" else list(range(1, n + 1))
+
+    tmpdir = tempfile.mkdtemp(prefix="viralo_ranking_")
+    try:
+        _publish_progress(job_id, "downloading", 10, "processing", "Resolving sources...")
+        source_paths = []
+        for i, seg in enumerate(segments):
+            src_path = os.path.join(tmpdir, f"src_{i}.mp4")
+            if seg.get("source_type") == "upload" and seg.get("video_id"):
+                _download_stored_video(seg["video_id"], tenant_id, src_path)
+            elif seg.get("url"):
+                _download_youtube(seg["url"], src_path)
+            else:
+                raise ValueError(f"Segment {i} has no url or video_id")
+            source_paths.append(src_path)
+
+        _publish_progress(job_id, "rendering", 20, "processing", "Rendering segments...")
+        seg_paths = [os.path.join(tmpdir, f"seg_{i}.mp4") for i in range(n)]
+
+        # Build label list indexed by rank number (1-based): all_labels[0] = label for rank#1
+        # Fall back to "Video N" if user left segment_title blank
+        all_labels_by_rank = [""] * (n + 1)
+        for idx, badge in enumerate(badges):
+            seg_title = (segments[idx].get("segment_title") or "").strip()
+            if not seg_title:
+                seg_title = f"Video {idx + 1}"
+            if badge <= n:
+                all_labels_by_rank[badge] = seg_title
+        all_labels = all_labels_by_rank[1:]  # 0-indexed: [label_for_1, label_for_2, ...]
+
+        def render_one(idx):
+            seg = segments[idx]
+            # Cumulative reveal: show ranks introduced up to and including this segment
+            revealed = set(badges[: idx + 1])
+            _render_ranking_segment(
+                source_path=source_paths[idx],
+                start_sec=float(seg.get("start_sec", 0)),
+                end_sec=float(seg.get("end_sec", 30)),
+                rank_number=badges[idx],
+                title_text=title,
+                theme_name=theme,
+                out_path=seg_paths[idx],
+                total=n,
+                all_labels=all_labels,
+                revealed_ranks=revealed,
+            )
+            pct = 20 + int((idx + 1) / n * 50)
+            _publish_progress(job_id, f"rendered_{idx+1}", pct, "processing", f"Rendered segment {idx+1}/{n}")
+
+        with ThreadPoolExecutor(max_workers=min(n, 4)) as pool:
+            futs = {pool.submit(render_one, i): i for i in range(n)}
+            for fut in as_completed(futs):
+                fut.result()
+
+        _publish_progress(job_id, "concatenating", 75, "processing", "Joining segments...")
+        concat_list = os.path.join(tmpdir, "concat.txt")
+        with open(concat_list, "w") as f:
+            for p in seg_paths:
+                f.write(f"file '{p}'\n")
+        out_path = os.path.join(tmpdir, "ranking_out.mp4")
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+             "-c", "copy", "-movflags", "+faststart", out_path],
+            capture_output=True, timeout=120,
+        )
+        if result.returncode != 0 or not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
+            raise RuntimeError(f"ffmpeg concat failed: {result.stderr.decode()[-500:]}")
+
+        _publish_progress(job_id, "uploading", 88, "processing", "Uploading...")
+        clip_id = str(_uuid_mod.uuid4())
+        storage_key = f"clips/{tenant_id}/{clip_id}.mp4"
+        from shared.storage.base import get_storage
+
+        async def _upload() -> str:
+            _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+            with open(out_path, "rb") as f:
+                return await _storage.upload(f, storage_key, "video/mp4")
+
+        storage_url = asyncio.run(_upload())
+
+        with _get_session(tenant_id) as session:
+            session.execute(
+                text("""
+                    INSERT INTO clips (id, tenant_id, video_id, title, status, storage_url, metadata, created_at, updated_at)
+                    VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:vid AS uuid), :title, 'ready',
+                            :url, CAST(:meta AS jsonb), NOW(), NOW())
+                """),
+                {
+                    "id": clip_id, "tid": tenant_id, "vid": video_id, "title": title,
+                    "url": storage_url,
+                    "meta": json.dumps({
+                        "ranking": True, "source_count": n, "order": order,
+                        "theme": theme, "title": title, "composite": True,
+                    }),
+                },
+            )
+            session.execute(
+                text("UPDATE videos SET status='ready', storage_url=:url, updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
+                {"url": storage_url, "vid": video_id},
+            )
+
+        # Generate platform captions (same as clip pipeline)
+        _publish_progress(job_id, "captions", 95, "processing", "Generating platform captions...")
+        try:
+            segment_labels = [s.get("segment_title", "") for s in segments]
+            topic_hint = f"{title}. Segments: {', '.join(l for l in segment_labels if l)}"
+            from collections import namedtuple as _nt
+            _ClipResult = _nt("ClipResult", ["title", "reason"])
+            fake_clip = _ClipResult(title=title, reason=topic_hint)
+            platforms = ["tiktok", "reels", "shorts", "youtube"]
+            content = _ai_generate_clip_content(fake_clip, topic_hint, platforms)
+            if content and content.get("platforms"):
+                ai_title = (content.get("title") or title)[:100].strip()
+                # Use same `platforms` key as regular clip pipeline so ClipsPage reads it
+                platforms_data = {
+                    plat: {"description": data.get("description", ""), "tags": data.get("tags", [])}
+                    for plat, data in content["platforms"].items()
+                }
+                with _get_session(tenant_id) as session:
+                    session.execute(
+                        text("""
+                            UPDATE clips
+                            SET metadata = metadata || CAST(:patch AS jsonb), updated_at = NOW()
+                            WHERE id = CAST(:id AS uuid)
+                        """),
+                        {"patch": json.dumps({"platforms": platforms_data, "ai_title": ai_title}), "id": clip_id},
+                    )
+        except Exception as _cap_err:
+            logging.warning(f"generate_video_ranking: caption generation failed (non-fatal): {_cap_err}")
+
+        _publish_progress(job_id, "complete", 100, "complete", "Ranking video ready")
+        _publish_clip_event(job_id, "clip_ready", {"clip_id": clip_id, "video_id": video_id})
+        return {"clip_id": clip_id, "storage_key": storage_key}
+
+    except Exception:
+        logging.exception("generate_video_ranking failed")
+        try:
+            with _get_session(tenant_id) as session:
+                session.execute(
+                    text("UPDATE videos SET status='error', updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
+                    {"vid": video_id},
+                )
+        except Exception:
+            pass
+        raise
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)

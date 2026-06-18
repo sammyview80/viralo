@@ -276,6 +276,10 @@ def _get_providers() -> list[dict]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+# Global concurrency cap — prevents 429 storms when many clips process in parallel.
+# All threads share this semaphore; max 4 simultaneous LLM API calls at once.
+_LLM_SEM = threading.Semaphore(4)
+
 _lock = threading.Lock()
 
 # Probe result cache: {provider_name -> (is_alive: bool, expires_at: float)}
@@ -467,20 +471,19 @@ def call_llm_json(
             log.debug(f"[LLM] {p['name']}: skipped (not configured)")
             continue
 
+        is_azure = p.get("_azure", False)
         model = p["model_large"] if prefer_large else p["model_small"]
         name = p["name"]
+        if is_azure:
+            model = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o")
 
         # Probe with cache — dead providers skipped in <1ms after first failure
-        if not _probe_cached(name, api_key, base_url, model, p["json_mode"], azure=p.get("_azure", False)):
+        if not _probe_cached(name, api_key, base_url, model, p["json_mode"], azure=is_azure):
             log.warning(f"[LLM] {name} ({model}): probe FAILED — trying next provider")
             attempts.append(f"{name}:probe-fail")
             continue
 
-        is_azure = p.get("_azure", False)
         client = _make_client(api_key, base_url, azure=is_azure)
-        # Azure: model field = deployment name; already baked into URL but SDK needs it too
-        if is_azure:
-            model = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o")
         log.info(f"[LLM] Active provider: {name} / {model}")
         if notify:
             try:
@@ -493,11 +496,16 @@ def call_llm_json(
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
             }
+            # gpt-4o+ (o-series) models use max_completion_tokens; legacy models use max_tokens
+            if is_azure:
+                kwargs["max_completion_tokens"] = max_tokens
+            else:
+                kwargs["max_tokens"] = max_tokens
             if p["json_mode"]:
                 kwargs["response_format"] = {"type": "json_object"}
-            resp = client.chat.completions.create(**kwargs)
+            with _LLM_SEM:
+                resp = client.chat.completions.create(**kwargs)
             content = (resp.choices[0].message.content or "").strip()
             result = _parse_json(content)
             log.info(f"[LLM] {name} succeeded")

@@ -145,19 +145,19 @@ function formatScheduledDate(iso: string): { date: string; time: string } {
 }
 
 function StatStrip() {
-  const { data, loading } = useQuery<AnalyticsOverview>(
+  const { data, loading, error } = useQuery<AnalyticsOverview>(
     "dashboard:analytics:overview",
     () => platformApi.analyticsOverview("7d"),
   );
 
   const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K` : String(n);
 
-  const stats: [string, string, string, string][] = data
+  const stats: [string, string, string, string][] = (data || error)
     ? [
-        ["Views", "this week", fmt(data.total_views), ""],
-        ["Engagement", "rate", `${data.engagement_rate.toFixed(1)}%`, ""],
-        ["Likes", "total", fmt(data.total_likes), ""],
-        ["Posts", "published", String(data.posts_count), ""],
+        ["Views", "this week", data ? fmt(data.total_views) : "0", error ? "Fetch error" : ""],
+        ["Engagement", "rate", data ? `${data.engagement_rate.toFixed(1)}%` : "0%", error ? "Fetch error" : ""],
+        ["Likes", "total", data ? fmt(data.total_likes) : "0", error ? "Fetch error" : ""],
+        ["Posts", "published", data ? String(data.posts_count) : "0", error ? "Fetch error" : ""],
       ]
     : [
         ["Views", "this week", "—", ""],
@@ -168,15 +168,18 @@ function StatStrip() {
 
   return (
     <div className="grid overflow-hidden rounded-[14px] border border-white/[.06] bg-[#0e121b] sm:grid-cols-2 xl:grid-cols-4">
-      {stats.map(([label, sub, val], index) => (
-        <div key={label} className="border-white/[.06] p-6 sm:border-r sm:last:border-r-0">
+      {stats.map(([label, sub, val, errHint], index) => (
+        <div key={label} className="relative border-white/[.06] p-6 sm:border-r sm:last:border-r-0">
           <div className="mb-2.5 flex gap-1 text-[10.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">
             {label} <em className="font-normal normal-case tracking-normal opacity-60">{sub}</em>
+            {errHint && (
+              <span className="ml-1 text-red-500/80" title={errHint}>⚠</span>
+            )}
           </div>
           {loading ? (
             <Skeleton className="mb-2.5 h-9 w-24" />
           ) : (
-            <div className="mb-2.5 font-display text-3xl font-bold leading-none tracking-[-.03em]">{val}</div>
+            <div className={cn("mb-2.5 font-display text-3xl font-bold leading-none tracking-[-.03em]", error ? "text-zinc-500" : "")}>{val}</div>
           )}
           {loading ? (
             <Skeleton className="h-4 w-16" />
@@ -575,9 +578,9 @@ function StudioPanel() {
   );
 }
 
-export function Dashboard() {
+export function DashboardContent() {
   return (
-    <Shell active="dashboard">
+    <div className="space-y-6">
       {/* <StudioPanel /> */}
       <StatStrip />
       <div className="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -618,6 +621,14 @@ export function Dashboard() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function Dashboard() {
+  return (
+    <Shell active="dashboard">
+      <DashboardContent />
     </Shell>
   );
 }

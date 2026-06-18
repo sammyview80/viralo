@@ -20,6 +20,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+from agent.graph.state import BrainstormState
+
 from agent.graph.nodes._viral_search_sources import (
     tavily_search,
     tiktok_trending,
@@ -247,7 +250,7 @@ def search_viral_trends(
 
 # ── LangGraph node ────────────────────────────────────────────────────────────
 
-async def viral_search_agent_fn(state: Any, config: Any) -> dict:
+async def viral_search_agent_fn(state: BrainstormState, config: RunnableConfig) -> dict:
     """LangGraph node — drop-in replacement for trend_agent_fn."""
     from agent.graph.nodes._base import broadcast
     redis = config["configurable"]["redis"]
@@ -266,7 +269,7 @@ async def viral_search_agent_fn(state: Any, config: Any) -> dict:
 
     await broadcast(redis, session_id, "viral_search_agent", "agent_change",
                     "Viral trend search complete",
-                    extra={"next": "competitor_agent", "progress": 20})
+                    extra={"next": "trend_agent", "progress": 12})
 
     return {"trend_data": {
         "topic": topic,

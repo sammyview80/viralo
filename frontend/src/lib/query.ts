@@ -50,6 +50,13 @@ export function invalidatePrefix(prefix: string) {
   }
 }
 
+export function clearQueryCache() {
+  const keys = [...cache.keys()];
+  cache.clear();
+  inflight.clear();
+  for (const key of keys) notify(key);
+}
+
 export function useQuery<T>(
   key: string,
   fetcher: () => Promise<T>,

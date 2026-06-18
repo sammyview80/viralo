@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Shell } from "../Shell";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/lib/router";
 import { videoApi, token as authToken, type VideoResponse } from "@/lib/api";
@@ -99,13 +98,16 @@ function StatusBadge({ video }: { video: VideoResponse }) {
 
 function SourcePill({ source }: { source: string }) {
   const isYoutube = source === "youtube" || source === "youtube_url";
+  const isRanking = source === "ranking";
   return (
     <span className={cn(
       "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-      isYoutube ? "border-red-400/25 bg-red-500/10 text-red-300" : "border-sky-300/20 bg-sky-400/10 text-sky-200"
+      isYoutube ? "border-red-400/25 bg-red-500/10 text-red-300"
+      : isRanking ? "border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a]"
+      : "border-sky-300/20 bg-sky-400/10 text-sky-200"
     )}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", isYoutube ? "bg-red-400" : "bg-sky-300")} />
-      {isYoutube ? "YouTube" : "Upload"}
+      <span className={cn("h-1.5 w-1.5 rounded-full", isYoutube ? "bg-red-400" : isRanking ? "bg-[#ff3d6a]" : "bg-sky-300")} />
+      {isYoutube ? "YouTube" : isRanking ? "Ranking" : "Upload"}
     </span>
   );
 }
@@ -204,6 +206,7 @@ export function ProjectsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VideoResponse | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"clipping" | "ranking">("clipping");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -214,14 +217,15 @@ export function ProjectsPage() {
   const loadHistory = useCallback(() => {
     setLoading(true);
     setError("");
-    videoApi.list(page, perPage)
+    const apiFn = tab === "ranking" ? videoApi.listRanking : videoApi.listClipping;
+    apiFn(page, perPage)
       .then((res) => {
         setHistory(res.items);
         setTotalProjects(res.total);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load projects"))
       .finally(() => setLoading(false));
-  }, [page]);
+  }, [page, tab]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
@@ -282,17 +286,17 @@ export function ProjectsPage() {
       if (sort === "status") return statusLabel(a).localeCompare(statusLabel(b));
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [history, search, sort]);
+  }, [history, search, sort, tab]);
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
     return filtered.find((v) => v.id === selectedId) ?? history.find((v) => v.id === selectedId) ?? null;
   }, [filtered, history, selectedId]);
 
-  const readyCount = history.filter((v) => isTerminalStatus(v) && v.status !== "failed").length;
-  const processingCount = history.filter((v) => !isTerminalStatus(v)).length;
-  const failedCount = history.filter((v) => v.status === "failed").length;
-  const total = history.length;
+  const readyCount = filtered.filter((v) => isTerminalStatus(v) && v.status !== "failed").length;
+  const processingCount = filtered.filter((v) => !isTerminalStatus(v)).length;
+  const failedCount = filtered.filter((v) => v.status === "failed").length;
+  const total = filtered.length;
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -311,7 +315,7 @@ export function ProjectsPage() {
   }, [deleteTarget]);
 
   return (
-    <Shell active="projects">
+    <>
       {deleteTarget && <DeleteModal video={deleteTarget} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
 
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
@@ -326,6 +330,22 @@ export function ProjectsPage() {
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-zinc-600">Upload history and generated clip workspaces.</p>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
+              {(["clipping", "ranking"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => { setTab(t); setSearch(""); setSelectedId(null); setPage(1); }}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-xs font-semibold capitalize transition",
+                    tab === t ? "bg-[#ff3d6a] text-white" : "text-zinc-500 hover:text-zinc-300"
+                  )}
+                >
+                  {t === "clipping" ? "Clipping" : "Ranking"}
+                </button>
+              ))}
             </div>
 
             <div className="relative min-w-0 flex-1 lg:min-w-[240px] lg:max-w-[520px]">
@@ -407,7 +427,7 @@ export function ProjectsPage() {
                 <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[20px] border border-dashed border-white/[.09] bg-white/[.015] p-8 text-center">
                   <div className="grid h-14 w-14 place-items-center rounded-[18px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-2xl text-[#ff7a9a]">↥</div>
                   <h3 className="mt-4 font-display text-xl font-bold text-white">{history.length === 0 ? "No projects yet" : "No projects match"}</h3>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">{history.length === 0 ? "Upload a video or import from YouTube to create your first clipping project." : "Try a different search term or clear the search field."}</p>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">{history.length === 0 ? tab === "ranking" ? "Create your first ranked countdown video from the Rankings page." : "Upload a video or import from YouTube to create your first clipping project." : "Try a different search term or clear the search field."}</p>
                   <button onClick={() => navigate("/studio")} className="mt-5 rounded-[12px] bg-[#ff3d6a] px-5 py-2.5 text-sm font-bold text-white">Start upload</button>
                 </div>
               ) : viewMode === "grid" ? (
@@ -635,7 +655,7 @@ export function ProjectsPage() {
             )}
           </div>
       </div>
-    </Shell>
+    </>
   );
 }
 

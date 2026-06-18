@@ -40,7 +40,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE social_accounts FORCE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY tenant_isolation ON social_accounts
-        USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     """)
 
     # B) Create scheduled_posts table
@@ -71,7 +71,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE scheduled_posts FORCE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY tenant_isolation ON scheduled_posts
-        USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     """)
 
     # C) Create analytics_events table
@@ -99,7 +99,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE analytics_events FORCE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY tenant_isolation ON analytics_events
-        USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     """)
 
     # D) Create analytics_snapshots table
@@ -125,7 +125,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE analytics_snapshots FORCE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY tenant_isolation ON analytics_snapshots
-        USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     """)
 
     # E) Create notifications table
@@ -151,7 +151,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE notifications FORCE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY tenant_isolation ON notifications
-        USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     """)
 
 
