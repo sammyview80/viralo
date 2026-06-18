@@ -1,6 +1,16 @@
 [tool.uv.workspace]
 members = ["shared", "services/core", "services/video", "services/agent", "services/workflow", "services/platform"]
 
+[tool.uv.sources]
+viralo-shared = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -16,4 +26,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["services", "workers", "tests"]

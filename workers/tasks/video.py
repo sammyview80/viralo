@@ -3668,7 +3668,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     _notify_video(
         tenant_id, video_id, "video_ready",
         "Your video is ready",
-        f"{len(clip_ids)} {clip_word} generated{(' from \'' + vid_title + '\'') if vid_title else ''}.",
+        f"{len(clip_ids)} {clip_word} generated{f' from {vid_title!r}' if vid_title else ''}.",
     )
 
     # Notify frontend that all clips are ready to display (with thumbnails + pending_upload status)

@@ -43,8 +43,9 @@ def test_no_caption_render_reencodes_and_uses_exact_seek_after_input(monkeypatch
 
     cmd = commands[0]
     filters = cmd[cmd.index("-filter_complex") + 1]
-    assert "trim=start=12.345:duration=7.999999999999998,setpts=PTS-STARTPTS" in filters
-    assert "atrim=start=12.345:duration=7.999999999999998,asetpts=PTS-STARTPTS" in filters
+    assert cmd[cmd.index("-ss") + 1] == "10.345"
+    assert "trim=start=2.0:duration=7.999999999999998,setpts=PTS-STARTPTS" in filters
+    assert "atrim=start=2.0:duration=7.999999999999998,asetpts=PTS-STARTPTS" in filters
     assert "copy" not in cmd[cmd.index("-c:v") + 1]
 
 
@@ -83,5 +84,6 @@ def test_caption_pass1_uses_exact_seek_after_input(monkeypatch, tmp_path):
 
     cmd = commands[0]
     filters = cmd[cmd.index("-filter_complex") + 1]
-    assert "trim=start=8.25:duration=6.5,setpts=PTS-STARTPTS" in filters
-    assert "atrim=start=8.25:duration=6.5,asetpts=PTS-STARTPTS" in filters
+    assert cmd[cmd.index("-ss") + 1] == "6.25"
+    assert "trim=start=2.0:duration=6.5,setpts=PTS-STARTPTS" in filters
+    assert "atrim=start=2.0:duration=6.5,asetpts=PTS-STARTPTS" in filters
