@@ -1,10 +1,10 @@
 import { clearQueryCache } from "./query";
 
 export const API_BASES = {
-  core:     import.meta.env.VITE_API_BASE      ?? "/core-api",
-  video:    import.meta.env.VITE_VIDEO_BASE    ?? "/video-api",
-  platform: import.meta.env.VITE_PLATFORM_BASE ?? "/platform-api",
-  agent:    import.meta.env.VITE_AGENT_BASE    ?? "/agent-api",
+  core:     import.meta.env.VITE_API_BASE      ?? "/api/v1",
+  video:    import.meta.env.VITE_VIDEO_BASE    ?? "/api/v1/video",
+  platform: import.meta.env.VITE_PLATFORM_BASE ?? "/api/v1/platform",
+  agent:    import.meta.env.VITE_AGENT_BASE    ?? "/api/v1/agent",
 } as const;
 
 const BASE = API_BASES.core;
@@ -296,10 +296,10 @@ export const videoApi = {
     fd.append("file", file);
     fd.append("title", title);
     if (config) fd.append("config", JSON.stringify(config));
-    return videoReq<VideoResponse>("POST", "/video/upload", fd);
+    return videoReq<VideoResponse>("POST", "/upload", fd);
   },
   youtube: (url: string, title?: string, config?: ClipConfig) =>
-    videoReq<VideoResponse>("POST", "/video/youtube", {
+    videoReq<VideoResponse>("POST", "/youtube", {
       url,
       ...(title ? { title } : {}),
       ...(config ? { config } : {}),
@@ -362,9 +362,9 @@ export const videoApi = {
       end_sec: number;
       segment_title?: string;
     }>;
-  }) => videoReq<{ video_id: string; job_id: string }>("POST", "/video/ranking", payload),
+  }) => videoReq<{ video_id: string; job_id: string }>("POST", "/ranking", payload),
   suggestRankingTitle: (topic: string, segment_count: number) =>
-    videoReq<{ title: string; highlight_words: string[] }>("POST", "/video/ranking/suggest-title", { topic, segment_count }),
+    videoReq<{ title: string; highlight_words: string[] }>("POST", "/ranking/suggest-title", { topic, segment_count }),
 };
 
 /* ─── Platform service (port 8006) ─── */

@@ -870,7 +870,7 @@ export function ClipsPage() {
     for (const videoId of pendingVideoIds) {
       if (sseSourcesRef.current.has(videoId)) continue; // already subscribed
 
-      const url = `${VIDEO_SSE_BASE}/video/progress/${videoId}?token=${encodeURIComponent(authToken)}`;
+      const url = `${VIDEO_SSE_BASE}/progress/${videoId}?token=${encodeURIComponent(authToken)}`;
       const es = new EventSource(url);
 
       es.onmessage = (e) => {

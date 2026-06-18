@@ -214,7 +214,7 @@ async def _analyze(meta: dict) -> dict:
 # Endpoint
 # ---------------------------------------------------------------------------
 
-@router.post("/video/analyze-viral", response_model=ViralAnalyzeResponse)
+@router.post("/analyze-viral", response_model=ViralAnalyzeResponse)
 async def analyze_viral(
     body: ViralAnalyzeRequest,
     token: TokenPayload = Depends(get_current_user),

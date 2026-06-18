@@ -1047,7 +1047,7 @@ function ProcessingView({
       if (doneRef.current) return;
       const t = authToken.get() || "";
       if (!t) return;
-      const url = `${VIDEO_SSE_BASE}/video/progress/${current.celery_task_id}`;
+      const url = `${VIDEO_SSE_BASE}/progress/${current.celery_task_id}`;
       const es = new EventSource(`${url}?token=${encodeURIComponent(t)}`);
       esRef.current = es;
 
@@ -2542,7 +2542,7 @@ export function UploadPage() {
       const tid = video.celery_task_id!;
       if (historySseRef.current.has(tid)) continue;
 
-      const es = new EventSource(`${VIDEO_SSE_BASE}/video/progress/${tid}?token=${encodeURIComponent(t)}`);
+      const es = new EventSource(`${VIDEO_SSE_BASE}/progress/${tid}?token=${encodeURIComponent(t)}`);
       es.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data);

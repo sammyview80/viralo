@@ -245,7 +245,7 @@ export function ProjectsPage() {
     for (const video of inProgress) {
       const tid = video.celery_task_id!;
       if (sseRef.current.has(tid)) continue;
-      const es = new EventSource(`${VIDEO_SSE_BASE}/video/progress/${tid}?token=${encodeURIComponent(t)}`);
+      const es = new EventSource(`${VIDEO_SSE_BASE}/progress/${tid}?token=${encodeURIComponent(t)}`);
       es.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data);
