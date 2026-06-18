@@ -3,9 +3,11 @@
 # ── Docker ────────────────────────────────────────────────────────────────
 
 up:
+	@test -f yt-cookies.txt || touch yt-cookies.txt
 	docker compose up -d
 
 dev:
+	@test -f yt-cookies.txt || touch yt-cookies.txt
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 down:
