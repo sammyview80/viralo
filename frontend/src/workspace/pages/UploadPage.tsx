@@ -2235,11 +2235,6 @@ function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMessage: s
         </div>
       </div>
 
-      {/* Soft suggestion below card */}
-      <p className="mt-3 text-center text-[11.5px] text-zinc-600">
-        Persistent failures? Check the{" "}
-        <span className="text-zinc-400">yt-cookies.txt</span> file or try a different video source.
-      </p>
     </div>
   );
 }
