@@ -2,12 +2,15 @@
 Global free-tier LLM fallback utility.
 
 Hierarchy (all free, no paid APIs):
-  1. Groq           — fastest, 100k TPD free
-  2. Cloudflare AI  — no hard daily limit, free Workers AI
-  3. Cerebras       — fast inference, free tier
-  4. OpenRouter     — free :free models
-  5. SambaNova      — free tier
-  6. Groq-small     — Groq llama-3.1-8b has separate quota bucket
+  1. Groq-small      — llama-3.1-8b-instant, separate quota bucket (fast/cheap, first priority)
+  2. OpenRouter-Gemma — gemma-4 small, independent rate limit (first priority)
+  3. Groq large keys — llama-3.3-70b-versatile, one slot per API key
+  4. Cloudflare AI   — no hard daily limit, free Workers AI
+  5. Cerebras        — fast inference, free tier
+  6. OpenRouter      — free :free models
+  7. SambaNova       — free tier
+  8. OpenRouter fallbacks — minimax, deepseek, llama32, qwen3coder
+  9. Azure OpenAI       — paid, last resort when all free providers exhausted
 
 Usage:
     from shared.llm import call_llm_json, probe_all_providers
@@ -30,6 +33,25 @@ log = logging.getLogger(__name__)
 # Add more keys via GROQ_API_KEY_N in .env without changing code.
 
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+_GITHUB_MODELS_PROVIDER = {
+    "name": "github-models",
+    "env_key": "GITHUB_TOKEN",
+    "base_url": "https://models.inference.ai.azure.com",
+    "model_large": "Meta-Llama-3.1-405B-Instruct",
+    "model_small": "Meta-Llama-3.1-8B-Instruct",
+    "json_mode": True,
+}
+
+_AZURE_OPENAI_PROVIDER = {
+    "name": "azure-openai",
+    "env_key": "AZURE_OPENAI_API_KEY",
+    "base_url": None,  # built from AZURE_OPENAI_ENDPOINT + deployment at runtime
+    "model_large": None,  # resolved from AZURE_OPENAI_CHAT_DEPLOYMENT at runtime
+    "model_small": None,
+    "json_mode": True,
+    "_azure": True,
+}
 
 _BASE_PROVIDERS = [
     {
@@ -67,43 +89,43 @@ _BASE_PROVIDERS = [
     # OpenRouter free-model fallbacks — each is a different model so independent rate limits.
     # Used only when all primary providers are exhausted.
     {
-        "name": "openrouter-qwen3",
+        "name": "openrouter-minimax",
         "env_key": "OPENROUTER_API_KEY",
         "base_url": "https://openrouter.ai/api/v1",
-        "model_large": "qwen/qwen3-235b-a22b:free",
-        "model_small": "qwen/qwen3-235b-a22b:free",
+        "model_large": "minimax/minimax-m2.5:free",
+        "model_small": "minimax/minimax-m2.5:free",
         "json_mode": False,
     },
     {
         "name": "openrouter-deepseek",
         "env_key": "OPENROUTER_API_KEY",
         "base_url": "https://openrouter.ai/api/v1",
-        "model_large": "deepseek/deepseek-r1:free",
-        "model_small": "deepseek/deepseek-r1:free",
+        "model_large": "deepseek/deepseek-v4-flash:free",
+        "model_small": "deepseek/deepseek-v4-flash:free",
         "json_mode": False,
     },
     {
         "name": "openrouter-gemma",
         "env_key": "OPENROUTER_API_KEY",
         "base_url": "https://openrouter.ai/api/v1",
-        "model_large": "google/gemma-3-27b-it:free",
-        "model_small": "google/gemma-3-27b-it:free",
+        "model_large": "google/gemma-4-31b-it:free",
+        "model_small": "google/gemma-4-26b-a4b-it:free",
         "json_mode": False,
     },
     {
-        "name": "openrouter-mistral",
+        "name": "openrouter-llama32",
         "env_key": "OPENROUTER_API_KEY",
         "base_url": "https://openrouter.ai/api/v1",
-        "model_large": "mistralai/mistral-7b-instruct:free",
-        "model_small": "mistralai/mistral-7b-instruct:free",
+        "model_large": "nousresearch/hermes-3-llama-3.1-405b:free",
+        "model_small": "meta-llama/llama-3.2-3b-instruct:free",
         "json_mode": False,
     },
     {
-        "name": "openrouter-phi4",
+        "name": "openrouter-qwen3coder",
         "env_key": "OPENROUTER_API_KEY",
         "base_url": "https://openrouter.ai/api/v1",
-        "model_large": "microsoft/phi-4-reasoning:free",
-        "model_small": "microsoft/phi-4-reasoning:free",
+        "model_large": "qwen/qwen3-coder:free",
+        "model_small": "qwen/qwen3-coder:free",
         "json_mode": False,
     },
 ]
@@ -147,9 +169,108 @@ def _build_groq_slots() -> list[dict]:
     return slots
 
 
+def _load_config() -> dict:
+    """Load config/llm.yml (preferred) or config/llm.xml fallback.
+    Returns {priority: [...], disabled: set(), defaults: {}}."""
+    search_roots = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "config"),
+        "/app/config",
+    ]
+
+    # ── Try YAML first ────────────────────────────────────────────────────────
+    for root_dir in search_roots:
+        path = os.path.normpath(os.path.join(root_dir, "llm.yml"))
+        if os.path.exists(path):
+            try:
+                import yaml
+                with open(path) as f:
+                    cfg = yaml.safe_load(f)
+
+                priority_names = [str(p) for p in (cfg.get("priority") or [])]
+                disabled = {
+                    name
+                    for name, vals in (cfg.get("providers") or {}).items()
+                    if isinstance(vals, dict) and not vals.get("enabled", True)
+                }
+                defaults = {k: str(v) for k, v in (cfg.get("defaults") or {}).items()}
+                log.info("[LLM] Loaded config/llm.yml: priority=%s disabled=%s", priority_names, disabled)
+                return {"priority": priority_names, "disabled": disabled, "defaults": defaults}
+            except Exception as e:
+                log.warning("[LLM] Failed to parse config/llm.yml: %s", e)
+
+    # ── Fallback: XML ─────────────────────────────────────────────────────────
+    import xml.etree.ElementTree as ET
+    for root_dir in search_roots:
+        path = os.path.normpath(os.path.join(root_dir, "llm.xml"))
+        if os.path.exists(path):
+            try:
+                tree = ET.parse(path)
+                root = tree.getroot()
+                priority_names = [
+                    p.text.strip()
+                    for p in root.findall("./priority/provider")
+                    if p.text and p.text.strip()
+                ]
+                disabled = {
+                    p.get("name")
+                    for p in root.findall("./providers/provider")
+                    if p.get("enabled", "true").lower() == "false"
+                }
+                defaults_el = root.find("defaults")
+                defaults = {}
+                if defaults_el is not None:
+                    for child in defaults_el:
+                        defaults[child.tag] = child.text.strip() if child.text else ""
+                log.info("[LLM] Loaded config/llm.xml: priority=%s", priority_names)
+                return {"priority": priority_names, "disabled": disabled, "defaults": defaults}
+            except Exception as e:
+                log.warning("[LLM] Failed to parse config/llm.xml: %s", e)
+
+    return {"priority": [], "disabled": set(), "defaults": {}}
+
+
 def _get_providers() -> list[dict]:
-    """Build full provider list at call time so new env vars are picked up without restart."""
-    return _build_groq_slots() + _BASE_PROVIDERS
+    """Build full provider list at call time. Priority from config/llm.xml, then LLM_PROVIDER_PRIORITY env."""
+    xml_cfg = _load_config()
+    disabled = xml_cfg["disabled"]
+
+    groq_slots = _build_groq_slots()
+    groq_small = next((s for s in groq_slots if s["name"] == "groq-small"), None)
+    openrouter_gemma = next((p for p in _BASE_PROVIDERS if p["name"] == "openrouter-gemma"), None)
+
+    priority_head = [p for p in [groq_small, openrouter_gemma] if p is not None]
+    groq_large = [s for s in groq_slots if s["name"] != "groq-small"]
+    rest = [p for p in _BASE_PROVIDERS if p["name"] != "openrouter-gemma"]
+
+    providers = priority_head + groq_large + rest
+
+    if os.getenv("GITHUB_TOKEN"):
+        providers = priority_head + [_GITHUB_MODELS_PROVIDER] + groq_large + rest
+    if os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
+        providers = providers + [_AZURE_OPENAI_PROVIDER]
+
+    # Remove disabled providers from xml config
+    if disabled:
+        providers = [p for p in providers if p["name"] not in disabled]
+
+    # XML priority order takes precedence over default order
+    xml_priority = xml_cfg["priority"]
+    if xml_priority:
+        all_by_name = {p["name"]: p for p in providers}
+        pinned = [all_by_name[n] for n in xml_priority if n in all_by_name]
+        remaining = [p for p in providers if p["name"] not in {x["name"] for x in pinned}]
+        providers = pinned + remaining
+
+    # LLM_PROVIDER_PRIORITY env var overrides xml (useful for quick testing without rebuild)
+    priority_env = os.getenv("LLM_PROVIDER_PRIORITY", "").strip()
+    if priority_env:
+        all_by_name = {p["name"]: p for p in providers}
+        pinned_names = [n.strip() for n in priority_env.split(",") if n.strip()]
+        pinned = [all_by_name[n] for n in pinned_names if n in all_by_name]
+        remaining = [p for p in providers if p["name"] not in {p2["name"] for p2 in pinned}]
+        providers = pinned + remaining
+
+    return providers
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -165,7 +286,7 @@ _PROBE_CACHE_LIVE_TTL = 30.0   # re-probe live providers after 30s
 _PROBE_CACHE_DEAD_TTL = 60.0   # skip dead providers for 60s
 
 
-def _probe_cached(name: str, api_key: str, base_url: str, model: str, json_mode: bool) -> bool:
+def _probe_cached(name: str, api_key: str, base_url: str, model: str, json_mode: bool, azure: bool = False) -> bool:
     """_probe with TTL cache. Dead providers skip real HTTP for 60s, live for 30s."""
     import time
     now = time.monotonic()
@@ -178,7 +299,7 @@ def _probe_cached(name: str, api_key: str, base_url: str, model: str, json_mode:
                     log.debug(f"[LLM] {name}: cached DEAD (skip)")
                 return alive
 
-    result = _probe(api_key, base_url, model, json_mode)
+    result = _probe(api_key, base_url, model, json_mode, azure=azure)
     ttl = _PROBE_CACHE_LIVE_TTL if result else _PROBE_CACHE_DEAD_TTL
     with _probe_cache_lock:
         _probe_cache[name] = (result, now + ttl)
@@ -203,7 +324,16 @@ def _resolve_provider(p: dict) -> tuple[str | None, str | None]:
         if not account_id:
             return None, None
         base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
+    if p.get("_azure"):
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+        deployment = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o")
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        base_url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
     return api_key, base_url
+
+
+def _get_azure_model_name() -> str:
+    return os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o")
 
 
 # Backward-compat alias — resolved at import time (static snapshot).
@@ -226,33 +356,51 @@ def _parse_json(content: str) -> dict:
         raise
 
 
-def _make_client(api_key: str, base_url: str, max_retries: int = 2, timeout: float = 15.0):
+def _make_client(api_key: str, base_url: str, max_retries: int = 2, timeout: float = 15.0, azure: bool = False):
+    if azure:
+        from openai import AzureOpenAI
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        return AzureOpenAI(api_key=api_key, azure_endpoint=endpoint,
+                           api_version=api_version, max_retries=max_retries, timeout=timeout)
     from openai import OpenAI
     return OpenAI(api_key=api_key, base_url=base_url, max_retries=max_retries, timeout=timeout)
 
 
-def _probe(api_key: str, base_url: str, model: str, json_mode: bool, timeout: float = 8.0) -> bool:
+def _probe(api_key: str, base_url: str, model: str, json_mode: bool, timeout: float = 8.0, azure: bool = False) -> bool:
     """
-    Cheap liveness check — 5 tokens, hard timeout via httpx, no retries, no json_mode.
-    json_mode param kept for signature compat but intentionally ignored — probes plain text
-    to avoid provider-specific JSON prompt requirements (e.g. Groq 400 without 'JSON' keyword).
+    Cheap liveness check — 5 tokens, hard timeout, no retries.
     Returns True on HTTP 200 with non-empty content.
     """
-    import httpx
-
-    url = base_url.rstrip("/") + "/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": "Say hi"}],
-        "max_tokens": 5,
-        "temperature": 0,
-    }
     try:
+        if azure:
+            from openai import AzureOpenAI
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+            deployment = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o")
+            client = AzureOpenAI(api_key=api_key, azure_endpoint=endpoint,
+                                 api_version=api_version, max_retries=0, timeout=timeout)
+            resp = client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": "Say hi"}],
+                max_tokens=5, temperature=0,
+            )
+            content = (resp.choices[0].message.content or "").strip()
+            return bool(content)
+
+        import httpx
+        url = base_url.rstrip("/") + "/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Say hi"}],
+            "max_tokens": 5,
+            "temperature": 0,
+        }
         with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
             resp = client.post(url, headers=headers, json=payload)
         if resp.status_code != 200:
-            log.debug(f"Probe {model}@{base_url} → HTTP {resp.status_code}")
+            log.warning(f"Probe {model}@{base_url} → HTTP {resp.status_code}: {resp.text[:120]}")
             return False
         data = resp.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -280,7 +428,7 @@ def probe_all_providers(prefer_large: bool = True) -> list[dict]:
             results.append({"name": p["name"], "model": "—", "status": "skip"})
             continue
         model = p["model_large"] if prefer_large else p["model_small"]
-        ok = _probe_cached(p["name"], api_key, base_url, model, p["json_mode"])
+        ok = _probe_cached(p["name"], api_key, base_url, model, p["json_mode"], azure=p.get("_azure", False))
         status = "ok" if ok else "fail"
         log.info(f"[LLM probe] {p['name']} ({model}): {status.upper()}")
         results.append({"name": p["name"], "model": model, "status": status})
@@ -323,12 +471,16 @@ def call_llm_json(
         name = p["name"]
 
         # Probe with cache — dead providers skipped in <1ms after first failure
-        if not _probe_cached(name, api_key, base_url, model, p["json_mode"]):
+        if not _probe_cached(name, api_key, base_url, model, p["json_mode"], azure=p.get("_azure", False)):
             log.warning(f"[LLM] {name} ({model}): probe FAILED — trying next provider")
             attempts.append(f"{name}:probe-fail")
             continue
 
-        client = _make_client(api_key, base_url)
+        is_azure = p.get("_azure", False)
+        client = _make_client(api_key, base_url, azure=is_azure)
+        # Azure: model field = deployment name; already baked into URL but SDK needs it too
+        if is_azure:
+            model = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o")
         log.info(f"[LLM] Active provider: {name} / {model}")
         if notify:
             try:

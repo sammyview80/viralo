@@ -141,7 +141,7 @@ function S1Welcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => void 
       <p className="mx-auto mb-8 max-w-[400px] text-[15px] leading-[1.65] text-zinc-500">
         Turn any idea into a platform-ready short video in under a minute. Let's get you set up — it takes 2 minutes.
       </p>
-      <div className="mx-auto mb-8 grid max-w-[460px] grid-cols-3 gap-2.5">
+      <div className="mx-auto mb-8 grid max-w-[460px] grid-cols-1 gap-2.5 sm:grid-cols-3">
         {[
           { icon:"🎬", t:"AI video in 60s",  s:"From idea to viral clip" },
           { icon:"📅", t:"Auto-schedule",     s:"Posts at peak reach times" },
@@ -188,7 +188,7 @@ function S2Platforms({ onNext }: { onNext: () => void }) {
         <h2 className="font-display text-[26px] font-extrabold tracking-[-0.01em]">Where do you post?</h2>
         <p className="mt-2 text-[14px] text-zinc-500">Select your active platforms — you can add more later.</p>
       </div>
-      <div className="mb-6 grid grid-cols-3 gap-2.5">
+      <div className="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         {PLATFORMS.map((p) => {
           const on = sel.includes(p.id);
           return (
@@ -324,7 +324,7 @@ function S4Goal({ onNext }: { onNext: () => void }) {
         <h2 className="font-display text-[26px] font-extrabold tracking-[-0.01em]">What's your main goal?</h2>
         <p className="mt-2 text-[14px] text-zinc-500">We'll tune your dashboard and recommendations around it.</p>
       </div>
-      <div className="mb-6 grid grid-cols-2 gap-3">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {GOALS.map((g) => (
           <div key={g.id} onClick={() => setSel(g.id)}
             className={cn(
@@ -377,7 +377,7 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
         </p>
 
         {/* Plan cards */}
-        <div className="mx-auto mb-6 grid max-w-[500px] grid-cols-2 gap-3 text-left">
+        <div className="mx-auto mb-6 grid max-w-[500px] grid-cols-1 gap-3 text-left sm:grid-cols-2">
           <div className="rounded-[16px] border border-white/[.08] bg-white/[.04] p-5">
             <div className="mb-3 text-[12px] font-bold uppercase tracking-[.1em] text-zinc-500">Free</div>
             <div className="mb-1 font-display text-[28px] font-bold">$0<span className="text-[14px] font-normal text-zinc-500">/mo</span></div>
@@ -403,7 +403,7 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
 
         <Err msg={error} />
 
-        <div className="mx-auto grid max-w-[300px] grid-cols-3 gap-2">
+        <div className="mx-auto grid max-w-[300px] grid-cols-1 gap-2 sm:grid-cols-3">
           {[
             { icon:"🎬", label:"Studio",   dest:"/studio" },
             { icon:"🔥", label:"Trending", dest:"/trending" },
@@ -451,7 +451,7 @@ export function OnboardingPage() {
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-[rgba(4,7,15,.94)] p-6 backdrop-blur-[12px]"
       style={{ animation: "fadeUp .3s cubic-bezier(.22,.8,.4,1)" }}>
 
-      <div className="flex max-h-[90vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[24px] border border-white/[.14] bg-[#0e1420] shadow-[0_40px_100px_rgba(0,0,0,.8)]">
+      <div className="flex max-h-[90vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[18px] border border-white/[.14] bg-[#0e1420] shadow-[0_40px_100px_rgba(0,0,0,.8)] sm:rounded-[24px]">
         <Progress step={step} />
 
         <div className="flex-1 overflow-y-auto px-7 pb-8 pt-6">
@@ -487,3 +487,5 @@ export function OnboardingPage() {
     </div>
   );
 }
+
+

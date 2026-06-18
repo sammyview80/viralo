@@ -42,6 +42,7 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.claude-flow
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 .docker/
@@ -73,3 +74,4 @@ media/
 .agents/
 .claude/
 skills-lock.json
+yt-cookies.txt

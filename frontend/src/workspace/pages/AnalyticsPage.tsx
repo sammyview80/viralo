@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Shell } from "../Shell";
 import { platformApi, AnalyticsOverview, PostAnalytics } from "@/lib/api";
+import { useQuery } from "@/lib/query";
+import { Pagination } from "../components/Pagination";
 
 type Period = "7d" | "30d" | "90d";
 
@@ -80,48 +82,32 @@ const PAGE_SIZE = 10;
 
 export function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>("30d");
-  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
-  const [posts, setPosts] = useState<PostAnalytics[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [loadingOverview, setLoadingOverview] = useState(true);
-  const [loadingPosts, setLoadingPosts] = useState(true);
-  const [errorOverview, setErrorOverview] = useState<string | null>(null);
-  const [errorPosts, setErrorPosts] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLoadingOverview(true);
-    setErrorOverview(null);
-    platformApi
-      .analyticsOverview(period)
-      .then(setOverview)
-      .catch((e: Error) => setErrorOverview(e.message))
-      .finally(() => setLoadingOverview(false));
-  }, [period]);
+  const { data: overview, loading: loadingOverview, error: errorOverview } = useQuery(
+    `analytics:overview:${period}`,
+    () => platformApi.analyticsOverview(period),
+    { ttl: 60_000 },
+  );
 
-  useEffect(() => {
-    setLoadingPosts(true);
-    setErrorPosts(null);
-    platformApi
-      .analyticsPosts(page)
-      .then((res) => {
-        setPosts(res.items);
-        setTotal(res.total);
-      })
-      .catch((e: Error) => setErrorPosts(e.message))
-      .finally(() => setLoadingPosts(false));
-  }, [page]);
+  const { data: postsPage, loading: loadingPosts, error: errorPosts } = useQuery(
+    `analytics:posts:${page}`,
+    () => platformApi.analyticsPosts(page, PAGE_SIZE),
+    { ttl: 60_000 },
+  );
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const posts = postsPage?.items ?? [];
+  const total = postsPage?.total ?? 0;
+
   const isEmpty = !loadingPosts && !errorPosts && posts.length === 0 && !loadingOverview && overview !== null && overview.posts_count === 0;
 
   return (
     <Shell active="analytics">
       <div className="space-y-6">
         {/* Header + period selector */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
           <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Analytics</h1>
-          <div className="flex rounded-[10px] border border-white/[.07] bg-[#0e1420] p-1 gap-1">
+          <div className="grid grid-cols-3 rounded-[10px] border border-white/[.07] bg-[#0e1420] p-1 gap-1 sm:flex">
             {(["7d", "30d", "90d"] as Period[]).map((p) => (
               <button
                 key={p}
@@ -164,7 +150,7 @@ export function AnalyticsPage() {
 
         {/* Per-post table */}
         <div className="overflow-hidden rounded-[14px] border border-white/[.07] bg-[#0e1420]">
-          <div className="flex items-center justify-between border-b border-white/[.07] px-5 py-4">
+          <div className="flex flex-col gap-1 border-b border-white/[.07] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <span className="font-display text-[15px] font-bold">Post Performance</span>
             {total > 0 && (
               <span className="text-xs text-zinc-500">
@@ -247,30 +233,13 @@ export function AnalyticsPage() {
                 </table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between border-t border-white/[.05] px-5 py-3">
-                  <span className="text-xs text-zinc-500">
-                    Page {page} of {totalPages}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                      className="rounded-[8px] border border-white/[.07] bg-white/[.03] px-3 py-1.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      ← Prev
-                    </button>
-                    <button
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                      className="rounded-[8px] border border-white/[.07] bg-white/[.03] px-3 py-1.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Next →
-                    </button>
-                  </div>
-                </div>
-              )}
+              <Pagination
+                page={page}
+                perPage={PAGE_SIZE}
+                total={total}
+                itemLabel="posts"
+                onPageChange={setPage}
+              />
             </>
           )}
         </div>
@@ -278,3 +247,4 @@ export function AnalyticsPage() {
     </Shell>
   );
 }
+

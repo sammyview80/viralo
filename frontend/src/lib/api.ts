@@ -12,12 +12,14 @@ export const token = {
     _accessToken = t;
     localStorage.setItem(LS_ACCESS, t);
     localStorage.setItem(LS_SESSION, "1"); // mark that a refresh cookie was issued
+    clearApiCaches();
   },
 
   clear: () => {
     _accessToken = null;
     localStorage.removeItem(LS_ACCESS);
     localStorage.removeItem(LS_SESSION);
+    clearApiCaches();
   },
 
   /* true if we believe a refresh cookie exists (set on every successful login/register/refresh) */
@@ -133,48 +135,52 @@ export const onboarding = {
   skip:     ()                                  => req<FinalizeResponse>("POST", "/onboarding/skip"),
 };
 
-/* ─── Video service (port 8003) ─── */
-const VIDEO_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+/* ─── Generic service client factory — one per microservice ─── */
+function createServiceClient(getBase: () => string) {
+  async function _fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
 
-async function _videoFetch<T>(method: string, path: string, body?: unknown | FormData): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
-
-  let fetchBody: BodyInit | undefined;
-  if (body instanceof FormData) {
-    fetchBody = body; // browser sets multipart Content-Type with boundary
-  } else if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    fetchBody = JSON.stringify(body);
-  }
-
-  const res = await fetch(`${VIDEO_BASE}${path}`, {
-    method, headers, credentials: "include", body: fetchBody,
-  });
-
-  if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
-    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
-    throw new ApiError(res.status, msg);
-  }
-  return data as T;
-}
-
-async function videoReq<T>(method: string, path: string, body?: unknown | FormData): Promise<T> {
-  try {
-    return await _videoFetch<T>(method, path, body);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      const newToken = await doRefresh();
-      _accessToken = newToken;
-      return _videoFetch<T>(method, path, body);
+    let fetchBody: BodyInit | undefined;
+    if (body instanceof FormData) {
+      fetchBody = body;
+    } else if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      fetchBody = JSON.stringify(body);
     }
-    throw err;
+
+    const res = await fetch(`${getBase()}${path}`, {
+      method, headers, credentials: "include", body: fetchBody,
+    });
+
+    if (res.status === 204) return undefined as T;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
+      const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
+      throw new ApiError(res.status, msg);
+    }
+    return data as T;
   }
+
+  async function serviceReq<T>(method: string, path: string, body?: unknown): Promise<T> {
+    try {
+      return await _fetch<T>(method, path, body);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        const newToken = await doRefresh();
+        _accessToken = newToken;
+        return _fetch<T>(method, path, body);
+      }
+      throw err;
+    }
+  }
+
+  return serviceReq;
 }
+
+/* ─── Video service (port 8003) ─── */
+const videoReq = createServiceClient(() => import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1");
 
 export interface VideoResponse {
   id: string;
@@ -192,12 +198,14 @@ export interface VideoResponse {
   created_at: string;
 }
 
-export interface VideoListResponse {
-  items: VideoResponse[];
+export interface PaginatedResponse<T> {
+  items: T[];
   total: number;
   page: number;
   per_page: number;
 }
+
+export type VideoListResponse = PaginatedResponse<VideoResponse>;
 
 export interface ClipPlatformContent {
   description: string;
@@ -221,9 +229,32 @@ export interface ClipApiResponse {
     ai_title?: string;
     viral_reason?: string;
     viral_score?: number;
+    niche?: string;
+    topic?: string;
     platforms?: Record<string, ClipPlatformContent>;
+    trending_hashtags?: string[];
+    composite?: boolean;
+    source_clip_ids?: string[];
   } | null;
+  upload_attempts: number | null;
+  upload_error: string | null;
   created_at: string;
+}
+
+export type ClipListResponse = PaginatedResponse<ClipApiResponse>;
+
+function normalizePaginated<T>(data: PaginatedResponse<T> | T[] | null | undefined, page: number, per_page: number): PaginatedResponse<T> {
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page, per_page };
+  }
+  const maybe = data as Partial<PaginatedResponse<T>> | null | undefined;
+  const items = Array.isArray(maybe?.items) ? maybe.items : [];
+  return {
+    items,
+    total: typeof maybe?.total === "number" ? maybe.total : items.length,
+    page: typeof maybe?.page === "number" ? maybe.page : page,
+    per_page: typeof maybe?.per_page === "number" ? maybe.per_page : per_page,
+  };
 }
 
 export interface ClipConfig {
@@ -238,6 +269,7 @@ export interface ClipConfig {
   duration_max?: number;
   duration_min?: number;
   output_quality?: "source" | "1080p" | "720p" | "480p";
+  precision_mode?: boolean;
 }
 
 export const videoApi = {
@@ -256,49 +288,48 @@ export const videoApi = {
     }),
   get:     (id: string) => videoReq<VideoResponse>("GET", `/videos/${id}`),
   list:    (page = 1, per_page = 20) =>
-    videoReq<VideoListResponse>("GET", `/videos?page=${page}&per_page=${per_page}`),
-  clips:   (videoId: string) =>
-    videoReq<ClipApiResponse[]>("GET", `/clips?video_id=${videoId}`),
+    videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
+  clips:   (videoId: string, page = 1, per_page = 100) =>
+    videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?video_id=${videoId}&page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page)),
+  listClips: (page = 1, per_page = 24, minViralityScore?: number, sortBy?: "created_at" | "score") => {
+    const qs = new URLSearchParams({ page: String(page), per_page: String(per_page) });
+    if (minViralityScore !== undefined) qs.set("min_virality_score", String(minViralityScore));
+    if (sortBy) qs.set("sort_by", sortBy);
+    return videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?${qs}`)
+      .then((data) => normalizePaginated<ClipApiResponse>(data, page, per_page));
+  },
   patchClip: (clipId: string, patch: { tags?: string[]; platform_copy?: Record<string, { description: string; tags: string[] }> }) =>
     videoReq<ClipApiResponse>("PATCH", `/clips/${clipId}`, patch),
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),
   cancel:  (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/cancel`),
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
+  downloadZip: async (clipIds: string[], zipName?: string): Promise<Blob> => {
+    const base = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
+    const res = await fetch(`${base}/clips/download-zip`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ clip_ids: clipIds, zip_name: zipName }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.detail ?? `HTTP ${res.status}`);
+    }
+    return res.blob();
+  },
+  mergeAiClips: (clipIds: string[]) =>
+    videoReq<{ task_id: string; message: string }>("POST", "/clips/merge-ai", { clip_ids: clipIds }),
+  retryClipUpload: (clipId: string) =>
+    videoReq<ClipApiResponse>("POST", `/clips/${clipId}/retry-upload`),
 };
 
 /* ─── Platform service (port 8006) ─── */
-const PLATFORM_BASE = import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1";
-
-async function _platformFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
-  const res = await fetch(`${PLATFORM_BASE}${path}`, {
-    method, headers, credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
-    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
-    throw new ApiError(res.status, msg);
-  }
-  return data as T;
-}
-
-async function platformReq<T>(method: string, path: string, body?: unknown): Promise<T> {
-  try {
-    return await _platformFetch<T>(method, path, body);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      const newToken = await doRefresh();
-      _accessToken = newToken;
-      return _platformFetch<T>(method, path, body);
-    }
-    throw err;
-  }
-}
+const platformReq = createServiceClient(() => import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1");
 
 /* ─── Platform types ─── */
 export interface SocialAccount {
@@ -368,30 +399,35 @@ export interface PostAnalytics {
   fetched_at: string;
 }
 
-export interface Notification {
+export interface AppNotification {
   id: string;
-  type: string;
+  type: string | null;
   title: string;
   body: string | null;
   is_read: boolean;
+  action_url: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  read_at: string | null;
 }
 
-export interface NotificationListResponse {
-  items: Notification[];
-  total: number;
-}
+export type NotificationListResponse = PaginatedResponse<AppNotification>;
+export type SocialAccountListResponse = PaginatedResponse<SocialAccount>;
 
 /* ─── Platform API ─── */
 
 // Deduplicate concurrent listAccounts calls — both SocialConnectBanner and BulkPublishModal call this on mount
 let _accountsInflight: Promise<SocialAccount[]> | null = null;
 let _accountsCache: { data: SocialAccount[]; at: number } | null = null;
+function clearApiCaches() {
+  _accountsInflight = null;
+  _accountsCache = null;
+}
 function _listAccountsCached(): Promise<SocialAccount[]> {
   if (_accountsCache && Date.now() - _accountsCache.at < 30_000) return Promise.resolve(_accountsCache.data);
   if (_accountsInflight) return _accountsInflight;
-  _accountsInflight = platformReq<SocialAccount[]>("GET", "/social-accounts")
+  _accountsInflight = platformReq<SocialAccountListResponse | SocialAccount[]>("GET", "/social-accounts?per_page=100")
+    .then((data) => normalizePaginated<SocialAccount>(data, 1, 100).items)
     .then((data) => { _accountsCache = { data, at: Date.now() }; return data; })
     .finally(() => { _accountsInflight = null; });
   return _accountsInflight;
@@ -402,18 +438,24 @@ export const platformApi = {
   connectOAuth: (platform: string, code: string, redirect_uri: string, extra?: Record<string, string>) =>
     platformReq<{ account_id: string; platform: string; username: string }>(
       "POST", "/oauth/connect", { platform, code, redirect_uri, ...extra }
-    ),
+    ).then((r) => { _accountsCache = null; return r; }),
   listAccounts: _listAccountsCached,
-  deleteAccount: (id: string) => platformReq<void>("DELETE", `/social-accounts/${id}`),
+  deleteAccount: (id: string) => platformReq<void>("DELETE", `/social-accounts/${id}`)
+    .then((r) => { _accountsCache = null; return r; }),
 
   // Scheduling
   schedulePost: (data: ScheduledPostCreate) =>
     platformReq<ScheduledPost>("POST", "/scheduled-posts", data),
-  listPosts: (params?: { platform?: string; status?: string; from?: string; to?: string }) => {
-    const q = new URLSearchParams(params as Record<string, string>).toString();
-    return platformReq<{ items: ScheduledPost[]; total: number; page: number; per_page: number }>(
-      "GET", `/scheduled-posts${q ? `?${q}` : ""}`
-    );
+  listPosts: (params?: { platform?: string; status?: string; from?: string; to?: string; page?: number; per_page?: number }) => {
+    const q = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") q.set(key, String(value));
+      });
+    }
+    return platformReq<PaginatedResponse<ScheduledPost> | ScheduledPost[]>(
+      "GET", `/scheduled-posts${q.toString() ? `?${q.toString()}` : ""}`
+    ).then((data) => normalizePaginated<ScheduledPost>(data, params?.page ?? 1, params?.per_page ?? 20));
   },
   getPost: (id: string) => platformReq<ScheduledPost>("GET", `/scheduled-posts/${id}`),
   updatePost: (id: string, data: Partial<Pick<ScheduledPost, "scheduled_at" | "caption" | "hashtags">>) =>
@@ -428,49 +470,72 @@ export const platformApi = {
   // Analytics
   analyticsOverview: (period: "7d" | "30d" | "90d" = "30d") =>
     platformReq<AnalyticsOverview>("GET", `/analytics/overview?period=${period}`),
-  analyticsPosts: (page = 1) =>
-    platformReq<{ items: PostAnalytics[]; total: number }>("GET", `/analytics/posts?page=${page}`),
+  analyticsPosts: (page = 1, per_page = 10) =>
+    platformReq<PaginatedResponse<PostAnalytics> | PostAnalytics[]>("GET", `/analytics/posts?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<PostAnalytics>(data, page, per_page)),
 
   // Notifications
-  listNotifications: (unread?: boolean) =>
-    platformReq<NotificationListResponse>("GET", `/notifications${unread ? "?unread=true" : ""}`),
+  listNotifications: (unread?: boolean, page = 1, per_page = 20) =>
+    platformReq<NotificationListResponse | AppNotification[]>("GET", `/notifications?${unread !== undefined ? `unread=${unread}&` : ""}page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<AppNotification>(data, page, per_page)),
   markRead: (id: string) => platformReq<void>("PATCH", `/notifications/${id}/read`),
   markAllRead: () => platformReq<void>("POST", "/notifications/read-all"),
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
 
+export interface ChannelSubscription {
+  id: string;
+  channel_id: string;
+  channel_name: string | null;
+  channel_url: string | null;
+  auto_publish: boolean;
+  active: boolean;
+  subscribed_at: string | null;
+  lease_expires_at: string | null;
+  last_video_id: string | null;
+  last_notified_at: string | null;
+  created_at: string;
+}
+
+export interface ChannelVideo {
+  video_id: string;
+  title: string;
+  published: string;
+  url: string;
+  thumbnail: string;
+  views: string | null;
+  likes?: string | null;
+  comments?: string | null;
+  duration?: string | null;
+  already_clipped?: boolean;
+}
+
+export const channelsApi = {
+  list: () => platformReq<ChannelSubscription[]>("GET", "/websub/channels"),
+  resolve: (q: string) =>
+    platformReq<{ channel_id: string; channel_name: string }>("GET", `/websub/resolve?q=${encodeURIComponent(q)}`),
+  subscribe: (body: { channel_id: string; channel_name?: string; channel_url?: string; auto_publish?: boolean }) =>
+    platformReq<{ channel_id: string; channel_name: string; status: string }>("POST", "/websub/channels", body),
+  unsubscribe: (channelId: string) => platformReq<void>("DELETE", `/websub/channels/${channelId}`),
+  recentVideos: (channelId: string) =>
+    platformReq<{ channel_id: string; videos: ChannelVideo[] }>("GET", `/websub/channels/${channelId}/videos`),
+  topVideos: (channelId: string, order: "viewCount" | "date" | "rating" = "viewCount") =>
+    platformReq<{ channel_id: string; videos: ChannelVideo[]; order: string }>(
+      "GET", `/websub/channels/${channelId}/top-videos?order=${order}&max_results=25`
+    ),
+};
+
+export const notificationApi = {
+  list: (unread?: boolean, page = 1) =>
+    platformReq<NotificationListResponse | AppNotification[]>("GET", `/notifications?page=${page}&per_page=20${unread ? "&unread=true" : ""}`)
+      .then((data) => normalizePaginated<AppNotification>(data, page, 20)),
+  markRead: (id: string) => platformReq<AppNotification>("PATCH", `/notifications/${id}/read`),
+  markAllRead: () => platformReq<void>("POST", `/notifications/read-all`),
+  delete: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
+};
+
 /* ─── Agent API (via nginx) ─── */
-const AGENT_BASE = import.meta.env.VITE_AGENT_BASE ?? "http://localhost:8004/api/v1";
-
-async function _agentFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
-  const res = await fetch(`${AGENT_BASE}${path}`, {
-    method, headers, credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
-    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
-    throw new ApiError(res.status, msg);
-  }
-  return data as T;
-}
-
-async function agentReq<T>(method: string, path: string, body?: unknown): Promise<T> {
-  try {
-    return await _agentFetch<T>(method, path, body);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      const newToken = await doRefresh();
-      _accessToken = newToken;
-      return _agentFetch<T>(method, path, body);
-    }
-    throw err;
-  }
-}
+const agentReq = createServiceClient(() => import.meta.env.VITE_AGENT_BASE ?? "http://localhost:8004/api/v1");
 
 export interface TagSuggestRequest {
   topic: string;

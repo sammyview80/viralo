@@ -33,6 +33,9 @@ class ClipConfig(BaseModel):
     language: str = Field(default="en", description="Spoken language (en, es, fr, ...)")
     topic_focus: str | None = Field(default=None, description="Guide AI to focus on specific topic")
 
+    # Precision mode
+    precision_mode: bool = False
+
 
 class VideoResponse(BaseModel):
     id: uuid.UUID
@@ -65,6 +68,8 @@ class ClipResponse(BaseModel):
     thumbnail_url: str | None
     caption_srt: str | None
     clip_metadata: dict | None = None
+    upload_attempts: int | None = None
+    upload_error: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
 
@@ -76,6 +81,13 @@ class ClipPatchRequest(BaseModel):
 
 class VideoListResponse(BaseModel):
     items: list[VideoResponse]
+    total: int
+    page: int
+    per_page: int
+
+
+class ClipListResponse(BaseModel):
+    items: list[ClipResponse]
     total: int
     page: int
     per_page: int
@@ -94,6 +106,15 @@ class GenerateClipsRequest(BaseModel):
 class VideoUpdateRequest(BaseModel):
     title: str | None = None
     topic: str | None = None
+
+
+class ClipConcatRequest(BaseModel):
+    video_id: uuid.UUID
+    clip_ids: list[uuid.UUID] | None = None
+
+
+class ClipMergeAiRequest(BaseModel):
+    clip_ids: list[uuid.UUID]  # 2–10 clips to consider for merging
 
 
 class YouTubeInspectRequest(BaseModel):

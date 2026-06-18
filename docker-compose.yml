@@ -80,6 +80,17 @@ services:
 
   # ── API Services ──────────────────────────────────────────────────────────
 
+  migrate:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+    command: alembic upgrade head
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   core-service:
     <<: *service-defaults
     build:
@@ -88,6 +99,8 @@ services:
     ports:
       - "8001:8001"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -103,10 +116,17 @@ services:
       dockerfile: services/video/Dockerfile
     ports:
       - "8003:8003"
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -125,6 +145,8 @@ services:
     ports:
       - "8004:8004"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -143,6 +165,8 @@ services:
     ports:
       - "8005:8005"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -161,6 +185,8 @@ services:
     ports:
       - "8006:8006"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -178,11 +204,21 @@ services:
     build:
       context: .
       dockerfile: services/video/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=4 --loglevel=info
+    command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=1 --loglevel=info
+    mem_limit: 2500m
+    memswap_limit: 2500m
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      MALLOC_ARENA_MAX: "2"
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -197,6 +233,8 @@ services:
       dockerfile: services/agent/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.agent.run --concurrency=1 --pool=threads --loglevel=info
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -211,6 +249,8 @@ services:
       dockerfile: services/workflow/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.workflow.execute --concurrency=8 --loglevel=info
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -225,6 +265,24 @@ services:
       dockerfile: services/platform/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.post.publish,viralo.analytics.ingest --concurrency=10 --loglevel=info
     depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-notification:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/platform/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.notifications --concurrency=4 --loglevel=info
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -239,6 +297,8 @@ services:
       dockerfile: services/core/Dockerfile
     command: celery -A workers.celery_app beat --loglevel=info
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       redis:

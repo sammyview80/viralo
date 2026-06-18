@@ -7,15 +7,15 @@ from functools import partial
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.deps import get_current_user, get_tenant_db
 from shared.schemas.auth import TokenPayload
 from platform_svc.crypto import decrypt_token, encrypt_token
 from platform_svc.models import SocialAccount
-from platform_svc.schemas import OAuthConnectRequest, OAuthConnectResponse, SocialAccountResponse
+from platform_svc.schemas import OAuthConnectRequest, OAuthConnectResponse, SocialAccountListResponse, SocialAccountResponse
 
 router = APIRouter(tags=["social-accounts"])
 
@@ -164,6 +164,9 @@ def _exchange_code(platform: str, code: str, redirect_uri: str, code_verifier: s
         }
 
     elif platform == "tiktok":
+        if not code_verifier:
+            raise ValueError("TikTok OAuth requires a PKCE code verifier. Please start the TikTok connection again from Integrations.")
+
         resp = httpx.post(
             "https://open.tiktokapis.com/v2/oauth/token/",
             data={
@@ -172,14 +175,25 @@ def _exchange_code(platform: str, code: str, redirect_uri: str, code_verifier: s
                 "code": code,
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
-                **({"code_verifier": code_verifier} if code_verifier else {}),
+                "code_verifier": code_verifier,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=15,
         )
         resp.raise_for_status()
-        token_data = resp.json().get("data", resp.json())
-        access_token = token_data["access_token"]
+        raw_token_data = resp.json()
+        token_data = raw_token_data.get("data") or raw_token_data
+        access_token = token_data.get("access_token")
+        if not access_token:
+            error = token_data.get("error") or raw_token_data.get("error") or token_data.get("message") or raw_token_data.get("message")
+            description = (
+                token_data.get("error_description")
+                or raw_token_data.get("error_description")
+                or token_data.get("description")
+                or raw_token_data.get("description")
+            )
+            detail = ": ".join(str(part) for part in (error, description) if part) or "TikTok did not return an access token. Please retry the connection."
+            raise ValueError(f"TikTok OAuth token exchange failed: {detail}")
 
         # Fetch user info
         user_resp = httpx.get(
@@ -189,14 +203,15 @@ def _exchange_code(platform: str, code: str, redirect_uri: str, code_verifier: s
             timeout=10,
         )
         user_resp.raise_for_status()
-        user_data = user_resp.json().get("data", {}).get("user", {})
+        raw_user_data = user_resp.json()
+        user_data = raw_user_data.get("data", {}).get("user", {})
 
         return {
             "access_token": access_token,
             "refresh_token": token_data.get("refresh_token"),
             "expires_in": token_data.get("expires_in"),
             "scope": token_data.get("scope"),
-            "platform_user_id": user_data.get("open_id", ""),
+            "platform_user_id": user_data.get("open_id") or token_data.get("open_id") or "",
             "platform_username": user_data.get("display_name"),
         }
 
@@ -450,17 +465,29 @@ async def oauth_connect(
     )
 
 
-@router.get("/social-accounts", response_model=list[SocialAccountResponse])
+@router.get("/social-accounts", response_model=SocialAccountListResponse)
 async def list_social_accounts(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=100),
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """List all connected social accounts for the current tenant."""
+    """List connected social accounts for the current tenant with pagination."""
+    query = select(SocialAccount).where(
+        SocialAccount.is_active == True,
+        SocialAccount.tenant_id == uuid.UUID(token.tenant_id),
+    )
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
     result = await db.execute(
-        select(SocialAccount).where(SocialAccount.is_active == True).order_by(SocialAccount.created_at.desc())
+        query.order_by(SocialAccount.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
     )
     accounts = result.scalars().all()
-    return [SocialAccountResponse.model_validate(a) for a in accounts]
+    return SocialAccountListResponse(
+        items=[SocialAccountResponse.model_validate(a) for a in accounts],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
 
 
 @router.delete("/social-accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -471,7 +498,11 @@ async def disconnect_social_account(
 ):
     """Disconnect (soft-delete) a social account."""
     result = await db.execute(
-        select(SocialAccount).where(SocialAccount.id == account_id, SocialAccount.is_active == True)
+        select(SocialAccount).where(
+            SocialAccount.id == account_id,
+            SocialAccount.is_active == True,
+            SocialAccount.tenant_id == uuid.UUID(token.tenant_id),
+        )
     )
     account = result.scalar_one_or_none()
     if not account:
@@ -479,3 +510,4 @@ async def disconnect_social_account(
 
     account.is_active = False
     await db.commit()
+

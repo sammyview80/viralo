@@ -3,7 +3,11 @@ import { createPortal } from "react-dom";
 import { Shell } from "../Shell";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/lib/router";
-import { videoApi, type VideoResponse } from "@/lib/api";
+import { videoApi, token as authToken, type VideoResponse } from "@/lib/api";
+import { Pagination } from "../components/Pagination";
+import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
+
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 
 /* ─── helpers ─── */
 
@@ -203,32 +207,68 @@ export function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [page, setPage] = useState(1);
+  const [totalProjects, setTotalProjects] = useState(0);
+  const perPage = 20;
 
   const loadHistory = useCallback(() => {
     setLoading(true);
     setError("");
-    videoApi.list(1, 50)
-      .then((res) => { setHistory(res.items); })
+    videoApi.list(page, perPage)
+      .then((res) => {
+        setHistory(res.items);
+        setTotalProjects(res.total);
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load projects"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [page]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
+  /* SSE subscriptions for in-progress videos — replaces 3s polling */
+  const sseRef = useRef<Map<string, EventSource>>(new Map());
   useEffect(() => {
-    const inProgress = history.filter((v) => !isTerminalStatus(v));
-    if (inProgress.length === 0) return;
-    const t = setTimeout(async () => {
-      const updates = await Promise.allSettled(inProgress.map((v) => videoApi.get(v.id)));
-      setHistory((prev) => prev.map((v) => {
-        const idx = inProgress.findIndex((p) => p.id === v.id);
-        if (idx === -1) return v;
-        const result = updates[idx];
-        return result.status === "fulfilled" ? result.value : v;
-      }));
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [history]);
+    const inProgress = history.filter((v) => !isTerminalStatus(v) && v.celery_task_id);
+    const activeIds = new Set(inProgress.map((v) => v.celery_task_id!));
+
+    for (const [tid, es] of sseRef.current) {
+      if (!activeIds.has(tid)) { es.close(); sseRef.current.delete(tid); }
+    }
+
+    const t = authToken.get() || "";
+    if (!t) return;
+
+    for (const video of inProgress) {
+      const tid = video.celery_task_id!;
+      if (sseRef.current.has(tid)) continue;
+      const es = new EventSource(`${VIDEO_SSE_BASE}/video/progress/${tid}?token=${encodeURIComponent(t)}`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "keepalive") return;
+          if (d.pct != null || d.step != null || d.status != null) {
+            setHistory((prev) => prev.map((v) =>
+              v.id === video.id
+                ? { ...v, pipeline_pct: d.pct ?? v.pipeline_pct, pipeline_step: d.step ?? v.pipeline_step,
+                    status: d.status === "complete" ? "ready" : d.status === "failed" ? "failed" : v.status }
+                : v
+            ));
+          }
+          if (d.status === "complete" || d.status === "failed") {
+            es.close(); sseRef.current.delete(tid);
+            videoApi.get(video.id).then((u) =>
+              setHistory((prev) => prev.map((v) => v.id === u.id ? u : v))
+            ).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => { es.close(); sseRef.current.delete(tid); };
+      sseRef.current.set(tid, es);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useMemo(() => history.map((v) => `${v.id}:${v.status}:${v.celery_task_id}`).join(","), [history])]);
+
+  useEffect(() => () => { for (const es of sseRef.current.values()) es.close(); sseRef.current.clear(); }, []);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -276,19 +316,19 @@ export function ProjectsPage() {
 
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-5 py-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="mr-2 min-w-[150px]">
+        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+            <div className="min-w-0 lg:mr-2 lg:min-w-[150px]">
               <div className="flex items-center gap-2">
                 <h1 className="font-display text-[20px] font-bold tracking-[-.02em] text-white">Projects</h1>
                 <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">
-                  {loading ? "…" : `${filtered.length}${filtered.length !== history.length ? `/${history.length}` : ""}`}
+                  {loading ? "…" : `${filtered.length}${totalProjects !== history.length ? `/${totalProjects}` : ""}`}
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-zinc-600">Upload history and generated clip workspaces.</p>
             </div>
 
-            <div className="relative min-w-[240px] max-w-[520px] flex-1">
+            <div className="relative min-w-0 flex-1 lg:min-w-[240px] lg:max-w-[520px]">
               <svg className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 transition focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20" placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} />
               {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 transition hover:text-zinc-300"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
@@ -308,7 +348,7 @@ export function ProjectsPage() {
             </select>
 
             <button onClick={loadHistory} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 transition hover:text-zinc-200">Refresh</button>
-            <button onClick={() => navigate("/studio")} className="ml-auto h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f]">+ New upload</button>
+            <button onClick={() => navigate("/studio")} className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f] lg:ml-auto">+ New upload</button>
           </div>
         </div>
 
@@ -318,9 +358,9 @@ export function ProjectsPage() {
 
         {/* Body */}
         <div className={cn("grid flex-1", selected ? "xl:grid-cols-[minmax(0,1fr)_400px]" : "grid-cols-1")} style={{ alignItems: "start" }}>
-            <div className="min-w-0 p-4 xl:p-5">
+            <div className="min-w-0 p-3 sm:p-4 xl:p-5">
               {/* Stats */}
-              <div className="mb-4 grid gap-3 sm:grid-cols-3">
+              <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-emerald-400/10 text-emerald-300">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -371,13 +411,17 @@ export function ProjectsPage() {
                   <button onClick={() => navigate("/studio")} className="mt-5 rounded-[12px] bg-[#ff3d6a] px-5 py-2.5 text-sm font-bold text-white">Start upload</button>
                 </div>
               ) : viewMode === "grid" ? (
-                <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                  {filtered.map((video) => {
+                <VirtualizedGrid
+                  items={filtered}
+                  keyForItem={(v) => v.id}
+                  estimateRowHeight={310}
+                  columns={[{ minWidth: 768, columns: 2 }, { minWidth: 1536, columns: 3 }]}
+                  renderItem={(video) => {
                     const isDeleting = deletingId === video.id;
                     const active = selected?.id === video.id;
                     const pct = progressFor(video);
                     return (
-                      <div key={video.id} className={cn(
+                      <div className={cn(
                         "group overflow-hidden rounded-[20px] border bg-[#111827]",
                         active ? "border-[#ff3d6a]/55 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-white/[.07]",
                         isDeleting ? "pointer-events-none opacity-50" : ""
@@ -405,63 +449,78 @@ export function ProjectsPage() {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  }}
+                />
               ) : (
                 <div className="rounded-[16px] border border-white/[.06] bg-white/[.012]">
-                  {filtered.map((video, idx) => {
-                    const active = selected?.id === video.id;
-                    const isDeleting = deletingId === video.id;
-                    const pct = progressFor(video);
-                    const isReady = isTerminalStatus(video) && video.status !== "failed";
-                    const isFailed = video.status === "failed";
-                    return (
-                      <div
-                        key={video.id}
-                        className={cn(
-                          "group relative border-l-[3px] transition",
-                          active ? "border-l-[#ff3d6a]/70 bg-[#ff3d6a]/[.035]" : "border-l-transparent hover:bg-white/[.02]",
-                          isDeleting ? "pointer-events-none opacity-50" : "",
-                          idx > 0 ? "border-t border-white/[.04]" : ""
-                        )}
-                      >
-                        <button
-                          onClick={() => navigate(`/projects/${video.id}`)}
-                          className="flex w-full items-center gap-4 px-4 py-3.5 pr-12 text-left"
+                  <VirtualizedList
+                    items={filtered}
+                    keyForItem={(v) => v.id}
+                    estimateRowHeight={88}
+                    renderItem={(video) => {
+                      const active = selected?.id === video.id;
+                      const isDeleting = deletingId === video.id;
+                      const pct = progressFor(video);
+                      const isReady = isTerminalStatus(video) && video.status !== "failed";
+                      const isFailed = video.status === "failed";
+                      return (
+                        <div
+                          className={cn(
+                            "group relative border-l-[3px] border-t border-white/[.04] transition",
+                            active ? "border-l-[#ff3d6a]/70 bg-[#ff3d6a]/[.035]" : "border-l-transparent hover:bg-white/[.02]",
+                            isDeleting ? "pointer-events-none opacity-50" : "",
+                          )}
                         >
-                          <ProjectThumb video={video} className="h-14 w-20 shrink-0 rounded-[10px]" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="truncate text-[14px] font-semibold text-white">{video.title || "Untitled"}</p>
-                              <StatusBadge video={video} />
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-                              <span>{video.source_type === "youtube" || video.source_type === "youtube_url" ? "YouTube" : "Upload"}</span>
-                              <span className="text-zinc-700">·</span>
-                              <span>{formatDuration(video.duration_sec)}</span>
-                              <span className="text-zinc-700">·</span>
-                              <span>{formatShortDate(video.created_at)}</span>
-                            </div>
-                            <div className="mt-2 flex items-center gap-2">
-                              <div className="h-1 w-24 overflow-hidden rounded-full bg-white/[.06]">
-                                <div className={cn("h-full rounded-full", isFailed ? "bg-red-400" : isReady ? "bg-emerald-400" : "bg-amber-300")} style={{ width: `${pct}%` }} />
+                          <button
+                            onClick={() => navigate(`/projects/${video.id}`)}
+                            className="flex w-full items-start gap-3 px-3 py-3.5 pr-10 text-left sm:items-center sm:gap-4 sm:px-4 sm:pr-12"
+                          >
+                            <ProjectThumb video={video} className="h-14 w-20 shrink-0 rounded-[10px]" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate text-[14px] font-semibold text-white">{video.title || "Untitled"}</p>
+                                <StatusBadge video={video} />
                               </div>
-                              <span className={cn("text-[10px] font-bold", isFailed ? "text-red-400" : isReady ? "text-emerald-400" : "text-amber-300")}>{pct}%</span>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                                <span>{video.source_type === "youtube" || video.source_type === "youtube_url" ? "YouTube" : "Upload"}</span>
+                                <span className="text-zinc-700">·</span>
+                                <span>{formatDuration(video.duration_sec)}</span>
+                                <span className="text-zinc-700">·</span>
+                                <span>{formatShortDate(video.created_at)}</span>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <div className="h-1 w-16 overflow-hidden rounded-full bg-white/[.06] sm:w-24">
+                                  <div className={cn("h-full rounded-full", isFailed ? "bg-red-400" : isReady ? "bg-emerald-400" : "bg-amber-300")} style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={cn("text-[10px] font-bold", isFailed ? "text-red-400" : isReady ? "text-emerald-400" : "text-amber-300")}>{pct}%</span>
+                              </div>
                             </div>
+                            <span className="hidden shrink-0 text-xs font-semibold text-zinc-600 transition group-hover:text-zinc-300 sm:block">Show clips →</span>
+                          </button>
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <RowMenu
+                              onShowDetails={() => setSelectedId(video.id)}
+                              onDelete={() => setDeleteTarget(video)}
+                            />
                           </div>
-                          <span className="shrink-0 text-xs font-semibold text-zinc-600 transition group-hover:text-zinc-300">Show clips →</span>
-                        </button>
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <RowMenu
-                            onShowDetails={() => setSelectedId(video.id)}
-                            onDelete={() => setDeleteTarget(video)}
-                          />
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    }}
+                  />
                 </div>
               )}
+              <Pagination
+                page={page}
+                perPage={perPage}
+                total={totalProjects}
+                itemLabel="projects"
+                onPageChange={(next) => {
+                  setPage(next);
+                  setSelectedId(null);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="mt-4 rounded-[14px] border border-white/[.06] bg-white/[.012]"
+              />
             </div>
 
             {/* Details sidebar */}
@@ -579,3 +638,4 @@ export function ProjectsPage() {
     </Shell>
   );
 }
+

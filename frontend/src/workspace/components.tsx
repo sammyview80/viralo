@@ -39,19 +39,19 @@ export function Phone({ label = "5 habits that changed my mornings" }: { label?:
 }
 
 export function HeroBlock({ title, copy }: { title: string; copy: string }) {
-  return <Card className="p-6"><div className="max-w-3xl"><div className="mb-3 text-xs font-bold uppercase tracking-[.14em] text-[#ff3d6a]">Viralo</div><h1 className="font-display text-4xl font-extrabold tracking-tight">{title}</h1><p className="mt-4 text-sm leading-7 text-zinc-400">{copy}</p></div></Card>;
+  return <Card className="p-4 sm:p-6"><div className="max-w-3xl"><div className="mb-3 text-[11px] font-bold uppercase tracking-[.16em] text-[#ff7a9a]">Viralo</div><h1 className="page-title font-display text-2xl font-extrabold sm:text-4xl">{title}</h1><p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-400 sm:mt-4">{copy}</p></div></Card>;
 }
 
 export function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="rounded-[12px] border border-white/[.07] bg-white/[.025] p-4"><div className="mb-3 text-xs font-semibold text-zinc-400">{title}</div>{children}</div>;
+  return <div className="app-panel rounded-[12px] p-4"><div className="mb-3 text-xs font-semibold tracking-[-0.01em] text-zinc-400">{title}</div>{children}</div>;
 }
 
 export function ChipRow({ items, active }: { items: string[]; active: string[] }) {
-  return <div className="flex flex-wrap gap-2">{items.map((x) => <span key={x} className={cn("rounded-lg border px-3 py-1.5 text-xs font-semibold", active.includes(x) ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-rose-200" : "border-white/[.07] bg-white/[.025] text-zinc-500")}>{x}</span>)}</div>;
+  return <div className="flex flex-wrap gap-2">{items.map((x) => <span key={x} className={cn("rounded-lg border px-3 py-1.5 text-xs font-semibold transition", active.includes(x) ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-rose-200" : "border-white/[.07] bg-white/[.025] text-zinc-500 hover:border-white/[.12] hover:text-zinc-300")}>{x}</span>)}</div>;
 }
 
 export function SelectLike({ value }: { value: string }) {
-  return <div className="rounded-[9px] border border-white/[.07] bg-white/[.035] px-3 py-2 text-sm text-zinc-300">{value}</div>;
+  return <div className="rounded-[9px] border border-white/[.07] bg-white/[.035] px-3 py-2 text-sm text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]">{value}</div>;
 }
 
 export function Slider({ value }: { value: string }) {
@@ -64,15 +64,15 @@ export function Ring({ value }: { value: number }) {
 }
 
 export function UrlImport() {
-  return <div className="space-y-5"><div><label className="text-xs font-semibold text-zinc-400">YouTube URL</label><div className="mt-2 flex gap-3"><Input className="h-11" placeholder="https://youtube.com/watch?v=..." /><Button variant="secondary">Fetch</Button></div></div><Panel title="Clip count"><ChipRow items={["1", "3", "5"]} active={["3"]} /></Panel><Button className="w-full">Import & Clip</Button></div>;
+  return <div className="space-y-5"><div><label className="text-xs font-semibold text-zinc-400">YouTube URL</label><div className="mt-2 flex flex-col gap-3 sm:flex-row"><Input className="h-11" placeholder="https://youtube.com/watch?v=..." /><Button variant="secondary">Fetch</Button></div></div><Panel title="Clip count"><ChipRow items={["1", "3", "5"]} active={["3"]} /></Panel><Button className="w-full">Import & Clip</Button></div>;
 }
 
 export function UploadZone({ compact }: { compact?: boolean }) {
-  return <div className={cn("grid place-items-center rounded-[18px] border border-dashed border-white/15 bg-white/[.02] p-8 text-center", compact ? "min-h-56" : "min-h-[320px]")}><div><div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-xl font-black">UP</div><h2 className="font-display text-2xl font-bold">Drop your video here</h2><p className="mt-2 text-sm text-zinc-500">MP4, MOV, WebM up to 500 MB.</p><Button variant="secondary" className="mt-5">Browse files</Button></div></div>;
+  return <div className={cn("grid place-items-center rounded-[18px] border border-dashed border-white/15 bg-white/[.02] p-5 text-center transition hover:border-[#ff3d6a]/35 hover:bg-[#ff3d6a]/[.025] sm:p-8", compact ? "min-h-56" : "min-h-[260px] sm:min-h-[320px]")}><div><div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-xl font-black text-[#ff7a9a]">UP</div><h2 className="font-display text-xl font-bold sm:text-2xl">Drop your video here</h2><p className="mt-2 text-sm text-zinc-500">MP4, MOV, WebM up to 500 MB.</p><Button variant="secondary" className="mt-5">Browse files</Button></div></div>;
 }
 
 export function Row({ icon, title, sub }: { icon: string; title: string; sub: string }) {
-  return <div className="grid grid-cols-[40px_1fr_auto] items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><DotIcon label={icon} /><div className="min-w-0"><div className="truncate text-sm font-semibold">{title}</div><div className="text-xs text-zinc-500">{sub}</div></div><span className="text-zinc-600">›</span></div>;
+  return <div className="grid grid-cols-[40px_1fr_auto] items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3 transition hover:border-white/[.1] hover:bg-white/[.04]"><DotIcon label={icon} /><div className="min-w-0"><div className="truncate text-sm font-semibold">{title}</div><div className="truncate text-xs text-zinc-500">{sub}</div></div><span className="text-zinc-600">›</span></div>;
 }
 
 export function Agent({ name, active }: { name: string; active: boolean }) {

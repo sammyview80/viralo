@@ -2,6 +2,7 @@
 import asyncio
 import json
 import uuid
+from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -67,6 +68,7 @@ async def mark_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found.")
 
     notification.is_read = True
+    notification.read_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(notification)
     return _to_response(notification)
@@ -168,6 +170,9 @@ def _to_response(n: Notification) -> NotificationResponse:
         title=n.title,
         body=n.body,
         is_read=n.is_read,
+        user_id=n.user_id,
+        action_url=n.action_url,
+        read_at=n.read_at,
         metadata=n.notification_metadata,
         created_at=n.created_at,
     )

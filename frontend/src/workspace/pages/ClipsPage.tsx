@@ -1,11 +1,17 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, safeFilename, downloadUrl } from "@/lib/utils";
 import { Shell } from "../Shell";
 import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
-import { videoApi, platformApi, agentApi, type ClipApiResponse, type VideoResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
+import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
+import { Pagination } from "../components/Pagination";
+import { videoApi, platformApi, agentApi, token, type ClipApiResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
+import { VideoEditor } from "../components/VideoEditor";
+import { addToast } from "@/stores/notifications";
+
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return "--:--";
@@ -38,8 +44,8 @@ const CARD_PLAT_CFG: Record<string, { color: string; icon: string }> = {
   facebook:  { color: "#1877F2", icon: "f"  },
 };
 
-function ClipCard({ clip, active, onClick, delay = 0, isPosted, isScheduled, clipPosts = [] }: {
-  clip: ClipApiResponse; active?: boolean; onClick?: () => void; delay?: number;
+function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isScheduled, clipPosts = [] }: {
+  clip: ClipApiResponse; active?: boolean; onClick?: () => void; onRetry?: () => void; delay?: number;
   isPosted?: boolean; isScheduled?: boolean; clipPosts?: ScheduledPost[];
 }) {
   const dur = formatDuration(clip.duration_ms);
@@ -78,7 +84,37 @@ function ClipCard({ clip, active, onClick, delay = 0, isPosted, isScheduled, cli
             <span>{isPosted ? "Live" : "Queued"}</span>
           </div>
         )}
-        <div className="absolute inset-0 grid place-items-center"><div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-lg backdrop-blur transition group-hover:scale-105">▶</div></div>
+
+        {/* Upload state overlays */}
+        {(clip.status === "pending_upload" || clip.status === "uploading") && (
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-2 bg-black/60 backdrop-blur-[2px]">
+            <svg className="h-6 w-6 animate-spin text-white/80" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            <span className="text-[11px] font-semibold text-white/70">
+              {clip.status === "uploading" ? "Uploading…" : "Queued"}
+            </span>
+          </div>
+        )}
+        {clip.status === "upload_failed" && (
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center gap-2 bg-black/70">
+            <span className="text-[22px]">⚠</span>
+            <span className="text-[11px] font-bold text-red-400">Upload failed</span>
+            {onRetry && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRetry(); }}
+                className="mt-1 rounded-[8px] border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur transition hover:bg-white/20"
+              >
+                ↻ Retry Upload
+              </button>
+            )}
+          </div>
+        )}
+
+        {clip.status === "ready" && (
+          <div className="absolute inset-0 grid place-items-center"><div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-lg backdrop-blur transition group-hover:scale-105">▶</div></div>
+        )}
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
           <div className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold capitalize text-white/90 backdrop-blur">{clip.platform ?? "—"}</div>
           <div className="rounded-[7px] bg-black/65 px-2 py-1 font-mono text-[11px] font-bold text-white">{dur}</div>
@@ -98,7 +134,7 @@ function ClipCard({ clip, active, onClick, delay = 0, isPosted, isScheduled, cli
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
-          <Badge variant={clip.status === "ready" ? "ready" : clip.status === "processing" ? "warn" : "muted"}>{clip.status}</Badge>
+          <Badge variant={clip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(clip.status) ? "warn" : clip.status === "upload_failed" ? "error" : clip.status === "processing" ? "warn" : "muted"}>{clip.status === "pending_upload" ? "queued" : clip.status === "upload_failed" ? "failed" : clip.status}</Badge>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{tags.length} tags</span>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
           {clipStart && clipEnd && <span className="rounded-full bg-white/[.035] px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
@@ -146,6 +182,77 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<TagSuggestResponse | null>(() => {
+    // Pre-load from clip metadata if platforms already have descriptions (generated during clipping)
+    const platforms = clip.clip_metadata?.platforms;
+    if (platforms && Object.values(platforms).some((p) => p?.description)) {
+      return {
+        primary_hashtags: clip.clip_metadata?.trending_hashtags ?? [],
+        platforms: platforms as TagSuggestResponse["platforms"],
+        research_used: false,
+        _fromMeta: true,
+      } as TagSuggestResponse & { _fromMeta?: boolean };
+    }
+    return null;
+  });
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // When suggestions load (auto or manual), auto-fill caption + hashtags for clip's platform
+  useEffect(() => {
+    if (!aiSuggestions) return;
+    const key = clip.platform?.toLowerCase() ?? "tiktok";
+    const platData = aiSuggestions.platforms?.[key] ?? aiSuggestions.platforms?.tiktok;
+    if (platData?.description && !caption) setCaption(platData.description);
+    const tags = platData?.tags?.length ? platData.tags : aiSuggestions.primary_hashtags ?? [];
+    if (tags.length > 0 && !hashtags) setHashtags(tags.map((t: string) => t.replace(/^#/, "")).join(", "));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiSuggestions]);
+
+  // Auto-suggest on open if no metadata platforms yet
+  useEffect(() => {
+    if (aiSuggestions) return; // already have suggestions (from metadata or prior run)
+    const topic = clip.clip_metadata?.ai_title ?? clip.title ?? "video content";
+    if (!topic) return;
+    const niche = clip.clip_metadata?.niche ?? clip.clip_metadata?.topic ?? undefined;
+    const extra_context = clip.caption_srt
+      ? clip.caption_srt.replace(/^\d+\n[\d:,]+ --> [\d:,]+\n/gm, "").replace(/\n{2,}/g, " ").trim().slice(0, 2000)
+      : undefined;
+    setAiLoading(true); setAiError(null);
+    agentApi.suggestTags({ topic, niche, extra_context })
+      .then((result) => setAiSuggestions(result))
+      .catch(() => { /* silent — user can still click Suggest manually */ })
+      .finally(() => setAiLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleAiSuggest() {
+    const topic = clip.clip_metadata?.ai_title ?? clip.title ?? "video content";
+    const niche = clip.clip_metadata?.niche ?? clip.clip_metadata?.topic ?? undefined;
+    const extra_context = clip.caption_srt
+      ? clip.caption_srt.replace(/^\d+\n[\d:,]+ --> [\d:,]+\n/gm, "").replace(/\n{2,}/g, " ").trim().slice(0, 2000)
+      : undefined;
+    setAiLoading(true); setAiError(null); setAiSuggestions(null);
+    try {
+      const result = await agentApi.suggestTags({ topic, niche, extra_context });
+      setAiSuggestions(result);
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI suggest failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function applyAiSuggestion(platform?: string) {
+    if (!aiSuggestions) return;
+    const key = platform ?? "tiktok";
+    const platData = aiSuggestions.platforms?.[key];
+    if (platData?.description) setCaption(platData.description);
+    const tags = platData?.tags?.length
+      ? platData.tags
+      : aiSuggestions.primary_hashtags ?? [];
+    setHashtags(tags.map((t: string) => t.replace(/^#/, "")).join(", "));
+  }
   const platformKeyMap: Record<string, string> = { instagram: "reels", reels: "reels", tiktok: "tiktok", tt: "tiktok", shorts: "shorts", youtube: "youtube", yt: "youtube", twitter: "twitter", tw: "twitter", facebook: "facebook" };
   function fillFromPlatform(platformRaw: string) {
     const key = platformKeyMap[platformRaw.toLowerCase()] ?? platformRaw.toLowerCase();
@@ -182,6 +289,60 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
                   </select>)}
               </div>
               <div><label className="mb-1.5 block text-xs font-semibold text-zinc-400">Scheduled At</label><input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="w-full rounded-[9px] border border-white/[.08] bg-[#111827] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50 [color-scheme:dark]" /></div>
+              {/* AI Suggest strip */}
+              <div className="rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 px-3.5 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11.5px] font-semibold text-white">✦ AI Viral Suggestions</p>
+                    <p className="text-[10.5px] text-zinc-500">Auto-fill caption + hashtags optimised for virality</p>
+                  </div>
+                  <button
+                    onClick={handleAiSuggest}
+                    disabled={aiLoading}
+                    className="flex-none rounded-[8px] bg-[#ff3d6a] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#e8304f] disabled:opacity-50"
+                  >
+                    {aiLoading ? "…" : "Suggest"}
+                  </button>
+                </div>
+                {aiError && <p className="mt-2 text-[10.5px] text-red-400">{aiError}</p>}
+                {aiSuggestions && (
+                  <div className="mt-3 space-y-2.5">
+                    {/* Research badge */}
+                    <p className="text-[9.5px] text-zinc-500">
+                      {(aiSuggestions as any)._fromMeta
+                        ? "✓ Pre-generated during clipping"
+                        : (aiSuggestions as any).research_used
+                          ? "🔍 Based on live web research"
+                          : "⚡ From AI knowledge (no Tavily key)"}
+                    </p>
+                    {/* Platform tabs */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.keys(aiSuggestions.platforms ?? {}).map((plat) => (
+                        <button
+                          key={plat}
+                          onClick={() => applyAiSuggestion(plat)}
+                          className="rounded-full border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-2.5 py-0.5 text-[10px] font-semibold text-[#ff3d6a] transition hover:bg-[#ff3d6a]/20"
+                        >
+                          Apply {plat}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Primary hashtag chips */}
+                    {aiSuggestions.primary_hashtags?.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {aiSuggestions.primary_hashtags.slice(0, 8).map((t: string) => (
+                          <span key={t} className="rounded-full bg-white/[.05] px-2 py-0.5 text-[9.5px] text-zinc-400">#{t.replace(/^#/, "")}</span>
+                        ))}
+                      </div>
+                    )}
+                    {/* Caption preview */}
+                    {aiSuggestions.platforms?.tiktok?.description && (
+                      <p className="line-clamp-2 text-[10.5px] text-zinc-400">{aiSuggestions.platforms.tiktok.description}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div><label className="mb-1.5 block text-xs font-semibold text-zinc-400">Caption</label><textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={3} placeholder="Write a caption..." className="w-full resize-none rounded-[9px] border border-white/[.08] bg-[#111827] px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-zinc-400">Hashtags <span className="font-normal text-zinc-600">(comma-separated)</span></label><input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="viral, fyp, trending" className="w-full rounded-[9px] border border-white/[.08] bg-[#111827] px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50" /></div>
               {error && <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>}
@@ -326,7 +487,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterGroup({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
       <div className="text-[10px] font-semibold uppercase tracking-[.13em] text-zinc-600">{label}</div>
@@ -345,9 +506,11 @@ const PLATFORM_OPTIONS = [
   { id: "facebook",  label: "Facebook",    match: (c: ClipApiResponse) => c.platform === "facebook" },
 ];
 const STATUS_OPTIONS = [
-  { id: "ready",      label: "Ready",      match: (c: ClipApiResponse) => c.status === "ready" },
-  { id: "processing", label: "Processing", match: (c: ClipApiResponse) => c.status === "processing" },
-  { id: "failed",     label: "Failed",     match: (c: ClipApiResponse) => c.status === "failed" },
+  { id: "ready",          label: "Ready",      match: (c: ClipApiResponse) => c.status === "ready" },
+  { id: "pending_upload", label: "Queued",     match: (c: ClipApiResponse) => c.status === "pending_upload" },
+  { id: "uploading",      label: "Uploading",  match: (c: ClipApiResponse) => c.status === "uploading" },
+  { id: "upload_failed",  label: "Failed",     match: (c: ClipApiResponse) => c.status === "upload_failed" || c.status === "failed" },
+  { id: "processing",     label: "Processing", match: (c: ClipApiResponse) => c.status === "processing" },
 ];
 const DURATION_OPTIONS = [
   { id: "short",  label: "< 30s",    match: (c: ClipApiResponse) => (c.duration_ms ?? 0) < 30_000 },
@@ -379,7 +542,160 @@ const PLATFORM_DOT_COLOR: Record<string, string> = {
   linkedin: "bg-blue-400", facebook: "bg-indigo-400",
 };
 
+// --- Demo Lab: Sound Effects + Emoji Zoom ---
+
+type FloatingEmoji = { id: string; emoji: string; x: number; startY: number };
+
+function useEmojiOverlay() {
+  const [emojis, setEmojis] = useState<FloatingEmoji[]>([]);
+  const shoot = useCallback((emoji: string) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    const x = 10 + Math.random() * 80;
+    const startY = 80 + Math.random() * 10;
+    setEmojis((prev) => [...prev, { id, emoji, x, startY }]);
+    setTimeout(() => setEmojis((prev) => prev.filter((e) => e.id !== id)), 1800);
+  }, []);
+  return { emojis, shoot };
+}
+
+function EmojiOverlay({ emojis }: { emojis: FloatingEmoji[] }) {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[999] overflow-hidden">
+      {emojis.map((e) => (
+        <div
+          key={e.id}
+          className="absolute text-4xl"
+          style={{
+            left: `${e.x}%`,
+            top: `${e.startY}%`,
+            animation: "emojiZoom 1.8s cubic-bezier(.22,.8,.4,1) forwards",
+          }}
+        >
+          {e.emoji}
+        </div>
+      ))}
+      <style>{`
+        @keyframes emojiZoom {
+          0%   { transform: scale(0.2) translateY(0); opacity: 1; }
+          30%  { transform: scale(1.4) translateY(-60px); opacity: 1; }
+          100% { transform: scale(0.6) translateY(-260px); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function playSoundEffect(type: string) {
+  const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+
+  if (type === "quack") {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(900, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.18);
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+    osc.start(); osc.stop(ctx.currentTime + 0.22);
+
+  } else if (type === "applause") {
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.9, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const env = i < ctx.sampleRate * 0.3 ? i / (ctx.sampleRate * 0.3) : 1 - (i - ctx.sampleRate * 0.3) / (ctx.sampleRate * 0.6);
+      data[i] = (Math.random() * 2 - 1) * env * 0.5;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start();
+
+  } else if (type === "ding") {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine"; osc.frequency.value = 1047;
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9);
+    osc.start(); osc.stop(ctx.currentTime + 0.9);
+
+  } else if (type === "airhorn") {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "square";
+    osc.frequency.setValueAtTime(220, ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(440, ctx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.35, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(); osc.stop(ctx.currentTime + 0.5);
+
+  } else if (type === "womp") {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.6);
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.65);
+    osc.start(); osc.stop(ctx.currentTime + 0.65);
+
+  } else if (type === "tada") {
+    const freqs = [523, 659, 784, 1047];
+    freqs.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine"; osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.1;
+      gain.gain.setValueAtTime(0.35, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      osc.start(t); osc.stop(t + 0.4);
+    });
+  }
+}
+
+const DEMO_EFFECTS = [
+  { key: "quack",    emoji: "🦆", label: "Quack",    sound: "quack" },
+  { key: "applause", emoji: "👏", label: "Applause", sound: "applause" },
+  { key: "ding",     emoji: "🔔", label: "Ding",     sound: "ding" },
+  { key: "airhorn",  emoji: "📯", label: "Airhorn",  sound: "airhorn" },
+  { key: "womp",     emoji: "😬", label: "Womp",     sound: "womp" },
+  { key: "tada",     emoji: "🎉", label: "Tada",     sound: "tada" },
+  { key: "fire",     emoji: "🔥", label: "Fire",     sound: "ding" },
+  { key: "rocket",   emoji: "🚀", label: "Rocket",   sound: "airhorn" },
+  { key: "love",     emoji: "❤️", label: "Love",     sound: "tada" },
+  { key: "poop",     emoji: "💩", label: "Poop",     sound: "womp" },
+];
+
+function DemoLab({ shoot }: { shoot: (emoji: string) => void }) {
+  return (
+    <section className="rounded-[12px] border border-amber-500/20 bg-amber-500/[.04] p-3">
+      <div className="mb-2.5 flex items-center gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[.13em] text-amber-500/80">Demo Lab</p>
+        <span className="rounded-full bg-amber-500/20 px-1.5 py-px text-[9px] font-bold text-amber-400">Test</span>
+      </div>
+      <div className="grid grid-cols-5 gap-1.5">
+        {DEMO_EFFECTS.map(({ key, emoji, label, sound }) => (
+          <button
+            key={key}
+            onClick={() => { playSoundEffect(sound); for (let i = 0; i < 3; i++) setTimeout(() => shoot(emoji), i * 120); }}
+            title={label}
+            className="flex flex-col items-center gap-1 rounded-[9px] border border-white/[.06] bg-white/[.025] px-1 py-2 text-xl transition hover:bg-white/[.05] hover:scale-110 active:scale-95 cursor-pointer"
+          >
+            <span>{emoji}</span>
+            <span className="text-[8px] font-semibold text-zinc-600">{label}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function ClipsPage() {
+  const { emojis, shoot } = useEmojiOverlay();
   const [clips, setClips] = useState<ClipApiResponse[]>([]);
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -391,16 +707,24 @@ export function ClipsPage() {
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
   const [durations, setDurations] = useState<Set<string>>(new Set());
   const [scores, setScores] = useState<Set<string>>(new Set());
+  const [minViralityScore, setMinViralityScore] = useState(0);
   const [published, setPublished] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortMode>("newest");
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestResponse | null>(null);
   const [suggestingTags, setSuggestingTags] = useState(false);
   const [tagSuggestError, setTagSuggestError] = useState<string | null>(null);
   const [tagSuggestClipId, setTagSuggestClipId] = useState<string | null>(null);
   const [savingTags, setSavingTags] = useState(false);
   const [savedTagClipId, setSavedTagClipId] = useState<string | null>(null);
-
+  const [page, setPage] = useState(1);
+  const [totalClips, setTotalClips] = useState(0);
+  const perPage = 24;
+  const [mergeSelectMode, setMergeSelectMode] = useState(false);
+  const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [editClip, setEditClip] = useState<ClipApiResponse | null>(null);
+  const [failedPostBanner, setFailedPostBanner] = useState<string | null>(null);
   async function handleSaveAiSuggestions(clip: ClipApiResponse, suggestions: TagSuggestResponse) {
     setSavingTags(true);
     try {
@@ -420,6 +744,7 @@ export function ClipsPage() {
 
   async function handleSuggestTags(clip: ClipApiResponse) {
     const topic = clip.clip_metadata?.ai_title ?? clip.title ?? "video content";
+    const niche = clip.clip_metadata?.niche ?? clip.clip_metadata?.topic ?? undefined;
     const extra_context = clip.caption_srt
       ? clip.caption_srt.replace(/^\d+\n[\d:,]+ --> [\d:,]+\n/gm, "").replace(/\n{2,}/g, " ").trim().slice(0, 2000)
       : undefined;
@@ -428,7 +753,7 @@ export function ClipsPage() {
     setTagSuggestions(null);
     setTagSuggestClipId(clip.id);
     try {
-      const result = await agentApi.suggestTags({ topic, extra_context });
+      const result = await agentApi.suggestTags({ topic, niche, extra_context });
       setTagSuggestions(result);
     } catch (e: unknown) {
       setTagSuggestError(e instanceof Error ? e.message : "Failed to suggest tags");
@@ -437,25 +762,162 @@ export function ClipsPage() {
     }
   }
 
+  async function handleMergeAi() {
+    if (mergeSelected.size < 2) return;
+    setMergeLoading(true);
+    try {
+      const result = await videoApi.mergeAiClips(Array.from(mergeSelected));
+      setMergeSelectMode(false);
+      setMergeSelected(new Set());
+      addToast({
+        id: (result as { task_id?: string }).task_id ?? `merge-${Date.now()}`,
+        type: "merge_ai",
+        title: "MergeAI queued",
+        body: (result as { message?: string }).message ?? "Merged clip will appear in your library when ready.",
+        is_read: false,
+        action_url: "/clips",
+        metadata: result as Record<string, unknown>,
+        created_at: new Date().toISOString(),
+        read_at: null,
+      });
+    } catch (e: unknown) {
+      addToast({
+        id: `merge-err-${Date.now()}`,
+        type: "error",
+        title: "MergeAI failed",
+        body: e instanceof Error ? e.message : "Merge failed. Try again.",
+        is_read: false,
+        action_url: null,
+        metadata: null,
+        created_at: new Date().toISOString(),
+        read_at: null,
+      });
+    } finally {
+      setMergeLoading(false);
+    }
+  }
+
+  // Highlight clip + show banner when navigated from failed post notification
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const clipParam = params.get("clip");
+    if (clipParam) {
+      setSelectedId(clipParam);
+      setFailedPostBanner("This clip failed to post. Check status below and reschedule when ready.");
+      // Clean URL without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("clip");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+
   useEffect(() => {
     async function load() {
+      setLoading(true);
       try {
-        const [{ items: videos }, postsResp] = await Promise.all([videoApi.list(1, 50), platformApi.listPosts()]);
-        const doneVideos = videos.filter((v: VideoResponse) => v.status === "done" || v.status === "ready");
-        const results = await Promise.allSettled(doneVideos.map((v: VideoResponse) => videoApi.clips(v.id)));
-        const allClips: ClipApiResponse[] = [];
-        results.forEach((r) => { if (r.status === "fulfilled") allClips.push(...r.value); });
+        const [clipsResp, postsResp] = await Promise.all([
+          videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined, sort === "score_desc" ? "score" : undefined),
+          platformApi.listPosts({ per_page: 100 }),
+        ]);
+        const allClips = Array.isArray(clipsResp.items) ? clipsResp.items : [];
         setClips(allClips);
-        setPosts(postsResp.items ?? []);
-        if (allClips.length > 0) setSelectedId(allClips[0].id);
-      } catch { setClips([]); }
-      finally { setLoading(false); }
+        setTotalClips(typeof clipsResp.total === "number" ? clipsResp.total : allClips.length);
+        setPosts(Array.isArray(postsResp.items) ? postsResp.items : []);
+        setSelectedId((current) => current ?? (allClips.at(0)?.id ?? null));
+      } catch {
+        setClips([]);
+        setTotalClips(0);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
+  }, [page, minViralityScore, sort]);
+
+  // Ref-based SSE subscriptions — keyed by video_id so we never double-subscribe or loop
+  const sseSourcesRef = useRef<Map<string, EventSource>>(new Map());
+
+  useEffect(() => {
+    const pendingVideoIds = new Set(
+      clips
+        .filter((c) => c.status === "pending_upload" || c.status === "uploading")
+        .map((c) => String(c.video_id))
+    );
+
+    // Close sources for video IDs that are no longer pending
+    for (const [vid, es] of sseSourcesRef.current) {
+      if (!pendingVideoIds.has(vid)) {
+        es.close();
+        sseSourcesRef.current.delete(vid);
+      }
+    }
+
+    // Open new sources for newly pending video IDs
+    const authToken = token.get();
+    if (!authToken) return;
+
+    for (const videoId of pendingVideoIds) {
+      if (sseSourcesRef.current.has(videoId)) continue; // already subscribed
+
+      const url = `${VIDEO_SSE_BASE}/video/progress/${videoId}?token=${encodeURIComponent(authToken)}`;
+      const es = new EventSource(url);
+
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === "keepalive") return;
+
+          if (data.event === "clip_upload_complete") {
+            setClips((prev) =>
+              prev.map((c) =>
+                c.id === data.clip_id
+                  ? { ...c, status: "ready", storage_url: data.media_url, thumbnail_url: data.thumbnail_url ?? c.thumbnail_url }
+                  : c
+              )
+            );
+          } else if (data.event === "clip_upload_failed") {
+            setClips((prev) =>
+              prev.map((c) =>
+                c.id === data.clip_id ? { ...c, status: "upload_failed" } : c
+              )
+            );
+          }
+        } catch { /* ignore malformed */ }
+      };
+
+      es.onerror = () => {
+        es.close();
+        sseSourcesRef.current.delete(videoId);
+      };
+
+      sseSourcesRef.current.set(videoId, es);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useMemo(() => clips.map((c) => `${c.id}:${c.status}`).join(","), [clips])]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      for (const es of sseSourcesRef.current.values()) es.close();
+      sseSourcesRef.current.clear();
+    };
   }, []);
 
   const postedClipIds = useMemo(() => buildPostedClipIds(posts), [posts]);
   const scheduledClipIds = useMemo(() => buildScheduledClipIds(posts), [posts]);
+  const postsByClipId = useMemo(() => {
+    const map = new Map<string, ScheduledPost[]>();
+    for (const post of posts) {
+      if (!post.clip_id) continue;
+      const list = map.get(post.clip_id) ?? [];
+      list.push(post);
+      map.set(post.clip_id, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    return map;
+  }, [posts]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -486,25 +948,25 @@ export function ClipsPage() {
   const drawerPosted = drawer ? postedClipIds.has(drawer.id) : false;
   const drawerScheduled = drawer ? scheduledClipIds.has(drawer.id) : false;
   const drawerPost = drawer
-    ? posts.filter((p) => p.clip_id === drawer.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+    ? (postsByClipId.get(drawer.id) ?? [])[0] ?? null
     : null;
-  const activeFilterCount = [platforms.size, statuses.size, durations.size, scores.size, published.size, search !== "" ? 1 : 0].reduce((a, b) => a + b, 0);
-  function clearFilters() { setPlatforms(new Set()); setStatuses(new Set()); setDurations(new Set()); setScores(new Set()); setPublished(new Set()); setSearch(""); }
+  const activeFilterCount = [platforms.size, statuses.size, durations.size, scores.size, published.size, search !== "" ? 1 : 0, minViralityScore > 0 ? 1 : 0].reduce((a, b) => a + b, 0);
+  function clearFilters() { setPlatforms(new Set()); setStatuses(new Set()); setDurations(new Set()); setScores(new Set()); setPublished(new Set()); setSearch(""); setMinViralityScore(0); setPage(1); }
 
   return (
     <Shell active="clips">
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0b1018] shadow-[0_18px_80px_rgba(0,0,0,.28)]">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-5 py-4">
-          <div className="flex flex-wrap items-center gap-3">
-          <div className="mr-2 min-w-[140px]">
+        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+          <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
             <div className="flex items-center gap-2">
               <h1 className="font-display text-[20px] font-bold tracking-[-.02em]">Clips</h1>
               <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
             </div>
             <p className="mt-1 text-[11px] text-zinc-600">Search, review, and publish shorts.</p>
           </div>
-          <div className="relative min-w-[240px] flex-1 max-w-[520px]">
+          <div className="relative min-w-0 max-w-none flex-1 lg:min-w-[240px] lg:max-w-[520px]">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-600 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
             {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
@@ -524,6 +986,18 @@ export function ClipsPage() {
             <option value="score_asc">Lowest score</option>
             <option value="duration_desc">Longest first</option>
           </select>
+          <button
+            onClick={() => { setMergeSelectMode((v) => !v); setMergeSelected(new Set()); }}
+            className={cn(
+              "flex h-10 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer",
+              mergeSelectMode
+                ? "border-[#ff3d6a]/50 bg-[#ff3d6a]/10 text-[#ff3d6a]"
+                : "border-white/[.07] bg-white/[.04] text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            MergeAI
+            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-400">Beta</span>
+          </button>
           <Button size="sm" className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
           </div>
           {activeFilterCount > 0 && !showFilters && (
@@ -534,24 +1008,60 @@ export function ClipsPage() {
           )}
         </div>
 
+        {/* MergeAI selection bar */}
+        {mergeSelectMode && (
+          <div className="flex items-center gap-3 border-b border-white/[.06] bg-[#090e16]/90 px-5 py-3">
+            <span className="text-xs text-zinc-400">
+              {mergeSelected.size === 0 ? "Select 2–10 clips to merge" : `${mergeSelected.size} clip${mergeSelected.size !== 1 ? "s" : ""} selected`}
+            </span>
+            <button
+              disabled={mergeSelected.size < 2 || mergeLoading}
+              onClick={handleMergeAi}
+              className="rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40 cursor-pointer"
+            >
+              {mergeLoading ? "Merging…" : "Merge with AI"}
+            </button>
+            <button onClick={() => { setMergeSelectMode(false); setMergeSelected(new Set()); }} className="text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer">Cancel</button>
+          </div>
+        )}
+
+        {/* Failed post banner */}
+        {failedPostBanner && (
+          <div className="flex items-center gap-3 border-b border-red-500/20 bg-red-500/[.07] px-5 py-3">
+            <span className="text-lg">⚠️</span>
+            <p className="flex-1 text-[12px] font-semibold text-red-300">{failedPostBanner}</p>
+            <button onClick={() => setFailedPostBanner(null)} className="text-red-400/60 hover:text-red-300 transition cursor-pointer text-sm">✕</button>
+          </div>
+        )}
+
         {/* Filter bar — collapsed by default to keep the workspace calm */}
         {showFilters && (
-          <div className="border-b border-white/[.06] bg-[#0b1018] px-5 py-4">
+          <div className="border-b border-white/[.06] bg-[#0b1018] px-3 py-3 sm:px-5 sm:py-4">
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
               <FilterGroup label="Platform">{PLATFORM_OPTIONS.map((f) => <Chip key={f.id} active={platforms.has(f.id)} onClick={() => setPlatforms((p) => toggle(p, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Status">{STATUS_OPTIONS.map((f) => <Chip key={f.id} active={statuses.has(f.id)} onClick={() => setStatuses((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Duration">{DURATION_OPTIONS.map((f) => <Chip key={f.id} active={durations.has(f.id)} onClick={() => setDurations((d) => toggle(d, f.id))}>{f.label}</Chip>)}</FilterGroup>
-              <FilterGroup label="Score">{SCORE_OPTIONS.map((f) => <Chip key={f.id} active={scores.has(f.id)} onClick={() => setScores((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Published">{PUBLISHED_OPTIONS.map((f) => <Chip key={f.id} active={published.has(f.id)} onClick={() => setPublished((p) => toggle(p, f.id))}>{f.label}</Chip>)}{activeFilterCount > 0 && <button onClick={clearFilters} className="text-xs font-semibold text-zinc-500 hover:text-rose-300">Clear all</button>}</FilterGroup>
+              <FilterGroup label={<span className="flex items-center justify-between w-full">Min Virality Score <span className={cn("font-semibold", minViralityScore > 0 ? "text-[#ff3d6a]" : "text-zinc-500")}>{minViralityScore > 0 ? `≥${minViralityScore}/10` : "Any"}</span></span>}>
+                <div className="flex w-full flex-col gap-1.5 pt-1">
+                  <input type="range" min={0} max={10} step={1} value={minViralityScore}
+                    onChange={(e) => { setMinViralityScore(Number(e.target.value)); setPage(1); }}
+                    className="h-[3px] w-full cursor-pointer appearance-none rounded-full bg-white/[.08] accent-[#ff3d6a]"
+                  />
+                  <div className="flex justify-between text-[10px] text-zinc-600">
+                    <span>Any</span><span>Balanced</span><span>Viral only</span>
+                  </div>
+                </div>
+              </FilterGroup>
             </div>
           </div>
         )}
 
         {/* Body */}
-        <div className="grid flex-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: "start" }}>
-          <div className="p-4 xl:p-5">
+        <div className="grid min-w-0 flex-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: "start" }}>
+          <div className="min-w-0 p-3 sm:p-4 xl:p-5">
             {loading ? (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}</div>
+              <div className="grid gap-4 md:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}</div>
             ) : filtered.length === 0 ? (
               <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-3 text-center">
                 <div className="text-4xl opacity-20">✂</div>
@@ -560,12 +1070,46 @@ export function ClipsPage() {
                 {activeFilterCount > 0 && <button onClick={clearFilters} className="mt-2 text-xs font-semibold text-[#ff3d6a] hover:underline cursor-pointer">Clear all filters</button>}
               </div>
             ) : viewMode === "grid" ? (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                {filtered.map((clip, i) => <UniversalClipCard key={clip.id} clip={clip} active={clip.id === selectedId} onClick={() => setSelectedId(clip.id)} delay={i * 35} isPosted={postedClipIds.has(clip.id)} isScheduled={scheduledClipIds.has(clip.id)} posts={posts.filter((p) => p.clip_id === clip.id)} />)}
-              </div>
+              <VirtualizedGrid
+                items={filtered}
+                keyForItem={(clip) => clip.id}
+                estimateRowHeight={430}
+                columns={[{ minWidth: 768, columns: 3 }]}
+                renderItem={(clip, i) => (
+                  <div className="relative">
+                    <UniversalClipCard
+                      clip={clip}
+                      active={clip.id === selectedId}
+                      onClick={mergeSelectMode
+                        ? () => setMergeSelected((s) => { const n = new Set(s); n.has(clip.id) ? n.delete(clip.id) : n.add(clip.id); return n; })
+                        : () => setSelectedId(clip.id)}
+                      delay={(i % 12) * 35}
+                      isPosted={postedClipIds.has(clip.id)}
+                      isScheduled={scheduledClipIds.has(clip.id)}
+                      posts={postsByClipId.get(clip.id) ?? []}
+                    />
+                    {mergeSelectMode && (
+                      <div className={cn(
+                        "pointer-events-none absolute inset-0 rounded-[16px] border-2 transition-colors",
+                        mergeSelected.has(clip.id)
+                          ? "border-[#ff3d6a] bg-[#ff3d6a]/10"
+                          : "border-transparent"
+                      )}>
+                        {mergeSelected.has(clip.id) && (
+                          <div className="absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-[#ff3d6a] text-[10px] font-black text-white shadow">✓</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              />
             ) : (
-              <div className="overflow-hidden rounded-[16px] border border-white/[.06] bg-white/[.012]">
-                {filtered.map((clip) => {
+              <VirtualizedList
+                items={filtered}
+                keyForItem={(clip) => clip.id}
+                estimateRowHeight={92}
+                className="overflow-hidden rounded-[16px] border border-white/[.06] bg-white/[.012]"
+                renderItem={(clip) => {
                   const isPosted = postedClipIds.has(clip.id);
                   const isScheduled = scheduledClipIds.has(clip.id);
                   const platCfg = CARD_PLAT_CFG[clip.platform?.toLowerCase() ?? ""] ?? null;
@@ -574,35 +1118,28 @@ export function ClipsPage() {
                   const scoreColor = score >= 7 ? "#34d399" : score >= 4 ? "#fbbf24" : "#f87171";
                   const aiCaption = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.description ?? clip.clip_metadata?.ai_title ?? null;
                   const hashtags = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.tags ?? [];
-                  const clipPostsList = posts.filter((p) => p.clip_id === clip.id);
-                  const mostRecentPost = clipPostsList.sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0];
+                  const mostRecentPost = (postsByClipId.get(clip.id) ?? [])[0];
                   return (
-                    <button key={clip.id} onClick={() => setSelectedId(clip.id)} className={cn("w-full flex items-start gap-4 px-5 py-4 text-left transition hover:bg-white/[.025] cursor-pointer", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
-                      {/* Thumbnail */}
+                    <button onClick={() => setSelectedId(clip.id)} className={cn("w-full flex items-start gap-3 px-3 py-3.5 text-left transition hover:bg-white/[.025] cursor-pointer sm:gap-4 sm:px-5 sm:py-4", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
                       <div className="relative h-16 w-[42px] shrink-0 overflow-hidden rounded-[7px] bg-white/[.04]">
-                        {clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-gradient-to-br from-rose-600/40 to-violet-700/40" />}
+                        {clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" /> : <div className="h-full w-full bg-gradient-to-br from-rose-600/40 to-violet-700/40" />}
                         {isPosted && <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/55 backdrop-blur-[1px]"><svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6 9 17l-5-5"/></svg></div>}
                         {!isPosted && isScheduled && <div className="absolute inset-0 flex items-center justify-center bg-blue-500/50 backdrop-blur-[1px]"><svg className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>}
                       </div>
 
-                      {/* Main content */}
                       <div className="min-w-0 flex-1 space-y-1">
-                        {/* Row 1: title + badges */}
-                        <div className="flex items-start gap-2">
+                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-2">
                           <p className="flex-1 truncate text-[13px] font-semibold leading-[1.3]">{clip.title ?? "Untitled clip"}</p>
                           <div className="flex shrink-0 items-center gap-1.5">
-                            <Badge variant={clip.status === "ready" ? "ready" : clip.status === "processing" ? "warn" : "muted"}>{clip.status}</Badge>
+                            <Badge variant={clip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(clip.status) ? "warn" : clip.status === "upload_failed" ? "error" : clip.status === "processing" ? "warn" : "muted"}>{clip.status === "pending_upload" ? "queued" : clip.status === "upload_failed" ? "failed" : clip.status}</Badge>
                             {isPosted && <span className="rounded-full bg-amber-500/20 px-1.5 py-px text-[9px] font-bold text-amber-400">Live</span>}
                             {!isPosted && isScheduled && <span className="rounded-full bg-blue-500/15 px-1.5 py-px text-[9px] font-bold text-blue-400">Queued</span>}
                           </div>
                         </div>
 
-                        {/* Row 2: caption preview */}
                         {aiCaption && <p className="truncate text-[11px] text-zinc-500 leading-[1.4]">{aiCaption}</p>}
 
-                        {/* Row 3: meta pills + score bar */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          {/* Platform dot + name */}
                           <span className="flex items-center gap-1 text-[11px] text-zinc-500">
                             {platCfg && <span className="h-1.5 w-1.5 rounded-full shrink-0 inline-block" style={{ background: platCfg.color }} />}
                             <span className="capitalize">{clip.platform ?? "—"}</span>
@@ -625,8 +1162,7 @@ export function ClipsPage() {
                           <span className="text-zinc-700">·</span>
                           <span className="text-[11px] text-zinc-600">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
 
-                          {/* Score bar */}
-                          <div className="ml-auto flex items-center gap-2 shrink-0">
+                          <div className="w-full flex items-center gap-2 shrink-0 sm:ml-auto sm:w-auto">
                             <div className="h-1 w-20 rounded-full bg-white/[.06] overflow-hidden">
                               <div className="h-full rounded-full transition-all" style={{ width: `${scorePct}%`, background: scoreColor }} />
                             </div>
@@ -636,9 +1172,21 @@ export function ClipsPage() {
                       </div>
                     </button>
                   );
-                })}
-              </div>
+                }}
+              />
             )}
+            <Pagination
+              page={page}
+              perPage={perPage}
+              total={totalClips}
+              itemLabel="clips"
+              onPageChange={(next) => {
+                setPage(next);
+                setSelectedId(null);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="mt-4 rounded-[14px] border border-white/[.06] bg-white/[.012]"
+            />
           </div>
 
           {/* Clip details sidebar */}
@@ -680,7 +1228,7 @@ export function ClipsPage() {
                       <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <h2 className="min-w-0 text-[16px] font-bold leading-[1.25] tracking-[-.01em] text-white line-clamp-3">{drawer.clip_metadata?.ai_title ?? drawer.title ?? "Untitled clip"}</h2>
-                          <Badge variant={drawer.status === "ready" ? "ready" : drawer.status === "processing" ? "warn" : "muted"}>{drawer.status}</Badge>
+                          <Badge variant={drawer.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(drawer.status) ? "warn" : drawer.status === "upload_failed" ? "error" : drawer.status === "processing" ? "warn" : "muted"}>{drawer.status === "pending_upload" ? "queued" : drawer.status === "upload_failed" ? "failed" : drawer.status}</Badge>
                         </div>
                         {primaryDescription && <p className="line-clamp-3 text-[12px] leading-5 text-zinc-400">{primaryDescription}</p>}
                       </div>
@@ -826,13 +1374,22 @@ export function ClipsPage() {
                     </div>
                   </section>
 
+                  <DemoLab shoot={shoot} />
+
                   <div className="sticky bottom-0 space-y-2 bg-[#0b101a]/95 pt-1 backdrop-blur">
                     <Button className="w-full h-9 bg-[#ff3d6a] hover:bg-[#e8304f] text-white text-[13px] font-semibold" onClick={() => setPublishOpen(true)}>
                       {drawerPosted ? "Publish again" : drawerScheduled ? "Reschedule" : "Publish"}
                     </Button>
                     <div className="grid grid-cols-2 gap-2">
-                      <Button className="h-8 text-[12px]" variant="secondary">Edit clip</Button>
-                      <Button className="h-8 text-[12px]" variant="ghost">Download</Button>
+                      <Button className="h-8 text-[12px]" variant="secondary" onClick={() => setEditClip(drawer)}>Edit clip</Button>
+                      <Button
+                        className="h-8 text-[12px]"
+                        variant="ghost"
+                        disabled={!drawer?.storage_url}
+                        onClick={() => { if (drawer?.storage_url) void downloadUrl(drawer.storage_url, safeFilename(drawer.title, "mp4")); }}
+                      >
+                        Download
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -843,6 +1400,16 @@ export function ClipsPage() {
         </div>
       </div>
       {publishOpen && drawer && <PublishModal clip={drawer} onClose={() => setPublishOpen(false)} />}
+      {editClip && (
+        <VideoEditor
+          clip={editClip}
+          onClose={() => setEditClip(null)}
+          onPost={() => { setSelectedId(editClip.id); setPublishOpen(true); setEditClip(null); }}
+        />
+      )}
+      <EmojiOverlay emojis={emojis} />
     </Shell>
   );
 }
+
+

@@ -4,6 +4,19 @@ import cloudinary.uploader
 import cloudinary.utils
 from shared.storage.base import StorageAdapter
 
+# cloudinary.uploader._http is a module-level PoolManager singleton created at
+# import with maxsize=1. Patch it directly so concurrent uploads don't fill the pool.
+try:
+    import cloudinary.uploader as _cu
+    import cloudinary.utils as _cutils
+    import cloudinary as _cld
+    _cu._http = _cutils.get_http_connector(
+        _cld.config(),
+        {**_cld.CERT_KWARGS, "maxsize": 20, "num_pools": 10},
+    )
+except Exception:
+    pass
+
 
 class CloudinaryAdapter(StorageAdapter):
     def __init__(self):

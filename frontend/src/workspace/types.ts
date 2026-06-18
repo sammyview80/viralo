@@ -7,6 +7,7 @@ export type PageKey =
   | "workflows"
   | "scheduler"
   | "integrations"
+  | "channels"
   | "onboarding"
   | "analytics"
   | "trending"

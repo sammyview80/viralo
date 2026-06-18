@@ -3,8 +3,9 @@ import { Dashboard } from "@/components/dashboard";
 import { routeToPage, WorkspacePage } from "@/components/workspace-pages";
 import { LoginPage } from "@/app/auth/LoginPage";
 import { RegisterPage } from "@/app/auth/RegisterPage";
-import { OnboardingPage } from "@/workspace/pages/OnboardingPage";
+import { lazy, Suspense } from "react";
 import { OAuthCallbackPage } from "@/workspace/pages/OAuthCallbackPage";
+const OnboardingPage = lazy(() => import("@/workspace/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 import { useAuth, hydrate } from "@/stores/auth";
 import { usePathname } from "@/lib/router";
 
@@ -50,7 +51,7 @@ export default function App() {
 
   /* ── Onboarding gate: step 0 means fresh user ── */
   if (user.onboarding_step === 0) {
-    return <OnboardingPage />;
+    return <Suspense fallback={null}><OnboardingPage /></Suspense>;
   }
 
   /* ── Upload page (not in sidebar) and project detail ── */

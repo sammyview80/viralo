@@ -20,6 +20,13 @@ class SocialAccountResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SocialAccountListResponse(BaseModel):
+    items: list[SocialAccountResponse]
+    total: int
+    page: int
+    per_page: int
+
+
 class OAuthConnectRequest(BaseModel):
     platform: str
     code: str
@@ -143,10 +150,13 @@ class PostAnalyticsDetail(BaseModel):
 
 class NotificationResponse(BaseModel):
     id: uuid.UUID
-    type: str
+    type: str | None = None
     title: str
-    body: str
+    body: str | None = None
     is_read: bool
+    user_id: uuid.UUID | None = None
+    action_url: str | None = None
+    read_at: datetime | None = None
     metadata: dict | None = None
     created_at: datetime
 
@@ -158,3 +168,23 @@ class NotificationListResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+
+class PushSubscribeIn(BaseModel):
+    endpoint: str
+    p256dh: str
+    auth: str
+    user_agent: str | None = None
+
+
+class PushSubscriptionResponse(BaseModel):
+    id: uuid.UUID
+    endpoint: str
+    user_agent: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str

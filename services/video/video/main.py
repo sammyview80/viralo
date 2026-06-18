@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from shared.middleware.tenant import TenantMiddleware
-from video.routers import videos
+from video.routers import videos, viral
 
 LOCAL_STORAGE_DIR = os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage")
 
@@ -20,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(videos.router, prefix="/api/v1")
+app.include_router(viral.router, prefix="/api/v1")
 
 # Serve local storage files at /storage — created on startup if missing
 storage_path = Path(LOCAL_STORAGE_DIR)

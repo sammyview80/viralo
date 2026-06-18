@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Viralo LLM Configuration
+  ========================
+  Controls provider priority, model selection, and per-provider settings.
+  Changes take effect on next worker restart (no rebuild needed).
+
+  Priority order: providers listed first in <priority> are tried first.
+  Fallback: if a provider is rate-limited or fails, next in list is tried.
+-->
+<llm>
+
+  <!-- ── Provider Priority ─────────────────────────────────────────────────
+       List provider names in order of preference.
+       Available names: groq-small, openrouter-gemma, groq, cerebras,
+                        openrouter, sambanova, cloudflare, azure-openai,
+                        github-models, together, fireworks, deepseek,
+                        mistral, novita, gemini
+  -->
+  <priority>
+    <provider>groq-small</provider>
+    <provider>openrouter-gemma</provider>
+    <provider>groq</provider>
+    <provider>cerebras</provider>
+    <provider>openrouter</provider>
+    <provider>sambanova</provider>
+    <provider>cloudflare</provider>
+    <provider>openrouter-deepseek</provider>
+    <provider>openrouter-llama32</provider>
+    <provider>openrouter-qwen3coder</provider>
+    <provider>azure-openai</provider>
+  </priority>
+
+  <!-- ── Global Defaults ───────────────────────────────────────────────────
+       Applied to all calls unless overridden per-provider.
+  -->
+  <defaults>
+    <temperature>0.3</temperature>
+    <max_tokens>1000</max_tokens>
+    <timeout_seconds>15</timeout_seconds>
+    <probe_cache_live_ttl>30</probe_cache_live_ttl>   <!-- seconds before re-probing live provider -->
+    <probe_cache_dead_ttl>60</probe_cache_dead_ttl>   <!-- seconds to skip dead/rate-limited provider -->
+    <prefer_large_model>false</prefer_large_model>    <!-- false = use small/fast model by default -->
+  </defaults>
+
+  <!-- ── Provider Definitions ──────────────────────────────────────────────
+       enabled: true/false — set false to completely skip a provider
+       model_large: model used when prefer_large_model=true
+       model_small: model used when prefer_large_model=false
+       env_key: environment variable holding the API key
+  -->
+  <providers>
+
+    <provider name="groq-small" enabled="true">
+      <env_key>GROQ_API_KEY</env_key>
+      <base_url>https://api.groq.com/openai/v1</base_url>
+      <model_large>llama-3.1-8b-instant</model_large>
+      <model_small>llama-3.1-8b-instant</model_small>
+      <json_mode>true</json_mode>
+      <notes>Separate quota bucket from groq large keys. Fast, cheap, first priority.</notes>
+    </provider>
+
+    <provider name="openrouter-gemma" enabled="true">
+      <env_key>OPENROUTER_API_KEY</env_key>
+      <base_url>https://openrouter.ai/api/v1</base_url>
+      <model_large>google/gemma-4-31b-it:free</model_large>
+      <model_small>google/gemma-4-26b-a4b-it:free</model_small>
+      <json_mode>false</json_mode>
+      <notes>Free Gemma 4. Second priority — independent rate limit from other OpenRouter models.</notes>
+    </provider>
+
+    <provider name="groq" enabled="true">
+      <env_key>GROQ_API_KEY</env_key>
+      <base_url>https://api.groq.com/openai/v1</base_url>
+      <model_large>llama-3.3-70b-versatile</model_large>
+      <model_small>llama-3.1-8b-instant</model_small>
+      <json_mode>true</json_mode>
+      <notes>Multi-key support via GROQ_API_KEY_2, GROQ_API_KEY_3, etc.</notes>
+    </provider>
+
+    <provider name="cerebras" enabled="true">
+      <env_key>CEREBRAS_API_KEY</env_key>
+      <base_url>https://api.cerebras.ai/v1</base_url>
+      <model_large>llama-3.3-70b</model_large>
+      <model_small>llama3.1-8b</model_small>
+      <json_mode>true</json_mode>
+    </provider>
+
+    <provider name="openrouter" enabled="true">
+      <env_key>OPENROUTER_API_KEY</env_key>
+      <base_url>https://openrouter.ai/api/v1</base_url>
+      <model_large>meta-llama/llama-3.3-70b-instruct:free</model_large>
+      <model_small>meta-llama/llama-3.1-8b-instruct:free</model_small>
+      <json_mode>true</json_mode>
+    </provider>
+
+    <provider name="sambanova" enabled="true">
+      <env_key>SAMBANOVA_API_KEY</env_key>
+      <base_url>https://api.sambanova.ai/v1</base_url>
+      <model_large>Meta-Llama-3.3-70B-Instruct</model_large>
+      <model_small>Meta-Llama-3.1-8B-Instruct</model_small>
+      <json_mode>false</json_mode>
+    </provider>
+
+    <provider name="cloudflare" enabled="true">
+      <env_key>CLOUDFLARE_API_TOKEN</env_key>
+      <base_url>auto</base_url>  <!-- built from CLOUDFLARE_ACCOUNT_ID at runtime -->
+      <model_large>@cf/meta/llama-3.3-70b-instruct-fp8-fast</model_large>
+      <model_small>@cf/meta/llama-3.1-8b-instruct</model_small>
+      <json_mode>false</json_mode>
+    </provider>
+
+    <provider name="openrouter-deepseek" enabled="true">
+      <env_key>OPENROUTER_API_KEY</env_key>
+      <base_url>https://openrouter.ai/api/v1</base_url>
+      <model_large>deepseek/deepseek-v4-flash:free</model_large>
+      <model_small>deepseek/deepseek-v4-flash:free</model_small>
+      <json_mode>false</json_mode>
+    </provider>
+
+    <provider name="openrouter-llama32" enabled="true">
+      <env_key>OPENROUTER_API_KEY</env_key>
+      <base_url>https://openrouter.ai/api/v1</base_url>
+      <model_large>nousresearch/hermes-3-llama-3.1-405b:free</model_large>
+      <model_small>meta-llama/llama-3.2-3b-instruct:free</model_small>
+      <json_mode>false</json_mode>
+    </provider>
+
+    <provider name="openrouter-qwen3coder" enabled="true">
+      <env_key>OPENROUTER_API_KEY</env_key>
+      <base_url>https://openrouter.ai/api/v1</base_url>
+      <model_large>qwen/qwen3-coder:free</model_large>
+      <model_small>qwen/qwen3-coder:free</model_small>
+      <json_mode>false</json_mode>
+    </provider>
+
+    <!-- PAID — last resort, only used when all free providers exhausted -->
+    <provider name="azure-openai" enabled="true">
+      <env_key>AZURE_OPENAI_API_KEY</env_key>
+      <base_url>auto</base_url>  <!-- built from AZURE_OPENAI_ENDPOINT at runtime -->
+      <model_large>auto</model_large>  <!-- resolved from AZURE_OPENAI_CHAT_DEPLOYMENT -->
+      <model_small>auto</model_small>
+      <json_mode>true</json_mode>
+      <notes>
+        Paid provider — LAST in priority to avoid charges.
+        Set AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4.1-nano for cheapest option ($0.011/video).
+        Options: gpt-4o ($0.27/video) | gpt-4o-mini ($0.017) | gpt-4.1-nano ($0.011)
+      </notes>
+    </provider>
+
+    <!-- NOT YET INTEGRATED — add API key + uncomment to enable -->
+
+    <provider name="together" enabled="false">
+      <env_key>TOGETHER_API_KEY</env_key>
+      <base_url>https://api.together.xyz/v1</base_url>
+      <model_large>meta-llama/Meta-Llama-3.3-70B-Instruct-Turbo</model_large>
+      <model_small>meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo</model_small>
+      <json_mode>true</json_mode>
+      <cost_per_1m_input>0.18</cost_per_1m_input>
+      <cost_per_1m_output>0.18</cost_per_1m_output>
+    </provider>
+
+    <provider name="fireworks" enabled="false">
+      <env_key>FIREWORKS_API_KEY</env_key>
+      <base_url>https://api.fireworks.ai/inference/v1</base_url>
+      <model_large>accounts/fireworks/models/llama-v3p3-70b-instruct</model_large>
+      <model_small>accounts/fireworks/models/llama-v3p1-8b-instruct</model_small>
+      <json_mode>true</json_mode>
+      <cost_per_1m_input>0.20</cost_per_1m_input>
+      <cost_per_1m_output>0.20</cost_per_1m_output>
+    </provider>
+
+    <provider name="deepseek" enabled="false">
+      <env_key>DEEPSEEK_API_KEY</env_key>
+      <base_url>https://api.deepseek.com/v1</base_url>
+      <model_large>deepseek-chat</model_large>
+      <model_small>deepseek-chat</model_small>
+      <json_mode>true</json_mode>
+      <cost_per_1m_input>0.07</cost_per_1m_input>
+      <cost_per_1m_output>1.10</cost_per_1m_output>
+    </provider>
+
+    <provider name="mistral" enabled="false">
+      <env_key>MISTRAL_API_KEY</env_key>
+      <base_url>https://api.mistral.ai/v1</base_url>
+      <model_large>mistral-large-latest</model_large>
+      <model_small>mistral-small-latest</model_small>
+      <json_mode>true</json_mode>
+      <cost_per_1m_input>0.10</cost_per_1m_input>
+      <cost_per_1m_output>0.30</cost_per_1m_output>
+    </provider>
+
+    <provider name="novita" enabled="false">
+      <env_key>NOVITA_API_KEY</env_key>
+      <base_url>https://api.novita.ai/v3/openai</base_url>
+      <model_large>meta-llama/llama-3.3-70b-instruct</model_large>
+      <model_small>meta-llama/llama-3.1-8b-instruct</model_small>
+      <json_mode>true</json_mode>
+      <cost_per_1m_input>0.08</cost_per_1m_input>
+      <cost_per_1m_output>0.08</cost_per_1m_output>
+    </provider>
+
+    <provider name="gemini" enabled="false">
+      <env_key>GEMINI_API_KEY</env_key>
+      <base_url>https://generativelanguage.googleapis.com/v1beta/openai</base_url>
+      <model_large>gemini-2.0-flash</model_large>
+      <model_small>gemini-1.5-flash</model_small>
+      <json_mode>false</json_mode>
+      <cost_per_1m_input>0.10</cost_per_1m_input>
+      <cost_per_1m_output>0.40</cost_per_1m_output>
+    </provider>
+
+  </providers>
+
+</llm>

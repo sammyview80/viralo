@@ -19,8 +19,10 @@ dependencies = [
     "groq>=0.11",
     "openai>=1.55",
     "av>=13.0",
+    "numpy>=1.26",
     "pillow>=11.0",
     "boto3>=1.35",
+    "cloudinary>=1.41",
     "aio-pika>=9.4",
     "viralo-shared",
 ]
