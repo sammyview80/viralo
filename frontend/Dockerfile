@@ -16,8 +16,7 @@ COPY . .
 RUN pnpm run build
 
 FROM nginx:alpine AS production
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install
-COPY . .
-EXPOSE 5173
-CMD ["pnpm", "run", "dev", "--host"]
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 3000
+CMD ["nginx", "-g", "daemon off;"]
