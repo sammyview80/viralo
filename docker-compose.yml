@@ -71,34 +71,6 @@ services:
       retries: 5
       start_period: 60s
 
-  nginx:
-    <<: *service-defaults
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      core-service:
-        condition: service_healthy
-      video-service:
-        condition: service_healthy
-      agent-service:
-        condition: service_healthy
-      workflow-service:
-        condition: service_healthy
-      platform-service:
-        condition: service_healthy
-      frontend:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 
   frontend:
     <<: *service-defaults
