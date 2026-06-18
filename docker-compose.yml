@@ -118,10 +118,10 @@ services:
         VITE_TWITTER_KEY: ${VITE_TWITTER_KEY:-}
         VITE_TIKTOK_KEY: ${VITE_TIKTOK_KEY:-}
     ports:
-      - "3000:80"
+      - "3000:3000"
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
 
   # ── API Services ──────────────────────────────────────────────────────────
 
