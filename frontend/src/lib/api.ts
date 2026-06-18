@@ -1,6 +1,6 @@
 import { clearQueryCache } from "./query";
 
-const BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
+const BASE = import.meta.env.VITE_API_BASE ?? "/core-api";
 const LS_ACCESS  = "viralo_access_token";
 const LS_SESSION = "viralo_has_session"; // flag: refresh cookie likely valid
 
@@ -182,7 +182,7 @@ function createServiceClient(getBase: () => string) {
 }
 
 /* ─── Video service (port 8003) ─── */
-const videoReq = createServiceClient(() => import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1");
+const videoReq = createServiceClient(() => import.meta.env.VITE_VIDEO_BASE ?? "/video-api");
 
 export interface VideoResponse {
   id: string;
@@ -321,7 +321,7 @@ export const videoApi = {
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
   downloadZip: async (clipIds: string[], zipName?: string): Promise<Blob> => {
-    const base = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+    const base = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
     const res = await fetch(`${base}/clips/download-zip`, {
@@ -361,7 +361,7 @@ export const videoApi = {
 };
 
 /* ─── Platform service (port 8006) ─── */
-const platformReq = createServiceClient(() => import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1");
+const platformReq = createServiceClient(() => import.meta.env.VITE_PLATFORM_BASE ?? "/platform-api");
 
 /* ─── Platform types ─── */
 export interface SocialAccount {
@@ -598,7 +598,7 @@ export const notificationApi = {
 };
 
 /* ─── Agent API (via nginx) ─── */
-const agentReq = createServiceClient(() => import.meta.env.VITE_AGENT_BASE ?? "http://localhost:8004/api/v1");
+const agentReq = createServiceClient(() => import.meta.env.VITE_AGENT_BASE ?? "/agent-api");
 
 export interface TagSuggestRequest {
   topic: string;
