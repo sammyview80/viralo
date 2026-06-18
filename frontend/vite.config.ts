@@ -8,9 +8,9 @@ export default defineConfig({
     },
   },
   server: {
-    allowedHosts: true,
+    allowedHosts: ["viraloapp.tech"],
   },
   preview: {
-    allowedHosts: true,
+    allowedHosts: ["viraloapp.tech"],
   },
 });
