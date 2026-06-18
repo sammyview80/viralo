@@ -97,3 +97,13 @@ services:
     volumes:
       - ./workers:/app/workers
       - ./shared:/app/shared
+
+  frontend:
+    build:
+      target: development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+
