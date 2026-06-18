@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { videoApi, token as authToken } from "@/lib/api";
 import type { VideoResponse, ClipApiResponse } from "@/lib/api";
 
-const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
 
 type View = "list" | "create";
 type InputType = "url" | "upload";

@@ -5,7 +5,7 @@ import { UniversalClipCard, type ClipCardAction } from "../components/UniversalC
 import { VirtualizedGrid } from "../components/VirtualizedCollection";
 import { videoApi, platformApi, token as authToken, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount, type ScheduledPost } from "@/lib/api";
 
-const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
 
 /* ─── Types ─── */
 type Source = "file" | "yt";

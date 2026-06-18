@@ -10,7 +10,7 @@ import { videoApi, platformApi, agentApi, token, type ClipApiResponse, type Sche
 import { VideoEditor } from "../components/VideoEditor";
 import { addToast } from "@/stores/notifications";
 
-const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "http://localhost:8003/api/v1";
+const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return "--:--";

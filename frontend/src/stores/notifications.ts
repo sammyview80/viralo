@@ -2,7 +2,7 @@ import { notificationApi, token } from "@/lib/api";
 import type { AppNotification as Notification } from "@/lib/api";
 import { createStore } from "@/lib/store";
 
-const PLATFORM_BASE = import.meta.env.VITE_PLATFORM_BASE ?? "http://localhost:8006/api/v1";
+const PLATFORM_BASE = import.meta.env.VITE_PLATFORM_BASE ?? "/platform-api";
 
 interface Toast {
   id: string;
