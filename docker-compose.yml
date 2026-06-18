@@ -6,6 +6,11 @@ x-service-defaults: &service-defaults
   restart: unless-stopped
   env_file:
     - .env
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "3"
 
 x-healthcheck-defaults: &healthcheck-defaults
   interval: 10s
@@ -22,11 +27,12 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_USER: viralo
-      POSTGRES_PASSWORD: viralo
+      POSTGRES_USER: ${POSTGRES_USER:-viralo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viralo}
       POSTGRES_DB: viralo
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD-SHELL", "pg_isready -U viralo"]
@@ -36,6 +42,8 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    mem_limit: 256m
+    memswap_limit: 256m
     volumes:
       - redis-data:/data
     healthcheck:
@@ -48,14 +56,20 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    mem_limit: 1g
+    memswap_limit: 1g
     environment:
-      RABBITMQ_DEFAULT_USER: viralo
-      RABBITMQ_DEFAULT_PASS: viralo
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-viralo}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-viralo}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   nginx:
     <<: *service-defaults
@@ -77,6 +91,25 @@ services:
         condition: service_healthy
       platform-service:
         condition: service_healthy
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    <<: *service-defaults
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "3000:5173"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5173/ || exit 1"]
 
   # ── API Services ──────────────────────────────────────────────────────────
 
@@ -98,6 +131,8 @@ services:
       dockerfile: services/core/Dockerfile
     ports:
       - "8001:8001"
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -116,6 +151,8 @@ services:
       dockerfile: services/video/Dockerfile
     ports:
       - "8003:8003"
+    mem_limit: 512m
+    memswap_limit: 512m
     environment:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
@@ -144,6 +181,8 @@ services:
       dockerfile: services/agent/Dockerfile
     ports:
       - "8004:8004"
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -164,6 +203,8 @@ services:
       dockerfile: services/workflow/Dockerfile
     ports:
       - "8005:8005"
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -184,6 +225,8 @@ services:
       dockerfile: services/platform/Dockerfile
     ports:
       - "8006:8006"
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -199,14 +242,14 @@ services:
 
   # ── Workers ───────────────────────────────────────────────────────────────
 
-  celery-video:
+  celery-video-pipeline:
     <<: *service-defaults
     build:
       context: .
       dockerfile: services/video/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=1 --loglevel=info
-    mem_limit: 2500m
-    memswap_limit: 2500m
+    command: celery -A workers.celery_app worker -Q viralo.video.pipeline --concurrency=4 --loglevel=info
+    mem_limit: 8g
+    memswap_limit: 8g
     environment:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
@@ -225,6 +268,112 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'celery.*worker' > /dev/null"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  celery-video-ai:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.video.ai --concurrency=2 --loglevel=info
+    mem_limit: 8g
+    memswap_limit: 8g
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'celery.*worker' > /dev/null"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  celery-video-upload:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.video.upload --concurrency=8 --pool=threads --loglevel=info
+    mem_limit: 2g
+    memswap_limit: 2g
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'celery.*worker' > /dev/null"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  celery-video-generate:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/video/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.video.generate --concurrency=2 --loglevel=info
+    mem_limit: 4g
+    memswap_limit: 4g
+    environment:
+      YTDLP_COOKIES_FILE: /app/yt-cookies.txt
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      RAPIDAPI_TIKTOK_KEY: ${RAPIDAPI_TIKTOK_KEY:-}
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      - video-temp:/tmp/viralo-video
+      - video-storage:/tmp/viralo-storage
+      - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'celery.*worker' > /dev/null"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   celery-agent:
     <<: *service-defaults
@@ -232,6 +381,8 @@ services:
       context: .
       dockerfile: services/agent/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.agent.run --concurrency=1 --pool=threads --loglevel=info
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -241,6 +392,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   celery-workflow:
     <<: *service-defaults
@@ -248,6 +405,8 @@ services:
       context: .
       dockerfile: services/workflow/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.workflow.execute --concurrency=8 --loglevel=info
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -257,6 +416,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   celery-post:
     <<: *service-defaults
@@ -264,6 +429,8 @@ services:
       context: .
       dockerfile: services/platform/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.post.publish,viralo.analytics.ingest --concurrency=10 --loglevel=info
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -273,6 +440,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   celery-notification:
     <<: *service-defaults
@@ -280,6 +453,8 @@ services:
       context: .
       dockerfile: services/platform/Dockerfile
     command: celery -A workers.celery_app worker -Q viralo.notifications --concurrency=4 --loglevel=info
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -289,6 +464,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   celery-beat:
     <<: *service-defaults
@@ -296,6 +477,8 @@ services:
       context: .
       dockerfile: services/core/Dockerfile
     command: celery -A workers.celery_app beat --loglevel=info
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -303,6 +486,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # ── Dev Tools ─────────────────────────────────────────────────────────────
 
@@ -324,7 +513,7 @@ services:
       - "5050:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@viralo.dev
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
 
 networks:
   viralo-internal:

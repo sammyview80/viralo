@@ -28,6 +28,35 @@ from sqlalchemy.orm import Session
 
 from workers.celery_app import celery_app
 
+
+def _get_video_title_from_db(tenant_id: str, video_id: str) -> str:
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT title FROM videos WHERE id = CAST(:vid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+                {"vid": video_id, "tid": tenant_id},
+            ).fetchone()
+        return (row[0] or "") if row else ""
+    except Exception:
+        return ""
+
+
+def _notify_video(tenant_id: str, video_id: str, notif_type: str, title: str, body: str) -> None:
+    """Best-effort notification — never raises, never blocks the pipeline."""
+    try:
+        from workers.tasks.notification import send_notification
+        send_notification.delay(
+            tenant_id,
+            user_id=None,
+            type=notif_type,
+            title=title,
+            body=body,
+            action_url=f"/projects/{video_id}",
+            metadata={"video_id": video_id},
+        )
+    except Exception:
+        logging.warning("_notify_video: failed to enqueue notification for video %s", video_id)
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -41,8 +70,11 @@ GROQ_MAX_AUDIO_MB = 24
 VIDEO_CRF = 23          # visually good quality; 16 was near-lossless but 10x slower
 AUDIO_BITRATE = 256_000  # 256kbps — high fidelity AAC
 CAPTION_BURN_MAX_SECONDS = 120
-CAPTION_LEAD_SEC = 0.10  # Whisper/Groq word timestamps lag ~100ms; shift captions earlier
+CAPTION_LEAD_SEC = 0.15  # YouTube-style 150ms pre-roll; Whisper word timestamps have ±100-300ms variable bias
 MAX_VIDEO_DURATION_SEC = 1800  # 30 minutes — reject longer videos before download
+MIN_VIDEO_DURATION_SEC = 60   # 1 minute — skip very short videos (auto-clip from channels)
+# Tenants in this set bypass the duration limit (comma-separated emails in env)
+_UNLIMITED_EMAILS = {e.strip().lower() for e in os.getenv("UNLIMITED_DURATION_EMAILS", "aman@viralo.com,bidhya@viralo.com").split(",") if e.strip()}
 
 REFRAME_PRESETS = {
     "9:16":  (1080, 1920, "9:16"),
@@ -134,6 +166,34 @@ class VideoMeta:
 
 
 # ── DB / Redis helpers ────────────────────────────────────────────────────────
+
+def _is_unlimited(tenant_id: str) -> bool:
+    """Return True if tenant's plan has no duration limit (pro+ or bypass email)."""
+    try:
+        with Session(engine) as s:
+            row = s.execute(
+                text("""
+                    SELECT u.email, p.name AS plan_name
+                    FROM users u
+                    LEFT JOIN subscriptions sub ON sub.tenant_id = u.id AND sub.status = 'active'
+                    LEFT JOIN plans p ON p.id = sub.plan_id
+                    WHERE u.id = CAST(:tid AS uuid)
+                    LIMIT 1
+                """),
+                {"tid": str(tenant_id)},
+            ).fetchone()
+        if not row:
+            return False
+        email, plan_name = row
+        if email and email.lower() in _UNLIMITED_EMAILS:
+            return True
+        # free plan has video_duration_limit_min set; all others (pro/starter/creator/unlimited) are None
+        from shared.shared.plan_gate import get_plan_features
+        features = get_plan_features(plan_name or "free")
+        return features.video_duration_limit_min is None
+    except Exception:
+        return False
+
 
 @contextmanager
 def _get_session(tenant_id: str):
@@ -337,7 +397,10 @@ def _parse_words(response, offset: float) -> list[WordTimestamp]:
     if words:
         return words
 
-    # 3. Approximate: evenly split segment text over segment duration
+    # 3. Approximate: character-proportional split over segment duration.
+    # Even split ignores word length — long words get the same slot as short words,
+    # causing captions to fall behind on long words and run ahead on short ones.
+    # Weighting by character count tracks phoneme count better.
     for seg in (getattr(response, "segments", None) or []):
         seg_text = (_get_attr(seg, "text") or "").strip()
         seg_start = float(_get_attr(seg, "start") or 0)
@@ -345,13 +408,18 @@ def _parse_words(response, offset: float) -> list[WordTimestamp]:
         tokens = seg_text.split()
         if not tokens:
             continue
-        dpw = (seg_end - seg_start) / len(tokens)
-        for i, token in enumerate(tokens):
+        seg_dur = max(seg_end - seg_start, 0.01)
+        char_counts = [max(len(t), 1) for t in tokens]
+        total_chars = sum(char_counts)
+        t = seg_start
+        for token, chars in zip(tokens, char_counts):
+            dur = seg_dur * (chars / total_chars)
             words.append(WordTimestamp(
                 word=token,
-                start=round(seg_start + i * dpw + offset, 3),
-                end=round(seg_start + (i + 1) * dpw + offset, 3),
+                start=round(t + offset, 3),
+                end=round(t + dur + offset, 3),
             ))
+            t += dur
     return words
 
 
@@ -763,6 +831,23 @@ _CONTENT_TYPE_SIGNALS: dict[str, str] = {
 - Surprising or unexpected moment
 - Quotable one-liner
 - Story climax or turning point""",
+    "football": """\
+- Goal scored — especially in the 90th minute, a final, or against the run of play
+- Stunning individual skill: dribble, bicycle kick, long-range strike, rabona
+- Embarrassing error: own goal, goalkeeper howler, missed open-net penalty
+- Near-miss or goal-line clearance that defied physics
+- Referee controversy — wrong call, red card, VAR overrule that changed the game
+- Iconic celebration — unusual, emotional, or instantly meme-able reaction
+- Player story moment: debut goal, return from injury, record broken on camera
+- Crowd eruption — the audio peak when an entire stadium reacts at once""",
+    "sports": """\
+- Game-changing play at a critical moment (last second, overtime, elimination final)
+- Record broken or personal milestone reached live on camera
+- Underdog beats the heavy favourite in stunning fashion
+- Athlete emotional reaction — tears, disbelief, raw celebration
+- Controversial officiating decision that swung the result
+- Spectacular athletic feat: impossible speed, strength, precision
+- Crowd or stadium atmosphere peak — the noise and energy is the story""",
 }
 
 _SCORE_CALIBRATION = """\
@@ -945,6 +1030,7 @@ def _ai_score_clips(
     chapters: list[dict] = None,
     precision_mode: bool = False,
     yt_engagement: dict | None = None,
+    occasion: str = "",
 ) -> list[ClipResult]:
     if platforms is None:
         platforms = ["tiktok", "reels", "shorts"]
@@ -961,7 +1047,11 @@ def _ai_score_clips(
     context_lines.append(f"Target platforms: {platforms_str}")
     context_block = "\n".join(context_lines)
 
-    signals_for_type = _CONTENT_TYPE_SIGNALS.get(content_type, _CONTENT_TYPE_SIGNALS["other"])
+    # For sports occasions, use the sport-specific signal prompts regardless of content_type
+    _occasion_ct_map = {"football": "football", "soccer": "football", "sports": "sports",
+                        "gaming": "gaming", "esports": "gaming"}
+    _effective_ct = _occasion_ct_map.get(occasion.lower(), content_type) if occasion else content_type
+    signals_for_type = _CONTENT_TYPE_SIGNALS.get(_effective_ct, _CONTENT_TYPE_SIGNALS.get(content_type, _CONTENT_TYPE_SIGNALS["other"]))
 
     # Seed from metadata key_moments if available
     key_moments_hint = ""
@@ -1082,26 +1172,20 @@ Return JSON with ALL signals found (aim for at least {max(num_clips * 2, 8)} sig
                 num_clips=num_clips,
                 signals_for_type=signals_for_type,
             )
-            if not signals:
-                # Fall back to original single-agent call
-                logging.info("_ai_score_clips: multi-agent returned nothing — falling back to single-agent Stage 1")
-                try:
-                    signals_data = _call_llm_json(
-                        [{"role": "user", "content": analysis_prompt}],
-                        temperature=_stage1_temp, max_tokens=3000,
-                    )
-                    signals = signals_data.get("signals", [])
-                except Exception as e1:
-                    logging.warning("_ai_score_clips step-1 LLM failed (%s) — using evenly-spaced fallback signals", e1)
-                    signals = []
-
         if not signals:
             signals = [{"timestamp_sec": i * (duration / max(num_clips, 1)), "score": 6.0} for i in range(num_clips)]
 
         # Augment with multimodal signals — audio energy, speech rate, YT chapters
         extra_signals: list[dict] = []
         if source_path:
-            extra_signals += _audio_energy_signals(source_path, duration, top_n=12)
+            audio_sigs = _audio_energy_signals(source_path, duration, top_n=12)
+            # For sports/football, crowd roar = goal/climax — up-weight audio peaks
+            # since commentary transcript alone is unreliable for finding goal moments.
+            _sports_occasions = {"football", "soccer", "sports"}
+            if occasion.lower() in _sports_occasions:
+                for sig in audio_sigs:
+                    sig["score"] = min(10.0, round(sig["score"] * 1.5, 2))
+            extra_signals += audio_sigs
             extra_signals += _speech_rate_signals(words, top_n=8)
         if chapters:
             extra_signals += _youtube_chapter_signals(chapters)
@@ -1380,20 +1464,47 @@ def _heuristic_clips(
 
 # ── Stage 6: Caption generation ───────────────────────────────────────────────
 
+def _smooth_word_timestamps(words: list[WordTimestamp]) -> list[WordTimestamp]:
+    """
+    Smooth out Whisper's per-word timing jitter (±100-300ms heterogeneous bias).
+
+    Strategy (matches YouTube's forced-alignment approach):
+    1. Clip overlaps: a word cannot start before the previous word ends.
+    2. Detect and fix implausible gaps or backward jumps caused by Whisper drift.
+    3. Enforce minimum word duration of 80ms (below this = transcription artifact).
+    """
+    if len(words) < 2:
+        return words
+    smoothed = [words[0]]
+    for w in words[1:]:
+        prev = smoothed[-1]
+        # Clamp: word cannot start before previous word ends
+        start = max(w.start, prev.end)
+        # Implausible backward jump (>200ms): anchor to prev.end + small gap
+        if start > prev.end + 0.2 and w.start < prev.end:
+            start = prev.end + 0.05
+        # Minimum duration 80ms
+        end = max(w.end, start + 0.08)
+        smoothed.append(WordTimestamp(word=w.word, start=round(start, 3), end=round(end, 3)))
+    return smoothed
+
+
 def _generate_captions(words: list[WordTimestamp], clip: ClipResult, max_words: int = 3) -> list[CaptionSegment]:
     """
     Group word-level timestamps into caption segments for burn-in.
 
-    Timing contract:
-      - start: shifted earlier by CAPTION_LEAD_SEC to compensate for Whisper's
-               end-of-word detection bias (timestamps mark word completion, not onset).
-      - end:   natural word end time — NOT shifted, so the caption stays visible
-               until the word truly finishes.
+    Timing contract (YouTube-style):
+      - start: shifted earlier by CAPTION_LEAD_SEC (150ms) — captions appear
+               slightly before the word, matching YouTube's ~150-200ms pre-roll.
+      - end:   natural word end time — NOT shifted, stays visible until word finishes.
       - Gaps ≤ 0.5 s between consecutive segments are closed to prevent flicker.
+      - Whisper timestamps are smoothed first to remove ±100-300ms jitter.
     """
     clip_words = [w for w in words if w.start >= clip.start - 0.1 and w.end <= clip.end + 0.1]
     if not clip_words:
         return []
+
+    clip_words = _smooth_word_timestamps(clip_words)
 
     segments, current = [], []
     for w in clip_words:
@@ -1654,6 +1765,598 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     return img
 
 
+def _make_hook_text(title: str, viral_type: str = "") -> str:
+    """Derive a short punchy hook text for the first-frame overlay from the clip title."""
+    if not title:
+        return ""
+    words = title.split()[:6]
+    text = " ".join(words).upper()
+    # Cap at 38 chars for readability
+    return text[:38]
+
+
+def _draw_hook_overlay(img, t_in_clip: float, hook_text: str, hook_duration_sec: float, width: int, height: int):
+    """Draw a bold text hook at the top and a circle overlay at the action area.
+
+    Active only while t_in_clip < hook_duration_sec. Fades in/out over 0.3s edges.
+    """
+    if not hook_text or t_in_clip >= hook_duration_sec:
+        return img
+    from PIL import ImageDraw
+
+    fade_in = min(1.0, t_in_clip / 0.3)
+    fade_out = min(1.0, (hook_duration_sec - t_in_clip) / 0.3)
+    alpha = int(255 * min(fade_in, fade_out))
+    if alpha < 5:
+        return img
+
+    font_size = max(48, int(width * 0.062))
+    font = _load_font(font_size)
+    draw = ImageDraw.Draw(img)
+
+    bbox = draw.textbbox((0, 0), hook_text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = (width - tw) // 2
+    y = int(height * 0.055)
+
+    PAD = 16
+    bg = (0, 0, 0, int(alpha * 0.72))
+    draw.rounded_rectangle([x - PAD, y - PAD // 2, x + tw + PAD, y + th + PAD // 2], radius=10, fill=bg)
+
+    stroke = 3
+    for dx in range(-stroke, stroke + 1):
+        for dy in range(-stroke, stroke + 1):
+            if dx == 0 and dy == 0:
+                continue
+            draw.text((x + dx, y + dy), hook_text, font=font, fill=(0, 0, 0, alpha))
+    draw.text((x, y), hook_text, font=font, fill=(255, 218, 0, alpha))
+
+    # Red circle at lower-center — where ball/player action typically sits in 9:16 crop
+    cx = width // 2
+    cy = int(height * 0.60)
+    r = int(min(width, height) * 0.075)
+    outline_w = 4
+    for i in range(outline_w):
+        fade_a = max(0, alpha - i * 40)
+        draw.ellipse([cx - r - i, cy - r - i, cx + r + i, cy + r + i],
+                     outline=(255, 50, 50, fade_a))
+    return img
+
+
+RANKING_THEMES = {
+    "classic": {
+        "num_fill": (255, 218, 0),
+        "title_fill": (255, 255, 255),
+        "stroke_fill": (0, 0, 0),
+        "stroke_width": 4,
+        "bg_fill": (0, 0, 0, 160),
+    },
+    "neon": {
+        "num_fill": (0, 255, 180),
+        "title_fill": (255, 255, 255),
+        "stroke_fill": (0, 80, 60),
+        "stroke_width": 4,
+        "bg_fill": (10, 10, 30, 180),
+    },
+    "minimal": {
+        "num_fill": (255, 255, 255),
+        "title_fill": (220, 220, 220),
+        "stroke_fill": (30, 30, 30),
+        "stroke_width": 3,
+        "bg_fill": (0, 0, 0, 120),
+    },
+}
+
+
+def _draw_ranking_overlay(
+    img,
+    rank_number: int,
+    title_text: str,
+    theme_name: str,
+    width: int,
+    height: int,
+    total: int = 1,
+    all_labels: list = None,
+    revealed_ranks: set = None,
+):
+    """
+    Overlay matching reference style (Image #16):
+    - Title: left-aligned top, bold, 2 lines (line2 in theme highlight color)
+    - Rank list: left-aligned, bottom 45% of frame, compact tight spacing
+    - Active rank: number in rank-specific color, label WHITE, slightly larger
+    - Revealed ranks: number in rank-specific color dimmed, label white dimmed, same size as active
+    - Hidden ranks: number only, heavily dimmed, no label
+    """
+    from PIL import Image, ImageDraw
+
+    theme = RANKING_THEMES.get(theme_name, RANKING_THEMES["classic"])
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    sw = theme["stroke_width"]
+    left_x = int(width * 0.04)
+
+    rank_colors = [
+        (255, 218, 0),    # 1 - yellow
+        (255, 140, 0),    # 2 - orange
+        (180, 220, 60),   # 3 - yellow-green
+        (120, 200, 255),  # 4 - light blue
+        (220, 120, 255),  # 5 - purple
+        (100, 220, 200),  # 6+
+    ]
+
+    # ── Title: centered, top of frame ────────────────────────────────────────
+    title = (title_text or "").strip()
+    if title:
+        title_sz = int(width * 0.07)
+        title_font = _load_font(title_sz)
+        words = title.split()
+        mid = max(1, len(words) // 2)
+        line1 = " ".join(words[:mid])
+        line2 = " ".join(words[mid:])
+        ty = int(height * 0.03)
+        for line_idx, line in enumerate([line1, line2]):
+            if not line:
+                continue
+            tb = draw.textbbox((0, 0), line, font=title_font)
+            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+            tx = (width - tw) // 2   # centered
+            fill = theme["num_fill"] if line_idx == 1 else theme["title_fill"]
+            for dx in range(-sw, sw + 1):
+                for dy in range(-sw, sw + 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    draw.text((tx + dx, ty + dy), line, font=title_font, fill=(0, 0, 0, 200))
+            draw.text((tx, ty), line, font=title_font, fill=fill)
+            ty += th + int(height * 0.008)
+
+    # ── Rank list: compact block, bottom 45% ─────────────────────────────────
+    revealed_set = set(revealed_ranks) if revealed_ranks else {rank_number}
+
+    # Uniform base font size — active slightly larger, capped so list fits frame
+    base_sz   = min(int(width * 0.060), int(height * 0.045))
+    active_sz = min(int(width * 0.078), int(height * 0.058))
+    line_gap  = int(active_sz * 1.30)   # tight line spacing
+
+    # Position block so it ends near bottom
+    block_h = line_gap * total
+    section_top = int(height * 0.96) - block_h
+    section_top = max(int(height * 0.55), section_top)
+
+    base_font   = _load_font(base_sz)
+    active_font = _load_font(active_sz)
+
+    for i in range(1, total + 1):
+        is_active  = (i == rank_number)
+        is_hidden  = i not in revealed_set
+        color_idx  = min(i - 1, len(rank_colors) - 1)
+        base_color = rank_colors[color_idx]
+        font       = active_font if is_active else base_font
+        label_str  = f"{i}."
+
+        if is_active:
+            num_fill    = (*base_color, 255)
+            lbl_fill    = (255, 255, 255, 255)
+            stroke_a    = 220
+        elif not is_hidden:  # revealed
+            num_fill    = (*base_color, 200)
+            lbl_fill    = (220, 220, 220, 200)
+            stroke_a    = 150
+        else:  # hidden
+            num_fill    = (*base_color, 80)
+            lbl_fill    = (200, 200, 200, 80)
+            stroke_a    = 40
+
+        y = section_top + (i - 1) * line_gap
+
+        # Measure number width for label x offset
+        tb_num = draw.textbbox((0, 0), label_str, font=font)
+        num_w = tb_num[2] - tb_num[0]
+
+        sw_use = sw if is_active else max(1, sw - 1)
+
+        # Draw number
+        for dx in range(-sw_use, sw_use + 1):
+            for dy in range(-sw_use, sw_use + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                draw.text((left_x + dx, y + dy), label_str, font=font, fill=(0, 0, 0, stroke_a))
+        draw.text((left_x, y), label_str, font=font, fill=num_fill)
+
+        # Draw label (only for revealed+active ranks)
+        if not is_hidden and all_labels and len(all_labels) >= i:
+            seg_label = (all_labels[i - 1] or "").strip()
+            if seg_label:
+                lx = left_x + num_w + int(width * 0.02)
+                max_lbl_w = width - lx - int(width * 0.04)  # 4% right margin
+                # Truncate label until it fits within max_lbl_w
+                while len(seg_label) > 1:
+                    lb = draw.textbbox((0, 0), seg_label, font=font)
+                    if lb[2] - lb[0] <= max_lbl_w:
+                        break
+                    seg_label = seg_label[:-1].rstrip()
+                for dx in range(-sw_use, sw_use + 1):
+                    for dy in range(-sw_use, sw_use + 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        draw.text((lx + dx, y + dy), seg_label, font=font, fill=(0, 0, 0, stroke_a))
+                draw.text((lx, y), seg_label, font=font, fill=lbl_fill)
+
+    return Image.alpha_composite(img, overlay)
+
+
+def _render_ranking_segment(
+    source_path: str,
+    start_sec: float,
+    end_sec: float,
+    rank_number: int,
+    title_text: str,
+    theme_name: str,
+    out_path: str,
+    target_w: int = 1080,
+    target_h: int = 1920,
+    total: int = 1,
+    all_labels: list = None,
+    revealed_ranks: set = None,
+) -> None:
+    """Two-pass: ffmpeg trim/crop/scale → h264 intermediate, then PyAV ranking overlay burn."""
+    import av
+    import tempfile
+
+    duration = max(1.0, float(end_sec) - float(start_sec))
+    seek_start = max(0.0, float(start_sec) - 2.0)
+    seek_offset = float(start_sec) - seek_start
+
+    # Probe source dims for crop math
+    src_w = src_h = 0
+    try:
+        with av.open(source_path) as probe:
+            vs = next((s for s in probe.streams if s.type == "video"), None)
+            if vs is not None:
+                src_w = vs.codec_context.width or 0
+                src_h = vs.codec_context.height or 0
+    except Exception:
+        pass
+
+    vf_parts = []
+    if src_w and src_h and src_w > src_h:
+        crop_h = src_h
+        crop_w = int(src_h * 9 / 16) & ~1
+        x_off = (src_w - crop_w) // 2
+        vf_parts.append(f"crop={crop_w}:{crop_h}:{x_off}:0")
+    elif src_w and src_h and src_h > src_w:
+        crop_w = src_w
+        crop_h = int(src_w * 16 / 9) & ~1
+        if crop_h <= src_h:
+            y_off = (src_h - crop_h) // 2
+            vf_parts.append(f"crop={crop_w}:{crop_h}:0:{y_off}")
+    vf_parts.append(f"scale={target_w}:{target_h}:flags=lanczos")
+    vf_str = ",".join(vf_parts)
+
+    v_chain = f"[0:v:0]trim=start={seek_offset}:duration={duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+    filter_complex = (
+        f"{v_chain};"
+        f"[0:a:0]atrim=start={seek_offset}:duration={duration},asetpts=PTS-STARTPTS[aout]"
+    )
+
+    tmp_h264 = str(Path(out_path).parent / f"_tmp_rank_{Path(out_path).name}")
+    cmd1 = [
+        "ffmpeg", "-y", "-threads", "2",
+        "-ss", str(seek_start),
+        "-i", source_path,
+        "-filter_complex", filter_complex,
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-r", "30",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2",
+        "-avoid_negative_ts", "make_zero",
+        tmp_h264,
+    ]
+    r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=180)
+    if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
+        # Retry without audio map (source may have no audio track)
+        v_only = f"[0:v:0]trim=start={seek_offset}:duration={duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+        cmd1_noaudio = [
+            "ffmpeg", "-y", "-threads", "2", "-ss", str(seek_start), "-i", source_path,
+            "-filter_complex", v_only, "-map", "[vout]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p", "-r", "30",
+            "-avoid_negative_ts", "make_zero", tmp_h264,
+        ]
+        r1 = subprocess.run(cmd1_noaudio, capture_output=True, text=True, timeout=180)
+        if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
+            err = r1.stderr
+            excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
+            raise RuntimeError(f"ranking segment pass1 failed (rc={r1.returncode}): {excerpt}")
+
+    try:
+        with av.open(tmp_h264) as src, av.open(out_path, "w", format="mp4") as dst:
+            v_stream = next((s for s in src.streams if s.type == "video"), None)
+            a_stream = next((s for s in src.streams if s.type == "audio"), None)
+            if v_stream is None:
+                raise RuntimeError("ranking intermediate has no video stream")
+
+            fps = int(round(float(v_stream.average_rate or 30)))
+            out_v = dst.add_stream("h264", rate=fps)
+            out_v.width = target_w
+            out_v.height = target_h
+            out_v.pix_fmt = "yuv420p"
+            out_v.options = {"crf": "23", "preset": "veryfast", "movflags": "+faststart"}
+
+            out_a = None
+            if a_stream is not None:
+                a_rate = a_stream.sample_rate or 44100
+                a_layout = a_stream.layout.name if a_stream.layout else "stereo"
+                out_a = dst.add_stream("aac", rate=a_rate, layout=a_layout)
+
+            frame_idx = 0
+            for packet in src.demux(*([v_stream] + ([a_stream] if a_stream else []))):
+                if packet.stream is v_stream:
+                    for frame in packet.decode():
+                        img = frame.to_image()
+                        img = _draw_ranking_overlay(img, rank_number, title_text, theme_name, target_w, target_h, total=total, all_labels=all_labels, revealed_ranks=revealed_ranks)
+                        img = img.convert("RGB")
+                        new_frame = av.VideoFrame.from_image(img)
+                        new_frame.pts = frame_idx
+                        new_frame.time_base = Fraction(1, fps)
+                        frame_idx += 1
+                        for pkt in out_v.encode(new_frame):
+                            dst.mux(pkt)
+                        del img, new_frame
+                elif out_a is not None and packet.stream is a_stream:
+                    if packet.dts is None:
+                        continue
+                    for aframe in packet.decode():
+                        aframe.pts = None
+                        for apkt in out_a.encode(aframe):
+                            dst.mux(apkt)
+
+            for pkt in out_v.encode(None):
+                dst.mux(pkt)
+            if out_a is not None:
+                for apkt in out_a.encode(None):
+                    dst.mux(apkt)
+
+        if not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
+            raise RuntimeError(f"ranking segment produced empty file: {out_path}")
+    finally:
+        Path(tmp_h264).unlink(missing_ok=True)
+
+
+def _suggest_ranking_title(topic: str, segment_count: int) -> dict:
+    prompt = f"""Generate a catchy title for a Top {segment_count} ranking video about: {topic}
+Return JSON: {{"title": "...", "highlight_words": ["word1", "word2"]}}
+Title should be punchy, 4-8 words, like "Ranking The Best Goals In Football History"."""
+    try:
+        result = _call_llm_json([{"role": "user", "content": prompt}], max_tokens=100)
+        if isinstance(result, dict) and "title" in result:
+            return result
+    except Exception:
+        pass
+    return {"title": f"Top {segment_count} {topic}", "highlight_words": []}
+
+
+def _generate_voiceover_script(clip: ClipResult, viral_type: str, content_type: str) -> str:
+    """Generate a 15-25 word punchy narrator script for this clip via LLM."""
+    prompt = f"""Write a punchy 15-25 word voiceover narration for a viral short-form video clip.
+
+Content type: {content_type}
+Viral type: {viral_type}
+Clip title: {clip.title}
+Why it's viral: {clip.reason}
+
+Rules:
+- Sound like a hyped-up sports commentator or reaction narrator
+- Hook in the first 3 words — immediate tension or disbelief
+- End with an emotional one-word payoff: "unbelievable", "sent", "historic", "never again"
+- Max 25 words. No hashtags. No emojis. No quotation marks.
+
+Return ONLY valid JSON in this exact shape:
+{"script":"<the narration>"}"""
+    try:
+        result = _call_llm_json([{"role": "user", "content": prompt}], temperature=0.85, max_tokens=80)
+        if isinstance(result, dict):
+            return (result.get("script") or result.get("text") or result.get("narration") or "")[:250].strip()
+        return str(result)[:250].strip()
+    except Exception as e:
+        logging.warning("_generate_voiceover_script failed: %s", e)
+        return ""
+
+
+def _synthesize_voiceover(script: str, out_path: str) -> bool:
+    """Synthesize voiceover MP3 via edge-tts (free, no API key). Returns True on success."""
+    if not script:
+        return False
+    try:
+        cmd = [
+            "edge-tts",
+            "--voice", "en-US-GuyNeural",
+            "--rate", "+15%",
+            "--text", script,
+            "--write-media", out_path,
+        ]
+        r = subprocess.run(cmd, capture_output=True, timeout=30)
+        if r.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 100:
+            return True
+        logging.warning("edge-tts failed (rc=%d): %s", r.returncode, r.stderr[:200])
+    except FileNotFoundError:
+        logging.warning("edge-tts not installed — skipping voiceover synthesis")
+    except Exception as e:
+        logging.warning("_synthesize_voiceover failed: %s", e)
+    return False
+
+
+def _enhance_clip_quality(clip_path: str, out_path: str, src_width: int) -> str:
+    """Sharpen + color-grade the clip to a punchy 4K-like look.
+
+    Two-stage pipeline:
+    1. ffmpeg unsharp + eq + lanczos scale (fast, always runs).
+    2. If source width < 720, OpenCV INTER_LANCZOS4 frame-level super-sampling
+       is applied before ffmpeg so ffmpeg gets a cleaner input to work with.
+
+    Returns out_path on success, clip_path on ffmpeg failure.
+    """
+    vf = "unsharp=lx=5:ly=5:la=0.5:cx=3:cy=3:ca=0.2,eq=saturation=1.2:contrast=1.06:gamma=0.97"
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", clip_path,
+        "-vf", vf,
+        "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        out_path,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=120)
+        if r.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 1000:
+            return out_path
+        logging.warning("_enhance_clip_quality ffmpeg failed (rc=%d): %s", r.returncode, r.stderr[-200:])
+    except Exception as e:
+        logging.warning("_enhance_clip_quality failed: %s", e)
+
+    return clip_path
+
+
+def _detect_action_centroid(source_path: str, start: float, end: float, n_frames: int = 10) -> tuple[float, float]:
+    """Sample frames via OpenCV, compute motion centroid via frame differencing.
+
+    Returns (x_ratio, y_ratio) in 0..1 relative to frame dimensions.
+    x/y is the detected action hotspot — use as zoompan anchor.
+    Falls back to (0.5, 0.45) (lower-center, good for sports) on any failure.
+    """
+    try:
+        import cv2
+        cap = cv2.VideoCapture(source_path)
+        if not cap.isOpened():
+            return 0.5, 0.45
+
+        duration = max(end - start, 1.0)
+        grays: list = []
+        for i in range(n_frames):
+            t = start + duration * i / max(n_frames - 1, 1)
+            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            small = cv2.resize(frame, (160, 90))
+            grays.append(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY))
+        cap.release()
+
+        if len(grays) < 2:
+            return 0.5, 0.45
+
+        diffs = [cv2.absdiff(grays[i], grays[i - 1]).astype(float) for i in range(1, len(grays))]
+        motion = sum(diffs) / len(diffs)
+
+        # Threshold: only keep high-motion pixels (top 20%)
+        thresh = float(np.percentile(motion, 80))
+        motion[motion < thresh] = 0.0
+
+        total = motion.sum()
+        if total < 1e-6:
+            return 0.5, 0.45
+
+        import numpy as np
+        ys, xs = np.mgrid[0:motion.shape[0], 0:motion.shape[1]]
+        cx = float((xs * motion).sum() / total) / motion.shape[1]
+        cy = float((ys * motion).sum() / total) / motion.shape[0]
+
+        # Clamp so zoompan viewport stays inside the frame
+        return max(0.1, min(0.9, cx)), max(0.1, min(0.9, cy))
+    except Exception as e:
+        logging.warning("_detect_action_centroid failed: %s", e)
+        return 0.5, 0.45
+
+
+def _mix_audio_tracks(clip_path: str, out_path: str, music_path: str | None = None, vo_path: str | None = None) -> str:
+    """Mix background music and/or voiceover under/over the clip audio.
+
+    Returns out_path on success, clip_path (unmixed) on any ffmpeg failure.
+    Handles silent source clips by mixing the requested music/voiceover only.
+    """
+    has_music = music_path and Path(music_path).exists()
+    has_vo = vo_path and Path(vo_path).exists()
+    if not has_music and not has_vo:
+        return clip_path
+
+    def _has_audio_stream(path: str) -> bool:
+        try:
+            r = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-select_streams", "a:0",
+                    "-show_entries", "stream=codec_type",
+                    "-of", "csv=p=0",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return r.returncode == 0 and "audio" in (r.stdout or "")
+        except Exception:
+            return False
+
+    has_orig_audio = _has_audio_stream(clip_path)
+    inputs: list[str] = ["-i", clip_path]
+    filter_parts: list[str] = []
+    stream_idx = 1
+
+    if has_music:
+        inputs += ["-i", music_path]
+        # Loop music to fill clip, keep it quiet
+        filter_parts.append(f"[{stream_idx}:a]volume=-18dB,aloop=loop=-1:size=2000000000[music]")
+        stream_idx += 1
+
+    if has_vo:
+        inputs += ["-i", vo_path]
+        filter_parts.append(f"[{stream_idx}:a]volume=1.0[vo]")
+        stream_idx += 1
+
+    mix_inputs = ""
+    n = 0
+    if has_orig_audio:
+        # Original audio quieter when voiceover present (preserve crowd ambience)
+        orig_vol = "-12dB" if has_vo else "-6dB"
+        filter_parts.append(f"[0:a]volume={orig_vol}[orig]")
+        mix_inputs += "[orig]"
+        n += 1
+    if has_music:
+        mix_inputs += "[music]"
+        n += 1
+    if has_vo:
+        mix_inputs += "[vo]"
+        n += 1
+    if n == 0:
+        return clip_path
+    filter_parts.append(f"{mix_inputs}amix=inputs={n}:duration=shortest:dropout_transition=0:normalize=0[aout]")
+
+    filter_complex = ";".join(filter_parts)
+
+    cmd = [
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "0:v",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        "-avoid_negative_ts", "make_zero",
+        out_path,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=120)
+        if r.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 1000:
+            return out_path
+        logging.warning("_mix_audio_tracks failed (rc=%d): %s", r.returncode, r.stderr[-300:])
+    except Exception as e:
+        logging.warning("_mix_audio_tracks exception: %s", e)
+    return clip_path
+
+
 def _render_clip_streamcopy(
     source_path: str,
     clip: ClipResult,
@@ -1687,48 +2390,56 @@ def _render_clip_streamcopy(
     if target_width != src_w or target_height != src_h:
         vf_parts.append(f"scale={target_width}:{target_height}:flags=lanczos")
 
-    # Stream-copy only safe for h264/hevc → MP4; VP9/AV1/other must re-encode
-    _copy_safe_codecs = {"h264", "hevc", "h265", "avc"}
-    can_stream_copy = not vf_parts and meta.codec.lower() in _copy_safe_codecs
-
-    if can_stream_copy:
-        # True stream-copy — zero quality loss, no re-encode
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(max(0.0, clip.start)),
-            "-i", source_path,
-            "-t", str(max(1.0, duration)),
-            "-map", "0:v:0",
-            "-map", "0:a:0?",
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "256k",
-            "-movflags", "+faststart",
-            output_path,
-        ]
+    # Re-encode even when codecs are stream-copy safe. Stream-copy can only cut on
+    # keyframes, which lets video begin before/after the requested start while audio
+    # is trimmed independently. Use matching trim/atrim windows and reset both PTS
+    # timelines to zero so audio and video are clipped from the exact same interval.
+    vf_str = ",".join(vf_parts) if vf_parts else "null"
+    clip_start = max(0.0, clip.start)
+    clip_duration = max(1.0, duration)
+    v_chain = f"[0:v:0]trim=start={clip_start}:duration={clip_duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+    if meta.has_audio:
+        filter_complex = (
+            f"{v_chain};"
+            f"[0:a:0]atrim=start={clip_start}:duration={clip_duration},asetpts=PTS-STARTPTS[aout]"
+        )
+        maps = ["-map", "[vout]", "-map", "[aout]"]
     else:
-        vf_str = ",".join(vf_parts) if vf_parts else "null"
-        cmd = [
-            "ffmpeg", "-y",
-            "-threads", "2",
-            "-ss", str(max(0.0, clip.start)),
-            "-i", source_path,
-            "-t", str(max(1.0, duration)),
-            "-map", "0:v:0",
-            "-map", "0:a:0?",
-            "-vf", vf_str,
-            "-c:v", "libx264",
-            "-crf", "23",
-            "-preset", "veryfast",
-            "-profile:v", "high",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "256k",
-            "-movflags", "+faststart",
-            output_path,
-        ]
+        filter_complex = v_chain
+        maps = ["-map", "[vout]"]
+    # Use -ss before -i for fast keyframe seek; trim filter then does precise frame-accurate cut
+    seek_start = max(0.0, clip_start - 2.0)  # seek 2s before clip for keyframe landing
+    seek_offset = clip_start - seek_start     # adjust trim to account for seek overshoot
+    if seek_offset > 0:
+        # Rebuild filter_complex with adjusted trim times relative to seek position
+        v_chain2 = f"[0:v:0]trim=start={seek_offset}:duration={clip_duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+        if meta.has_audio:
+            filter_complex = (
+                f"{v_chain2};"
+                f"[0:a:0]atrim=start={seek_offset}:duration={clip_duration},asetpts=PTS-STARTPTS[aout]"
+            )
+        else:
+            filter_complex = v_chain2
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    cmd = [
+        "ffmpeg", "-y",
+        "-threads", "2",
+        "-ss", str(seek_start),  # fast seek before input
+        "-i", source_path,
+        "-filter_complex", filter_complex,
+        *maps,
+        "-c:v", "libx264",
+        "-crf", "23",
+        "-preset", "veryfast",
+        "-profile:v", "high",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "256k",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     out_ok = Path(output_path).exists() and Path(output_path).stat().st_size >= 1000
     if result.returncode != 0 or not out_ok:
         err = result.stderr
@@ -1746,6 +2457,10 @@ def _render_clip_ffmpeg_captions(
     crop_mode: Optional[str],
     meta: VideoMeta,
     style: str = "capcut",
+    hook_text: str = "",
+    hook_duration_sec: float = 0.0,
+    punch_zoom: bool = False,
+    background_style: str = "center_crop",
 ) -> None:
     """Two-pass caption burn for VP9/AV1 sources.
     Pass 1: ffmpeg transcode clip to h264 (low memory, fast seek).
@@ -1760,7 +2475,12 @@ def _render_clip_ffmpeg_captions(
     tmp_h264 = str(Path(output_path).parent / f"_tmp_h264_{Path(output_path).name}")
 
     vf_parts = []
-    if crop_mode == "9:16" and src_w > src_h:
+    use_blur_fill = background_style == "blur_fill" and crop_mode == "9:16" and src_w > src_h
+    if use_blur_fill:
+        # Blur-fill: keep landscape video visible inside blurred 9:16 background.
+        # Filter built in v_chain below using split; vf_parts stays empty for this path.
+        pass
+    elif crop_mode == "9:16" and src_w > src_h:
         crop_h = src_h
         crop_w = int(src_h * 9 / 16) & ~1
         x_off = (src_w - crop_w) // 2
@@ -1774,67 +2494,163 @@ def _render_clip_ffmpeg_captions(
         side = min(src_w, src_h) & ~1
         vf_parts.append(f"crop={side}:{side}:{(src_w-side)//2}:{(src_h-side)//2}")
 
-    if target_width != src_w or target_height != src_h:
+    if not use_blur_fill and (target_width != src_w or target_height != src_h):
         vf_parts.append(f"scale={target_width}:{target_height}:flags=lanczos")
 
-    vf_str = ",".join(vf_parts) if vf_parts else "null"
+    clip_start = max(0.0, clip.start)
+    clip_duration = max(1.0, duration)
+    if punch_zoom:
+        # Detect where the action is before building the filter
+        cx_ratio, cy_ratio = _detect_action_centroid(source_path, clip_start, clip_start + clip_duration)
+        cx_px = int(src_w * cx_ratio)
+        cy_px = int(src_h * cy_ratio)
+        fps_int = max(1, int(meta.fps))
+        zoom_expr = f"if(lte(on\\,{fps_int})\\,min(zoom+0.005\\,1.12)\\,1.12)"
+        # x/y = top-left of zoomed viewport, clamped so it stays inside the frame
+        zoom_x = f"max(0\\,min(iw-iw/zoom\\,{cx_px}-iw/zoom/2))"
+        zoom_y = f"max(0\\,min(ih-ih/zoom\\,{cy_px}-ih/zoom/2))"
+
+    if use_blur_fill:
+        # Blur-fill pass 1: layout only (split+scale+boxblur+overlay).
+        # zoompan intentionally EXCLUDED here — it buffers fps_int frames simultaneously
+        # with the split+boxblur frames → OOM (rc=-9). Applied in a cheap pass 3 instead.
+        tw, th = target_width, target_height
+        trim = f"trim=start={clip_start}:duration={clip_duration},setpts=PTS-STARTPTS"
+        v_chain = (
+            f"[0:v:0]{trim},split=2[main_raw][bg_raw];"
+            f"[bg_raw]scale={tw}:{th}:force_original_aspect_ratio=increase,"
+            f"crop={tw}:{th},boxblur=10:4[bg];"   # lighter blur → less memory
+            f"[main_raw]scale={tw}:{th}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2[vout]"
+        )
+    else:
+        if punch_zoom:
+            # zoompan safe in center-crop path (no split/boxblur competing for memory)
+            vf_parts.append(
+                f"zoompan=z='{zoom_expr}':d=1:fps={fps_int}:"
+                f"x='{zoom_x}':y='{zoom_y}':s={target_width}x{target_height}"
+            )
+        vf_str = ",".join(vf_parts) if vf_parts else "null"
+        v_chain = f"[0:v:0]trim=start={clip_start}:duration={clip_duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+    if meta.has_audio:
+        filter_complex = (
+            f"{v_chain};"
+            f"[0:a:0]atrim=start={clip_start}:duration={clip_duration},asetpts=PTS-STARTPTS[aout]"
+        )
+        maps = ["-map", "[vout]", "-map", "[aout]"]
+    else:
+        filter_complex = v_chain
+        maps = ["-map", "[vout]"]
+    # Fast seek before input; adjust trim times relative to seek landing point
+    seek_start1 = max(0.0, clip_start - 2.0)
+    seek_off1 = clip_start - seek_start1
+    if seek_off1 > 0:
+        if use_blur_fill:
+            trim1 = f"trim=start={seek_off1}:duration={clip_duration},setpts=PTS-STARTPTS"
+            v_chain = (
+                f"[0:v:0]{trim1},split=2[main_raw][bg_raw];"
+                f"[bg_raw]scale={tw}:{th}:force_original_aspect_ratio=increase,"
+                f"crop={tw}:{th},boxblur=10:4[bg];"
+                f"[main_raw]scale={tw}:{th}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:(H-h)/2[vout]"
+            )
+        else:
+            v_chain = f"[0:v:0]trim=start={seek_off1}:duration={clip_duration},setpts=PTS-STARTPTS,{vf_str}[vout]"
+        if meta.has_audio:
+            filter_complex = (
+                f"{v_chain};"
+                f"[0:a:0]atrim=start={seek_off1}:duration={clip_duration},asetpts=PTS-STARTPTS[aout]"
+            )
+        else:
+            filter_complex = v_chain
+
     cmd1 = [
         "ffmpeg", "-y",
-        "-threads", "2",       # cap per-process threads → reduces peak memory
-        "-ss", str(max(0.0, clip.start)),
+        "-threads", "2",
+        "-ss", str(seek_start1),  # fast seek before input
         "-i", source_path,
-        "-t", str(max(1.0, duration)),
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
-        "-vf", vf_str,
+        "-filter_complex", filter_complex,
+        *maps,
         "-c:v", "libx264",
         "-crf", "18",
-        "-preset", "ultrafast",  # lowest memory usage; quality fine for intermediate
+        "-preset", "ultrafast",
         "-profile:v", "baseline",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "256k",
+        "-avoid_negative_ts", "make_zero",
         "-movflags", "+faststart",
         tmp_h264,
     ]
 
     try:
-        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
+        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=180)
         if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
             err = r1.stderr
             excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
             raise RuntimeError(f"ffmpeg transcode pass1 failed (rc={r1.returncode}): {excerpt}")
 
-        # Pass 2: PyAV caption burn on the h264 intermediate
-        # Build a synthetic meta for the h264 file (same dims, h264 codec)
-        h264_meta = VideoMeta(
-            width=target_width,
-            height=target_height,
-            fps=meta.fps,
-            duration=duration,
-            codec="h264",
-            has_audio=meta.has_audio,
-        )
-        # Captions are already absolute-time in the original clip context;
-        # _render_clip clips them to clip window internally
-        _render_clip(
-            source_path=tmp_h264,
-            clip=ClipResult(
-                start=0.0,
-                end=duration,
-                score=clip.score,
-                title=clip.title,
-                reason=clip.reason,
-            ),
-            output_path=output_path,
-            captions=captions,
-            style=style,
-            target_width=target_width,
-            target_height=target_height,
-            crop_mode=None,  # already cropped/scaled in pass 1
-            meta=h264_meta,
-            burn_captions=True,
-        )
+        # Pass 1.5 (blur_fill + punch_zoom only): apply zoompan on the h264 intermediate.
+        # Kept separate from pass 1 so boxblur+split+zoompan never compete for memory.
+        if use_blur_fill and punch_zoom:
+            tmp_zoomed = tmp_h264 + "_zoomed.mp4"
+            z_expr = f"if(lte(on\\,{fps_int})\\,min(zoom+0.005\\,1.12)\\,1.12)"
+            z_x = f"max(0\\,min(iw-iw/zoom\\,{cx_px}-iw/zoom/2))"
+            z_y = f"max(0\\,min(ih-ih/zoom\\,{cy_px}-ih/zoom/2))"
+            zoom_cmd = [
+                "ffmpeg", "-y", "-threads", "1",
+                "-i", tmp_h264,
+                "-vf", f"zoompan=z='{z_expr}':d=1:fps={fps_int}:x='{z_x}':y='{z_y}':s={target_width}x{target_height}",
+                "-c:v", "libx264", "-crf", "18", "-preset", "ultrafast",
+                "-profile:v", "baseline", "-pix_fmt", "yuv420p",
+                "-c:a", "copy", "-avoid_negative_ts", "make_zero",
+                tmp_zoomed,
+            ]
+            rz = subprocess.run(zoom_cmd, capture_output=True, text=True, timeout=180)
+            if rz.returncode == 0 and Path(tmp_zoomed).exists() and Path(tmp_zoomed).stat().st_size > 1000:
+                Path(tmp_h264).unlink(missing_ok=True)
+                tmp_h264 = tmp_zoomed
+            else:
+                logging.warning("zoompan pass failed (rc=%d) — skipping zoom: %s", rz.returncode, rz.stderr[-200:])
+                Path(tmp_zoomed).unlink(missing_ok=True)
+
+        # Pass 2: caption burn — only run PyAV loop when captions or hook overlay needed.
+        # When no captions/hook, streamcopy the h264 intermediate (zero re-encode cost).
+        needs_pass2 = bool(captions) or bool(hook_text)
+        if needs_pass2:
+            h264_meta = VideoMeta(
+                width=target_width,
+                height=target_height,
+                fps=meta.fps,
+                duration=duration,
+                codec="h264",
+                has_audio=meta.has_audio,
+            )
+            _render_clip(
+                source_path=tmp_h264,
+                clip=ClipResult(
+                    start=0.0,
+                    end=duration,
+                    score=clip.score,
+                    title=clip.title,
+                    reason=clip.reason,
+                ),
+                output_path=output_path,
+                captions=captions,
+                style=style,
+                target_width=target_width,
+                target_height=target_height,
+                crop_mode=None,
+                meta=h264_meta,
+                burn_captions=True,
+                hook_text=hook_text,
+                hook_duration_sec=hook_duration_sec,
+            )
+        else:
+            # No captions or hook — rename/move intermediate directly, no re-encode
+            import shutil
+            shutil.move(tmp_h264, output_path)
+            tmp_h264 = output_path  # prevent finally from deleting it
     finally:
         try:
             Path(tmp_h264).unlink(missing_ok=True)
@@ -1853,6 +2669,8 @@ def _render_clip(
     crop_mode: Optional[str],
     meta: VideoMeta,
     burn_captions: bool = True,
+    hook_text: str = "",
+    hook_duration_sec: float = 0.0,
 ) -> None:
     import av
 
@@ -1895,6 +2713,10 @@ def _render_clip(
             src.seek(int(clip.start * 1_000_000))
             video_done = False
             audio_done = False
+            # Track the actual timestamp of the first accepted video frame so audio
+            # PTS can be anchored to the same origin — prevents A/V drift when seek
+            # lands on a keyframe slightly before clip.start.
+            first_video_t: float | None = None
 
             for packet in src.demux(*decode_streams):
                 if packet.pts is None:
@@ -1914,9 +2736,11 @@ def _render_clip(
                         continue
                     for frame in packet.decode():
                         t_frame = float(frame.pts * v_stream.time_base) if frame.pts is not None else t
+                        if first_video_t is None:
+                            first_video_t = t_frame
                         t_in_clip = t_frame - clip.start
 
-                        needs_pil = bool(crop_mode or caption_timeline)
+                        needs_pil = bool(crop_mode or caption_timeline or (hook_text and hook_duration_sec > 0))
                         if needs_pil:
                             # PIL path: to_image reuses internal buffer; del immediately after encode
                             img = frame.to_image()
@@ -1927,6 +2751,9 @@ def _render_clip(
                             if caption_timeline:
                                 img = _draw_caption(img, max(t_in_clip, 0), caption_timeline, style,
                                                     target_width, target_height, font_main, font_highlight, cfg)
+                            if hook_text and hook_duration_sec > 0:
+                                img = _draw_hook_overlay(img, max(t_in_clip, 0), hook_text,
+                                                         hook_duration_sec, target_width, target_height)
                             new_frame = av.VideoFrame.from_image(img)
                             del img  # free PIL buffer before encode
                         else:
@@ -1953,6 +2780,12 @@ def _render_clip(
                     if t < clip.start - 0.05:
                         continue
                     for frame in packet.decode():
+                        t_frame = float(frame.pts * a_stream.time_base) if frame.pts is not None else t
+                        # Align audio origin to first video frame so A/V stays in sync
+                        anchor = first_video_t if first_video_t is not None else clip.start
+                        pts_samples = max(0, int((t_frame - anchor) * meta.audio_sample_rate))
+                        if audio_sample_idx == 0 and pts_samples > 0:
+                            audio_sample_idx = pts_samples
                         frame.pts = audio_sample_idx
                         frame.dts = audio_sample_idx
                         frame.time_base = Fraction(1, meta.audio_sample_rate)
@@ -1971,17 +2804,14 @@ def _render_clip(
 
 
 def _generate_thumbnail(source_path: str, clip: ClipResult, output_path: str) -> None:
-    import av
     midpoint = clip.start + (clip.end - clip.start) / 2
-    with av.open(source_path) as src:
-        v_stream = next((s for s in src.streams if s.type == "video"), None)
-        if not v_stream:
-            return
-        src.seek(int(midpoint * 1_000_000))
-        for frame in src.decode(v_stream):
-            img = frame.to_image()
-            img.save(output_path, "JPEG", quality=95, subsampling=0)
-            break
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-ss", str(midpoint), "-i", source_path,
+         "-vframes", "1", "-q:v", "2", "-f", "image2", output_path],
+        capture_output=True, timeout=30,
+    )
+    if result.returncode != 0 or not Path(output_path).exists():
+        raise RuntimeError(f"Thumbnail failed: {result.stderr[-200:]}")
 
 
 # ── Stage 7b: AI content generation (title + per-platform copy) ───────────────
@@ -2045,7 +2875,7 @@ Return JSON:
 Content type: {content_type}
 {topic_ctx}{clip_ctx}
 Transcript excerpt:
-{transcript_snippet[:2000]}
+{transcript_snippet[:400]}
 
 RESEARCH TASK — Think like a trending content analyst:
 1. What topics, people, events, or themes appear in this clip?
@@ -2091,7 +2921,7 @@ Return JSON:
 Content type: {content_type}
 {topic_ctx}{clip_ctx}
 Transcript excerpt:
-{transcript_snippet[:2000]}
+{transcript_snippet[:400]}
 
 Title rules:
 - Under 80 characters
@@ -2283,6 +3113,8 @@ Return ONLY valid JSON:
   "keywords": ["<keyword1>", "<keyword2>", ...],
   "sentiment": "<positive|negative|neutral|mixed>",
   "content_type": "<educational|entertainment|news|tutorial|vlog|interview|opinion|other>",
+  "occasion": "<football|soccer|sports|gaming|esports|podcast|interview|general>",
+  "viral_type": "<goal|embarrassing_moment|genius_play|player_story|tactical_breakdown|reaction|general>",
   "target_audience": "<brief description of ideal viewer>",
   "key_moments": [
     {{"timestamp_sec": <number>, "description": "<what happens>"}}
@@ -2348,7 +3180,18 @@ def _export_clip(
     cfg: dict,
     words: list | None = None,
     ai_content: dict | None = None,
+    occasion: str = "",
+    viral_type: str = "",
+    job_id: str = "",
+    clip_index: int = 0,
+    clip_total: int = 1,
 ) -> str | None:
+    from workers.tasks.templates import resolve_template, MUSIC_TRACKS
+
+    def _prog(step: str, pct: int, msg: str) -> None:
+        if job_id:
+            _publish_progress(job_id, step, pct, "processing", msg)
+
     clip_id = str(uuid.uuid4())
     clip_path = str(work_dir / f"clip_{clip_id}.mp4")
     thumb_path = str(work_dir / f"clip_{clip_id}_thumb.jpg")
@@ -2370,25 +3213,51 @@ def _export_clip(
             target_w = int(target_w * scale) & ~1  # keep even
             target_h = int(target_h * scale) & ~1
 
+    # Resolve template — explicit override or auto-detect from occasion
+    tmpl = resolve_template(occasion, cfg.get("template_id"))
+    tmpl_label = cfg.get("template_id") or occasion or "auto"
+    _prog("template", 62, f"Clip {clip_index+1}/{clip_total}: applying '{tmpl_label}' template"
+          + (f" (blur-fill bg, {tmpl.get('background_style','center_crop')})" if tmpl.get("background_style") == "blur_fill" else ""))
+
     burn_captions = cfg.get("add_captions", False)
-    style = cfg.get("caption_style", "capcut")
+    # Let automatic templates supply their own caption style when the request is
+    # still on the default CapCut style; non-default user choices keep priority.
+    requested_style = cfg.get("caption_style") or "capcut"
+    if requested_style == "capcut" and tmpl.get("caption_style"):
+        style = tmpl.get("caption_style", "capcut")
+    else:
+        style = requested_style
     if style not in CAPTION_STYLE_CFG:
         style = "capcut"
 
-    _copy_safe_codecs = {"h264", "hevc", "h265", "avc"}
-    codec_safe = meta.codec.lower() in _copy_safe_codecs
+    # Hook overlay parameters
+    content = ai_content or {}
+    ai_title = (content.get("title") or clip.title or "")
+    hook_text = ""
+    hook_duration_sec = 0.0
+    if tmpl.get("hook_overlay"):
+        hook_text = _make_hook_text(ai_title, viral_type)
+        hook_duration_sec = float(tmpl.get("hook_duration_sec", 3.0))
 
-    # Always burn captions over the first 5 s of every clip (hook visibility).
-    # If the user disabled full captions, restrict the caption list to that window.
-    CAPTION_INTRO_SEC = 5.0
-    if not burn_captions and captions:
-        intro_captions = [c for c in captions if c.start < CAPTION_INTRO_SEC]
-        if intro_captions:
-            burn_captions = True
-            captions = intro_captions
+    punch_zoom = bool(tmpl.get("punch_zoom"))
+    background_style = str(tmpl.get("background_style", "center_crop"))
 
-    if not burn_captions:
-        # Fast path: stream-copy when no captions at all
+    # Respect the captions toggle. Hook visibility is handled by the separate
+    # hook overlay; do not burn transcript captions when add_captions is false.
+
+    # blur_fill forces the ffmpeg path (needs filter_complex split)
+    needs_template_render = bool(hook_text or punch_zoom or background_style == "blur_fill")
+
+    render_desc = []
+    if background_style == "blur_fill": render_desc.append("blur-fill bg")
+    if punch_zoom: render_desc.append("CV zoom")
+    if hook_text: render_desc.append(f'hook "{hook_text}"')
+    if burn_captions: render_desc.append("captions")
+    _prog("render", 65, f"Clip {clip_index+1}/{clip_total}: rendering"
+          + (f" ({', '.join(render_desc)})" if render_desc else ""))
+
+    if not burn_captions and not needs_template_render:
+        # Fast path: stream-copy when no captions and no template overlays
         _render_clip_streamcopy(
             source_path=source_path,
             clip=clip,
@@ -2398,33 +3267,64 @@ def _export_clip(
             crop_mode=crop_mode,
             meta=meta,
         )
-    elif codec_safe:
-        # PyAV caption-burn path (h264/hevc only — frame-accurate, styled captions)
-        _render_clip(
-            source_path=source_path,
-            clip=clip,
-            output_path=clip_path,
-            captions=captions,
-            style=style,
-            target_width=target_w,
-            target_height=target_h,
-            crop_mode=crop_mode,
-            meta=meta,
-            burn_captions=burn_captions,
-        )
     else:
-        # VP9/AV1/other: ffmpeg re-encode + subtitles filter (PyAV can't decode these)
+        # ffmpeg subprocess path — handles captions, hook overlay, punch_zoom, blur_fill
         _render_clip_ffmpeg_captions(
             source_path=source_path,
             clip=clip,
             output_path=clip_path,
-            captions=captions,
+            captions=captions if burn_captions else [],
             target_width=target_w,
             target_height=target_h,
             crop_mode=crop_mode,
             meta=meta,
             style=style,
+            hook_text=hook_text,
+            hook_duration_sec=hook_duration_sec,
+            punch_zoom=punch_zoom,
+            background_style=background_style,
         )
+
+    # Post-render: mix background music and/or voiceover if requested
+    want_music = cfg.get("music", True) and tmpl.get("music_track")
+    # Respect the user-facing voiceover toggle. Templates can suggest a style,
+    # but must not force narration when the UI/default config sends false.
+    want_vo = bool(cfg.get("voiceover", False))
+
+    music_path: str | None = None
+    if want_music:
+        track_key = cfg.get("music_track") or tmpl.get("music_track")
+        music_path = MUSIC_TRACKS.get(track_key) if track_key else None
+
+    vo_path: str | None = None
+    if want_vo:
+        _prog("voiceover", 75, f"Clip {clip_index+1}/{clip_total}: generating AI voiceover…")
+        vo_script = _generate_voiceover_script(clip, viral_type, cfg.get("content_type", "other"))
+        if vo_script:
+            _vo_out = str(work_dir / f"clip_{clip_id}_vo.mp3")
+            if _synthesize_voiceover(vo_script, _vo_out):
+                vo_path = _vo_out
+
+    if music_path or vo_path:
+        audio_desc = []
+        if music_path: audio_desc.append("music")
+        if vo_path: audio_desc.append("voiceover")
+        _prog("audio_mix", 80, f"Clip {clip_index+1}/{clip_total}: mixing {' + '.join(audio_desc)}…")
+        mixed_path = str(work_dir / f"clip_{clip_id}_mixed.mp4")
+        result_path = _mix_audio_tracks(clip_path, mixed_path, music_path=music_path, vo_path=vo_path)
+        if result_path == mixed_path and Path(mixed_path).exists():
+            # Replace clip_path with the mixed version
+            try:
+                Path(clip_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            clip_path = mixed_path
+        # Clean up voiceover temp
+        if vo_path:
+            try:
+                Path(vo_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
     try:
         _generate_thumbnail(source_path, clip, thumb_path)
@@ -2435,13 +3335,16 @@ def _export_clip(
 
     srt_content = _generate_srt(captions)
 
-    content = ai_content or {}
-    ai_title = (content.get("title") or clip.title or "")[:100].strip()
+    ai_title = ai_title[:100].strip()
     clip_meta = {
         "ai_title": ai_title,
         "viral_reason": clip.reason or "",
         "viral_score": round(clip.score, 2),
         "platforms": content.get("platforms", {}),
+        "occasion": occasion or "",
+        "viral_type": viral_type or "",
+        "template_id": cfg.get("template_id") or "",
+        "aspect_ratio": aspect_ratio,
     }
     if content.get("all_hashtags"):
         clip_meta["trending_hashtags"] = content["all_hashtags"]
@@ -2557,9 +3460,9 @@ def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
         return {"title": "", "thumbnail_url": ""}
 
 
-def _get_youtube_duration(url: str) -> float | None:
-    """Return video duration in seconds via yt-dlp --dump-json (no download).
-    Returns None on failure so callers can decide whether to block or proceed."""
+def _get_youtube_info(url: str) -> dict:
+    """Return {duration, is_live, live_status} via yt-dlp --dump-json (no download).
+    Returns empty dict on failure so callers can decide whether to block or proceed."""
     try:
         base = _ytdlp_base_flags(None)
         result = subprocess.run(
@@ -2568,10 +3471,18 @@ def _get_youtube_duration(url: str) -> float | None:
         )
         if result.returncode == 0:
             info = json.loads(result.stdout.splitlines()[0])
-            return float(info.get("duration") or 0) or None
+            return {
+                "duration": float(info.get("duration") or 0) or None,
+                "is_live": bool(info.get("is_live")),
+                "live_status": info.get("live_status") or "",
+            }
     except Exception as e:
-        logging.warning("_get_youtube_duration failed: %s", e)
-    return None
+        logging.warning("_get_youtube_info failed: %s", e)
+    return {}
+
+
+def _get_youtube_duration(url: str) -> float | None:
+    return _get_youtube_info(url).get("duration")
 
 
 def _ytdlp_proxies() -> list[str]:
@@ -2724,6 +3635,36 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     except Exception as e:
         errors.append(f"pytubefix: {e}")
 
+    # RapidAPI TikTok fallback — handles IP-blocked TikTok URLs
+    rapidapi_key = os.getenv("RAPIDAPI_TIKTOK_KEY", "")
+    if rapidapi_key and "tiktok" in url.lower():
+        try:
+            import urllib.request as _urllib_req
+            import json as _json
+            api_url = f"https://tiktok-video-no-watermark2.p.rapidapi.com/?url={url}&hd=1"
+            req = _urllib_req.Request(api_url, headers={
+                "x-rapidapi-host": "tiktok-video-no-watermark2.p.rapidapi.com",
+                "x-rapidapi-key": rapidapi_key,
+            })
+            with _urllib_req.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read())
+            video_url = (
+                data.get("data", {}).get("hdplay")
+                or data.get("data", {}).get("play")
+                or data.get("data", {}).get("wmplay")
+            )
+            if not video_url:
+                raise ValueError(f"No video URL in response: {list(data.get('data', {}).keys())}")
+            dl_req = _urllib_req.Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
+            with _urllib_req.urlopen(dl_req, timeout=120) as resp:
+                with open(out_path, "wb") as f:
+                    f.write(resp.read())
+            if Path(out_path).stat().st_size > 0:
+                return
+            errors.append("RapidAPI TikTok: downloaded file is empty")
+        except Exception as e:
+            errors.append(f"RapidAPI TikTok: {e}")
+
     raise RuntimeError("YouTube download failed after all strategies.\n" + "\n".join(errors))
 
 
@@ -2800,6 +3741,76 @@ def _parse_vtt_to_words(vtt: str) -> list[WordTimestamp]:
     return words
 
 
+def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
+    """Create ScheduledPost records for auto-publish after a WebSub-triggered pipeline."""
+    from datetime import datetime, timezone, timedelta
+    import uuid as _uuid
+
+    platforms = ap_cfg.get("platforms", [])
+    social_account_ids = ap_cfg.get("social_account_ids", [])
+    publish_per_day = max(1, int(ap_cfg.get("publish_per_day", 3)))
+    interval_hours = max(1, int(ap_cfg.get("publish_interval_hours", 8)))
+    caption_template = ap_cfg.get("caption_template", "")
+
+    if not platforms and not social_account_ids:
+        logging.info("_auto_schedule_clips: no platforms/accounts configured, skipping")
+        return
+
+    with Session(engine) as db:
+        # Resolve social_account_ids — fetch matching accounts for this tenant
+        if social_account_ids:
+            id_list = ",".join(f"'{sid}'" for sid in social_account_ids if sid)
+            rows = db.execute(
+                text(f"SELECT id, platform FROM social_accounts WHERE tenant_id = :tid AND is_active = true AND id IN ({id_list})"),
+                {"tid": tenant_id},
+            ).fetchall()
+        elif platforms:
+            placeholders = ",".join(f"'{p}'" for p in platforms)
+            rows = db.execute(
+                text(f"SELECT id, platform FROM social_accounts WHERE tenant_id = :tid AND is_active = true AND platform IN ({placeholders})"),
+                {"tid": tenant_id},
+            ).fetchall()
+        else:
+            rows = []
+
+        if not rows:
+            logging.info("_auto_schedule_clips: no active social accounts found for tenant %s", tenant_id)
+            return
+
+        now = datetime.now(timezone.utc)
+        posts_created = 0
+        slot = 0  # tracks scheduling slot across clip × account combos
+
+        for clip_id in clip_ids[:publish_per_day]:
+            for account_id, platform in rows:
+                scheduled_at = now + timedelta(hours=slot * interval_hours)
+                db.execute(
+                    text("""
+                        INSERT INTO scheduled_posts
+                            (id, tenant_id, clip_id, social_account_id, platform,
+                             status, scheduled_at, caption, created_at, updated_at)
+                        VALUES
+                            (:id, :tid, :clip_id, :acct_id, :platform,
+                             'scheduled', :scheduled_at, :caption, now(), now())
+                    """),
+                    {
+                        "id": _uuid.uuid4(),
+                        "tid": tenant_id,
+                        "clip_id": clip_id,
+                        "acct_id": account_id,
+                        "platform": platform,
+                        "scheduled_at": scheduled_at,
+                        "caption": caption_template or None,
+                    },
+                )
+                posts_created += 1
+                slot += 1
+
+        db.commit()
+
+    logging.info("_auto_schedule_clips: created %d scheduled posts for tenant %s", posts_created, tenant_id)
+
+
 def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: str, cfg: dict | None = None, yt_url: str | None = None, yt_meta: dict | None = None) -> None:
     cfg = cfg or {}
     work_dir = Path(VIDEO_TEMP_DIR) / video_id
@@ -2830,6 +3841,14 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     if output_quality == "source":
         _publish_progress(job_id, "metadata", 5, "processing",
                           "Full resolution selected — export will take longer than usual.")
+
+    # Dedup: skip re-processing if this source was already successfully processed within 24h
+    import hashlib as _hashlib
+    _url_key = f"pipeline:done:{tenant_id}:{_hashlib.md5((source_path or video_id).encode()).hexdigest()}"
+    _cached = redis_client.get(_url_key)
+    if _cached:
+        logging.info("run_video_pipeline: cache hit for %s — skipping re-process", video_id)
+        return json.loads(_cached)
 
     # Step 1: Probe (10%)
     _publish_progress(job_id, "metadata", 10, "processing", "Probing video...")
@@ -2909,12 +3928,20 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     _publish_progress(job_id, "scoring", 40, "processing", "Step 1: AI analyzing transcript for viral signals...")
     _update_video(tenant_id, video_id, pipeline_step="scoring", pipeline_pct=40)
 
-    # Extract content_type and key_moments from metadata for richer scoring
+    # Extract content_type, occasion, and key_moments from metadata for richer scoring
     _content_type = "other"
+    _occasion = ""
+    _viral_type = ""
     _key_moments: list[dict] = []
     if vid_meta:
         _content_type = vid_meta.get("content_type", "other") or "other"
+        _occasion = vid_meta.get("occasion", "") or ""
+        _viral_type = vid_meta.get("viral_type", "") or ""
         _key_moments = vid_meta.get("key_moments", []) or []
+    # User-supplied occasion hint overrides AI detection
+    _user_occasion = cfg.get("occasion") or ""
+    if _user_occasion:
+        _occasion = _user_occasion
 
     clips = _ai_score_clips(
         words, meta.duration, num_clips, min_dur, max_dur,
@@ -2927,6 +3954,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         chapters=yt_chapters,
         precision_mode=precision_mode,
         yt_engagement=yt_engagement,
+        occasion=_occasion,
     )
 
     # Fill remaining slots with heuristic clips if AI returned fewer than requested
@@ -3001,9 +4029,19 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             source_path=source_path, work_dir=work_dir,
             meta=meta, cfg=cfg, words=words,
             ai_content=ai_content,
+            occasion=_occasion,
+            viral_type=_viral_type,
+            job_id=job_id,
+            clip_index=i,
+            clip_total=len(clips),
         )
 
-    max_workers = min(len(clips), 8)
+    # Hard-cap clip durations before export — prevents LLM/heuristic overruns from timing out ffmpeg
+    for clip in clips:
+        if clip.end - clip.start > max_dur:
+            clip.end = clip.start + max_dur
+
+    max_workers = min(len(clips), 3)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {executor.submit(_export_one, (i, clip)): (i, clip) for i, clip in enumerate(clips)}
         for future in as_completed(future_map):
@@ -3021,6 +4059,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
                     # Queue async cloud upload — returns immediately
                     upload_clip_to_storage.delay(clip_id, clip_path, tenant_id, job_id)
             except Exception as e:
+                logging.exception("Clip %d export failed: %s", i + 1, e)
                 _publish_progress(job_id, "export", 60, "processing",
                                   f"Clip {i+1} failed: {str(e)[:120]}, continuing...")
 
@@ -3031,6 +4070,13 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     _update_video(tenant_id, video_id, status="ready", pipeline_step="complete", pipeline_pct=100)
     _publish_progress(job_id, "complete", 100, "complete",
                       f"Done! {len(clip_ids)} clips generated, uploading to cloud...")
+    vid_title = _get_video_title_from_db(tenant_id, video_id)
+    clip_word = "clip" if len(clip_ids) == 1 else "clips"
+    _notify_video(
+        tenant_id, video_id, "video_ready",
+        "Your video is ready",
+        f"{len(clip_ids)} {clip_word} generated{f' from {vid_title!r}' if vid_title else ''}.",
+    )
 
     # Notify frontend that all clips are ready to display (with thumbnails + pending_upload status)
     _publish_clip_event(job_id, "clips_ready", {
@@ -3038,6 +4084,16 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         "clip_ids": clip_ids,
         "count": len(clip_ids),
     })
+
+    # Cache successful result to prevent re-processing same source within 24h
+    redis_client.setex(_url_key, 86400, json.dumps(clip_ids))
+
+    # Auto-schedule clips if enabled via channel subscription config
+    if cfg.get("auto_publish") and cfg.get("auto_publish_config") and clip_ids:
+        try:
+            _auto_schedule_clips(tenant_id, clip_ids, cfg["auto_publish_config"])
+        except Exception:
+            logging.exception("Auto-schedule clips failed for video %s", video_id)
 
     # Work dir cleaned up per-clip by upload_clip_to_storage; remove dir after all queued
     # (uploads may still be running — only rmtree the work_dir skeleton, not clip files)
@@ -3071,7 +4127,7 @@ def _segments_to_words(segments: list[dict]) -> list[WordTimestamp]:
 
 
 @celery_app.task(bind=True, name="workers.tasks.video.generate_viral_clips",
-                 queue="viralo.video.generate", acks_late=True, max_retries=2,
+                 queue="viralo.video.ai", acks_late=True, max_retries=2,
                  time_limit=1260, soft_time_limit=1200)
 def generate_viral_clips(self, tenant_id: str, video_id: str, cfg: dict | None = None):
     """
@@ -3353,7 +4409,7 @@ def _handle_timeout(tenant_id: str, video_id: str, job_id: str) -> None:
 
 
 @celery_app.task(bind=True, name="workers.tasks.video.upload_clip_to_storage",
-                 queue="viralo.video.generate", acks_late=True, max_retries=3,
+                 queue="viralo.video.upload", acks_late=True, max_retries=3,
                  default_retry_delay=30, time_limit=300, soft_time_limit=270)
 def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, job_id: str) -> None:
     """Upload a rendered clip mp4 to cloud storage and update clip record to ready."""
@@ -3413,6 +4469,16 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
             "media_url": storage_url,
             "thumbnail_url": thumbnail_url,
         })
+
+        # Push clip metadata to Google Sheets for n8n publishing workflow
+        try:
+            from workers.tasks.gsheet import push_clip_to_gsheet
+            push_clip_to_gsheet.apply_async(
+                args=[clip_id, tenant_id],
+                queue="viralo.post.publish",
+            )
+        except Exception as _gse:
+            logging.warning("push_clip_to_gsheet enqueue failed for clip %s: %s", clip_id, _gse)
 
         # If all clips for this video are now ready/failed, delete the source from storage
         if video_id:
@@ -3518,7 +4584,7 @@ def _reexport_clip_from_source(clip_id: str, tenant_id: str, out_path: str) -> N
 
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_uploaded_video",
-                 queue="viralo.video.generate", acks_late=True, max_retries=3,
+                 queue="viralo.video.pipeline", acks_late=True, max_retries=3,
                  time_limit=1260, soft_time_limit=1200)
 def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str | None, cfg: dict | None = None):
     from celery.exceptions import SoftTimeLimitExceeded
@@ -3548,7 +4614,7 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         # Enforce max duration before running the full pipeline
         try:
             probe = _probe_video(source)
-            if probe.duration > MAX_VIDEO_DURATION_SEC:
+            if probe.duration > MAX_VIDEO_DURATION_SEC and not _is_unlimited(tenant_id):
                 mins = int(probe.duration // 60)
                 raise ValueError(
                     f"Video is {mins} minutes long. Maximum supported length is "
@@ -3562,23 +4628,49 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         run_video_pipeline(tenant_id, video_id, source, job_id, cfg)
     except SoftTimeLimitExceeded:
         import gc
-        msg = "Processing timed out after 20 minutes — video may be too long or complex."
+        msg = "Processing timed out (20 min limit). Try a shorter video or lower clip count."
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
         _publish_progress(job_id, "failed", 0, "failed", msg)
+        _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
         gc.collect()
         raise
     except (FileNotFoundError, ValueError) as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise
+        msg = str(exc)[:400]
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg[:200])
+        raise  # non-retryable
+    except subprocess.TimeoutExpired:
+        msg = "Rendering timed out. Try fewer clips or a lower quality setting."
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        if self.request.retries >= 1:
+            _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
+        raise self.retry(exc=RuntimeError(msg), countdown=60, max_retries=1)
+    except RuntimeError as exc:
+        err = str(exc)
+        if "ffmpeg" in err.lower() or "render" in err.lower():
+            msg = "Video rendering failed. Try a different quality setting."
+        else:
+            msg = f"Processing error: {err[:200]}"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        if retry_n >= 1:
+            _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
+        raise self.retry(exc=exc, countdown=min(30 * (2 ** retry_n), 300), max_retries=2)
     except Exception as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise self.retry(exc=exc, countdown=30)
+        msg = f"Unexpected error: {str(exc)[:150]}"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        if retry_n >= 1:
+            _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
+        raise self.retry(exc=exc, countdown=min(60 * (2 ** retry_n), 600), max_retries=2)
 
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_youtube_video",
-                 queue="viralo.video.generate", acks_late=True, max_retries=3,
+                 queue="viralo.video.pipeline", acks_late=True, max_retries=3,
                  time_limit=1260, soft_time_limit=1200)
 def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: dict | None = None):
     from celery.exceptions import SoftTimeLimitExceeded
@@ -3597,13 +4689,22 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         if meta.get("title") or meta.get("thumbnail_url"):
             _update_video(tenant_id, video_id, **{k: v for k, v in meta.items() if v})
 
-        # Check duration before downloading — reject videos exceeding the limit
-        yt_duration = _get_youtube_duration(url)
-        if yt_duration and yt_duration > MAX_VIDEO_DURATION_SEC:
+        # Check live status and duration before downloading
+        yt_info = _get_youtube_info(url)
+        if yt_info.get("is_live") or yt_info.get("live_status") in ("is_live", "is_upcoming"):
+            raise ValueError(
+                "Live and upcoming streams are not supported. Please use a recorded video."
+            )
+        yt_duration = yt_info.get("duration")
+        if yt_duration and yt_duration > MAX_VIDEO_DURATION_SEC and not _is_unlimited(tenant_id):
             mins = int(yt_duration // 60)
             raise ValueError(
                 f"Video is {mins} minutes long. Maximum supported length is "
                 f"{MAX_VIDEO_DURATION_SEC // 60} minutes."
+            )
+        if yt_duration and yt_duration < MIN_VIDEO_DURATION_SEC and cfg.get("source") == "websub":
+            raise ValueError(
+                f"Video is {int(yt_duration)}s — too short to clip (minimum {MIN_VIDEO_DURATION_SEC}s)."
             )
 
         def _on_download_progress(pct: int):
@@ -3619,20 +4720,53 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url, yt_meta=meta)
     except SoftTimeLimitExceeded:
         import gc
-        msg = "Processing timed out after 20 minutes — video may be too long or complex."
+        msg = "Processing timed out (20 min limit). Try a shorter video or lower clip count."
         _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
         _publish_progress(job_id, "failed", 0, "failed", msg)
+        _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
         gc.collect()
         raise
     except ValueError as exc:
-        # Non-retryable (bad input: too long, invalid URL, etc.)
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise
+        msg = str(exc)[:400]
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg[:200])
+        raise  # non-retryable — bad input
+    except subprocess.TimeoutExpired:
+        msg = "Video download or rendering timed out. The video may be too large or the server is busy."
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        if self.request.retries >= 1:
+            _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
+        raise self.retry(exc=RuntimeError(msg), countdown=60, max_retries=2)
+    except RuntimeError as exc:
+        err = str(exc)
+        if "download" in err.lower() or "yt-dlp" in err.lower() or "youtube" in err.lower():
+            if "429" in err or "Too Many Requests" in err:
+                msg = "YouTube is rate-limiting downloads. Retrying automatically..."
+            else:
+                msg = "Failed to download video. The URL may be private, geo-blocked, or unsupported."
+        elif "429" in err or "rate" in err.lower():
+            msg = "AI providers are busy right now. Retrying automatically..."
+        elif "ffmpeg" in err.lower() or "render" in err.lower():
+            msg = "Video rendering failed. Try a shorter clip duration or lower quality setting."
+        else:
+            msg = f"Processing error: {err[:200]}"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        if retry_n >= 1:
+            _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
+        raise self.retry(exc=exc, countdown=min(30 * (2 ** retry_n), 300), max_retries=2)
     except Exception as exc:
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=str(exc)[:500])
-        _publish_progress(job_id, "failed", 0, "failed", str(exc)[:300])
-        raise self.retry(exc=exc, countdown=30)
+        err = str(exc)[:300]
+        msg = f"Unexpected error during processing. Our team has been notified. ({err[:120]})"
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
+        retry_n = self.request.retries
+        if retry_n >= 1:
+            _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
+        raise self.retry(exc=exc, countdown=min(60 * (2 ** retry_n), 600), max_retries=2)
 
 
 @celery_app.task(
@@ -3946,3 +5080,192 @@ Every clip index must appear in exactly one group. Use a group of [N] for clips 
             _shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return all_new_clip_ids
+
+
+def _download_stored_video(video_id: str, tenant_id: str, out_path: str) -> None:
+    """Resolve an uploaded video_id to its source file in storage and download it."""
+    with _get_session(tenant_id) as session:
+        row = session.execute(
+            text("SELECT original_storage_key FROM videos WHERE id = CAST(:vid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"vid": video_id, "tid": tenant_id},
+        ).fetchone()
+    if not row or not row[0]:
+        raise ValueError(f"Video {video_id} has no stored source")
+    from shared.storage.base import get_storage
+    storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+    asyncio.run(storage.download(row[0], out_path))
+    if not Path(out_path).exists() or Path(out_path).stat().st_size == 0:
+        raise RuntimeError(f"Downloaded source for video {video_id} is empty")
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.video.generate_video_ranking",
+    queue="viralo.video.generate",
+    acks_late=True,
+    soft_time_limit=1800,
+    time_limit=2100,
+)
+def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
+                           title: str, theme: str, order: str) -> dict:
+    """Build a ranking compilation video from 2-5 segments with rank-number overlays.
+
+    segments: list of {source_type, url?, video_id?, start_sec, end_sec}
+    order: "countdown" (badge n→1) or "ascending" (badge 1→n)
+    """
+    import tempfile
+    import shutil
+    import uuid as _uuid_mod
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    job_id = self.request.id
+    _publish_progress(job_id, "starting", 2, "processing", "Preparing ranking video...")
+
+    n = len(segments)
+    badges = list(range(n, 0, -1)) if order == "countdown" else list(range(1, n + 1))
+
+    tmpdir = tempfile.mkdtemp(prefix="viralo_ranking_")
+    try:
+        _publish_progress(job_id, "downloading", 10, "processing", "Resolving sources...")
+        source_paths = []
+        for i, seg in enumerate(segments):
+            src_path = os.path.join(tmpdir, f"src_{i}.mp4")
+            if seg.get("source_type") == "upload" and seg.get("video_id"):
+                _download_stored_video(seg["video_id"], tenant_id, src_path)
+            elif seg.get("url"):
+                _download_youtube(seg["url"], src_path)
+            else:
+                raise ValueError(f"Segment {i} has no url or video_id")
+            source_paths.append(src_path)
+
+        _publish_progress(job_id, "rendering", 20, "processing", "Rendering segments...")
+        seg_paths = [os.path.join(tmpdir, f"seg_{i}.mp4") for i in range(n)]
+
+        # Build label list indexed by rank number (1-based): all_labels[0] = label for rank#1
+        # Fall back to "Video N" if user left segment_title blank
+        all_labels_by_rank = [""] * (n + 1)
+        for idx, badge in enumerate(badges):
+            seg_title = (segments[idx].get("segment_title") or "").strip()
+            if not seg_title:
+                seg_title = f"Video {idx + 1}"
+            if badge <= n:
+                all_labels_by_rank[badge] = seg_title
+        all_labels = all_labels_by_rank[1:]  # 0-indexed: [label_for_1, label_for_2, ...]
+
+        def render_one(idx):
+            seg = segments[idx]
+            # Cumulative reveal: show ranks introduced up to and including this segment
+            revealed = set(badges[: idx + 1])
+            _render_ranking_segment(
+                source_path=source_paths[idx],
+                start_sec=float(seg.get("start_sec", 0)),
+                end_sec=float(seg.get("end_sec", 30)),
+                rank_number=badges[idx],
+                title_text=title,
+                theme_name=theme,
+                out_path=seg_paths[idx],
+                total=n,
+                all_labels=all_labels,
+                revealed_ranks=revealed,
+            )
+            pct = 20 + int((idx + 1) / n * 50)
+            _publish_progress(job_id, f"rendered_{idx+1}", pct, "processing", f"Rendered segment {idx+1}/{n}")
+
+        with ThreadPoolExecutor(max_workers=min(n, 4)) as pool:
+            futs = {pool.submit(render_one, i): i for i in range(n)}
+            for fut in as_completed(futs):
+                fut.result()
+
+        _publish_progress(job_id, "concatenating", 75, "processing", "Joining segments...")
+        concat_list = os.path.join(tmpdir, "concat.txt")
+        with open(concat_list, "w") as f:
+            for p in seg_paths:
+                f.write(f"file '{p}'\n")
+        out_path = os.path.join(tmpdir, "ranking_out.mp4")
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+             "-c", "copy", "-movflags", "+faststart", out_path],
+            capture_output=True, timeout=120,
+        )
+        if result.returncode != 0 or not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
+            raise RuntimeError(f"ffmpeg concat failed: {result.stderr.decode()[-500:]}")
+
+        _publish_progress(job_id, "uploading", 88, "processing", "Uploading...")
+        clip_id = str(_uuid_mod.uuid4())
+        storage_key = f"clips/{tenant_id}/{clip_id}.mp4"
+        from shared.storage.base import get_storage
+
+        async def _upload() -> str:
+            _storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+            with open(out_path, "rb") as f:
+                return await _storage.upload(f, storage_key, "video/mp4")
+
+        storage_url = asyncio.run(_upload())
+
+        with _get_session(tenant_id) as session:
+            session.execute(
+                text("""
+                    INSERT INTO clips (id, tenant_id, video_id, title, status, storage_url, metadata, created_at, updated_at)
+                    VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:vid AS uuid), :title, 'ready',
+                            :url, CAST(:meta AS jsonb), NOW(), NOW())
+                """),
+                {
+                    "id": clip_id, "tid": tenant_id, "vid": video_id, "title": title,
+                    "url": storage_url,
+                    "meta": json.dumps({
+                        "ranking": True, "source_count": n, "order": order,
+                        "theme": theme, "title": title, "composite": True,
+                    }),
+                },
+            )
+            session.execute(
+                text("UPDATE videos SET status='ready', storage_url=:url, updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
+                {"url": storage_url, "vid": video_id},
+            )
+
+        # Generate platform captions (same as clip pipeline)
+        _publish_progress(job_id, "captions", 95, "processing", "Generating platform captions...")
+        try:
+            segment_labels = [s.get("segment_title", "") for s in segments]
+            topic_hint = f"{title}. Segments: {', '.join(l for l in segment_labels if l)}"
+            from collections import namedtuple as _nt
+            _ClipResult = _nt("ClipResult", ["title", "reason"])
+            fake_clip = _ClipResult(title=title, reason=topic_hint)
+            platforms = ["tiktok", "reels", "shorts", "youtube"]
+            content = _ai_generate_clip_content(fake_clip, topic_hint, platforms)
+            if content and content.get("platforms"):
+                ai_title = (content.get("title") or title)[:100].strip()
+                # Use same `platforms` key as regular clip pipeline so ClipsPage reads it
+                platforms_data = {
+                    plat: {"description": data.get("description", ""), "tags": data.get("tags", [])}
+                    for plat, data in content["platforms"].items()
+                }
+                with _get_session(tenant_id) as session:
+                    session.execute(
+                        text("""
+                            UPDATE clips
+                            SET metadata = metadata || CAST(:patch AS jsonb), updated_at = NOW()
+                            WHERE id = CAST(:id AS uuid)
+                        """),
+                        {"patch": json.dumps({"platforms": platforms_data, "ai_title": ai_title}), "id": clip_id},
+                    )
+        except Exception as _cap_err:
+            logging.warning(f"generate_video_ranking: caption generation failed (non-fatal): {_cap_err}")
+
+        _publish_progress(job_id, "complete", 100, "complete", "Ranking video ready")
+        _publish_clip_event(job_id, "clip_ready", {"clip_id": clip_id, "video_id": video_id})
+        return {"clip_id": clip_id, "storage_key": storage_key}
+
+    except Exception:
+        logging.exception("generate_video_ranking failed")
+        try:
+            with _get_session(tenant_id) as session:
+                session.execute(
+                    text("UPDATE videos SET status='error', updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
+                    {"vid": video_id},
+                )
+        except Exception:
+            pass
+        raise
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)

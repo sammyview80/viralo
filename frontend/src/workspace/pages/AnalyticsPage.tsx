@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Shell } from "../Shell";
 import { platformApi, AnalyticsOverview, PostAnalytics } from "@/lib/api";
 import { useQuery } from "@/lib/query";
 import { Pagination } from "../components/Pagination";
@@ -102,7 +101,6 @@ export function AnalyticsPage() {
   const isEmpty = !loadingPosts && !errorPosts && posts.length === 0 && !loadingOverview && overview !== null && overview.posts_count === 0;
 
   return (
-    <Shell active="analytics">
       <div className="space-y-6">
         {/* Header + period selector */}
         <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
@@ -244,7 +242,6 @@ export function AnalyticsPage() {
           )}
         </div>
       </div>
-    </Shell>
   );
 }
 

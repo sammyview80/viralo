@@ -36,6 +36,13 @@ class ClipConfig(BaseModel):
     # Precision mode
     precision_mode: bool = False
 
+    # Template / occasion-aware rendering
+    template_id: Literal["sports-hype", "gaming-clutch", "cinematic", "music-vibe", "talking-head", "generic"] | None = Field(default=None, description="Template ID override (None = auto-detect from occasion)")
+    music: bool = Field(default=True, description="Mix background music track into clip")
+    music_track: Literal["hype", "dramatic", "chill"] | None = Field(default=None, description="Music track key override (None = auto from template)")
+    voiceover: bool = Field(default=False, description="Generate and mix AI narrator voiceover")
+    occasion: Literal["football", "soccer", "sports", "cricket", "ufc", "boxing", "mma", "f1", "racing", "gaming", "esports", "podcast", "interview", "concert", "music", "wedding", "travel", "general"] | None = Field(default=None, description="Content occasion hint. None = auto-detect.")
+
 
 class VideoResponse(BaseModel):
     id: uuid.UUID

@@ -1,7 +1,8 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { onboarding, token } from "@/lib/api";
+import { onboarding, token, billingApi, type PlanInfo } from "@/lib/api";
 import { navigate } from "@/lib/router";
+import { ViraloLogo } from "@/components/ViraloLogo";
 
 /* ─── Constants ─── */
 const PLATFORMS = [
@@ -71,12 +72,7 @@ function Progress({ step }: { step: number }) {
     <div className="flex-none px-7 pb-0 pt-6">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="grid h-7 w-7 place-items-center rounded-[8px] bg-gradient-to-br from-[#ff3d6a] to-[#ff7a3d]">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-            </svg>
-          </div>
-          <span className="font-display text-[15px] font-bold">viralo</span>
+          <ViraloLogo size={28} wordmark textSize="text-[15px]" />
         </div>
         <span className="text-[12px] font-medium text-zinc-500">Step {step} of {TOTAL_STEPS}</span>
       </div>
@@ -349,76 +345,103 @@ function S4Goal({ onNext }: { onNext: () => void }) {
   );
 }
 
+const PLAN_HIGHLIGHTS: Record<string, string> = {
+  free:      "3 videos/mo · 1 platform · Basic captions",
+  starter:   "15 videos/mo · 3 platforms · Brainstorm AI",
+  pro:       "30 videos/mo · All platforms · Voice clone",
+  creator:   "60 videos/mo · Workflows · Team members",
+  unlimited: "Unlimited everything · Priority support",
+};
+
+const PLAN_POPULAR = "pro";
+
 /* ═══════════════ STEP 5 — Plan + Finalize ═══════════════ */
 function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
-  const [loading, setLoading] = useState(false);
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [plans, setPlans] = useState<PlanInfo[]>([]);
 
-  async function finalize(plan: string, dest: string) {
-    setError(""); setLoading(true);
+  useEffect(() => {
+    billingApi.plans().then(setPlans).catch(() => {});
+  }, []);
+
+  async function finalize(planName: string, dest: string) {
+    if (loadingPlan) return;
+    setError(""); setLoadingPlan(planName);
     try {
-      await onboarding.plan(plan);
+      await onboarding.plan("free");
       const res = await onboarding.finalize();
       applyFinalizeToken(res.access_token, dest);
     } catch (e: any) {
       setError(e?.message ?? "Failed to finalize. Try again.");
-      setLoading(false);
+      setLoadingPlan(null);
     }
   }
+
+  const displayPlans = plans.length > 0 ? plans : [
+    { id: "free", name: "free", price_monthly: 0, videos_per_month: 3, storage_gb: 1, brainstorm: false, workflows: false, channels: false, watermark: false, accounts_per_platform: 1, video_duration_limit_min: null } as PlanInfo,
+  ];
 
   return (
     <div className="relative overflow-hidden py-2 text-center">
       <Confetti />
       <div className="relative z-10">
-        <div className="mb-4 text-[64px]" style={{ animation: "bounceIn .6s cubic-bezier(.34,1.56,.64,1)" }}>🎉</div>
-        <h2 className="mb-2 font-display text-[28px] font-extrabold tracking-[-0.02em]">Almost done!</h2>
-        <p className="mx-auto mb-6 max-w-[360px] text-[14px] leading-[1.65] text-zinc-500">
-          Choose a plan to activate your workspace. You can upgrade anytime.
+        <div className="mb-4 text-[56px]" style={{ animation: "bounceIn .6s cubic-bezier(.34,1.56,.64,1)" }}>🎉</div>
+        <h2 className="mb-2 font-display text-[26px] font-extrabold tracking-[-0.02em]">Almost done!</h2>
+        <p className="mx-auto mb-5 max-w-[360px] text-[13.5px] leading-[1.65] text-zinc-500">
+          Pick a plan to activate your workspace. You can upgrade anytime.
         </p>
 
         {/* Plan cards */}
-        <div className="mx-auto mb-6 grid max-w-[500px] grid-cols-1 gap-3 text-left sm:grid-cols-2">
-          <div className="rounded-[16px] border border-white/[.08] bg-white/[.04] p-5">
-            <div className="mb-3 text-[12px] font-bold uppercase tracking-[.1em] text-zinc-500">Free</div>
-            <div className="mb-1 font-display text-[28px] font-bold">$0<span className="text-[14px] font-normal text-zinc-500">/mo</span></div>
-            <p className="mb-4 text-[12px] text-zinc-500">3 videos/mo · 1 platform · Basic captions</p>
-            <button onClick={() => finalize("free", "/")} disabled={loading}
-              className="w-full rounded-[9px] border border-white/[.10] bg-white/[.04] py-2 text-[13px] font-semibold text-zinc-300 transition hover:bg-white/[.08] disabled:opacity-50">
-              Start free
-            </button>
-          </div>
-          <div className="rounded-[16px] border border-[#ff3d6a]/30 bg-[#ff3d6a]/[.06] p-5 shadow-[0_0_0_1px_rgba(255,61,106,.12)]">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="text-[12px] font-bold uppercase tracking-[.1em] text-[#ff3d6a]">Pro</span>
-              <span className="rounded-full bg-[#ff3d6a]/15 px-2 py-px text-[10px] font-bold text-[#ff3d6a]">Popular</span>
-            </div>
-            <div className="mb-1 font-display text-[28px] font-bold">$29<span className="text-[14px] font-normal text-zinc-500">/mo</span></div>
-            <p className="mb-4 text-[12px] text-zinc-500">Unlimited videos · All platforms · Voice cloning</p>
-            <button onClick={() => finalize("pro", "/")} disabled={loading}
-              className="w-full rounded-[9px] bg-[#ff3d6a] py-2 text-[13px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.35)] transition hover:shadow-[0_4px_18px_rgba(255,61,106,.5)] disabled:opacity-50">
-              {loading ? <span className="inline-block h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" /> : "Get Pro"}
-            </button>
-          </div>
+        <div className="mx-auto mb-5 grid max-w-[560px] grid-cols-1 gap-2.5 text-left sm:grid-cols-2 lg:grid-cols-3">
+          {displayPlans.map((p) => {
+            const isPopular = p.name === PLAN_POPULAR;
+            const isFree = p.name === "free";
+            const price = p.price_monthly === 0 ? "$0" : `$${Math.round(p.price_monthly)}`;
+            const highlight = PLAN_HIGHLIGHTS[p.name] ?? "";
+            return (
+              <div key={p.id}
+                className={cn(
+                  "rounded-[14px] border p-4 flex flex-col gap-3",
+                  isPopular
+                    ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/[.07] shadow-[0_0_0_1px_rgba(255,61,106,.1)]"
+                    : "border-white/[.08] bg-white/[.03]"
+                )}>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "text-[11px] font-bold uppercase tracking-[.1em]",
+                    isPopular ? "text-[#ff3d6a]" : "text-zinc-400"
+                  )}>
+                    {p.name.charAt(0).toUpperCase() + p.name.slice(1)}
+                  </span>
+                  {isPopular && (
+                    <span className="rounded-full bg-[#ff3d6a]/15 px-2 py-px text-[9px] font-bold text-[#ff3d6a]">Popular</span>
+                  )}
+                </div>
+                <div>
+                  <span className="font-display text-[24px] font-bold">{price}</span>
+                  <span className="text-[12px] text-zinc-500">/mo</span>
+                </div>
+                <p className="text-[11.5px] leading-[1.5] text-zinc-500 flex-1">{highlight}</p>
+                <button
+                  onClick={() => finalize(p.name, isFree ? "/" : `/billing?upgrade=${p.name}`)}
+                  disabled={!!loadingPlan}
+                  className={cn(
+                    "flex w-full items-center justify-center gap-2 rounded-[8px] py-2 text-[12.5px] font-semibold transition disabled:opacity-60",
+                    isPopular
+                      ? "bg-[#ff3d6a] text-white shadow-[0_2px_12px_rgba(255,61,106,.3)] hover:shadow-[0_4px_18px_rgba(255,61,106,.45)]"
+                      : "border border-white/[.10] bg-white/[.04] text-zinc-300 hover:bg-white/[.08]"
+                  )}>
+                  {loadingPlan === p.name
+                    ? <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    : isFree ? "Start free" : `Get ${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`}
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <Err msg={error} />
-
-        <div className="mx-auto grid max-w-[300px] grid-cols-1 gap-2 sm:grid-cols-3">
-          {[
-            { icon:"🎬", label:"Studio",   dest:"/studio" },
-            { icon:"🔥", label:"Trending", dest:"/trending" },
-            { icon:"📊", label:"Dashboard",dest:"/" },
-          ].map((a) => (
-            <div key={a.label} onClick={() => !loading && finalize("free", a.dest)}
-              className={cn(
-                "flex cursor-pointer flex-col items-center gap-1.5 rounded-[12px] border border-white/[.08] bg-white/[.04] py-3 transition hover:border-[#ff3d6a]/30 hover:bg-[#ff3d6a]/[.06]",
-                loading && "pointer-events-none opacity-50"
-              )}>
-              <span className="text-xl">{a.icon}</span>
-              <span className="text-[12px] font-semibold">{a.label}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -441,8 +464,9 @@ export function OnboardingPage() {
       }
       const res = await onboarding.skip();
       applyFinalizeToken(res.access_token, "/");
-    } catch {
-      // If skip fails just navigate — worst case tenant creation will retry
+    } catch (err) {
+      // Always clear spinner and navigate — backend now auto-generates subdomain on skip
+      setSkipping(false);
       navigate("/");
     }
   }

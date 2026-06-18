@@ -8,12 +8,15 @@ from .linkedin import LinkedInPublisher
 from .facebook import FacebookPublisher
 
 _REGISTRY: dict[str, type[BasePublisher]] = {
-    "youtube": YouTubePublisher,
+    "youtube":   YouTubePublisher,
+    "shorts":    YouTubePublisher,
     "instagram": InstagramPublisher,
-    "tiktok": TikTokPublisher,
-    "twitter": TwitterPublisher,
-    "linkedin": LinkedInPublisher,
-    "facebook": FacebookPublisher,
+    "reels":     InstagramPublisher,
+    "tiktok":    TikTokPublisher,
+    "twitter":   TwitterPublisher,
+    "x":         TwitterPublisher,
+    "linkedin":  LinkedInPublisher,
+    "facebook":  FacebookPublisher,
 }
 
 

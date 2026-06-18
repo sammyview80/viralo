@@ -14,12 +14,14 @@ export const nav: Array<{
   { key: "projects",     label: "Projects",      href: "/projects",     icon: "Rocket",                 group: "Create" },
   { key: "brainstorm",   label: "Brainstorm",    href: "/brainstorm",   icon: "Brain",    badge: "3",   group: "Create" },
   { key: "workflows",    label: "Workflows",     href: "/workflows",    icon: "Branch",                 group: "Create" },
+  { key: "ranking",      label: "Video Ranking", href: "/ranking",      icon: "Chart",                  group: "Create" },
   { key: "scheduler",    label: "Scheduler",     href: "/scheduler",    icon: "Calendar",               group: "Create" },
   { key: "analytics",    label: "Analytics",     href: "/analytics",    icon: "Chart",                  group: "Measure" },
   { key: "trending",     label: "Trending",      href: "/trending",     icon: "Flame",    badge: "🔥",  group: "Measure" },
   { key: "integrations", label: "Integrations",  href: "/integrations", icon: "Globe",                  group: "Account" },
   { key: "channels",     label: "Channels",      href: "/channels",     icon: "Video",                  group: "Account" },
   { key: "onboarding",   label: "Onboarding",    href: "/onboarding",   icon: "Bolt",                   group: "Account" },
+  { key: "billing",      label: "Billing",       href: "/billing",      icon: "CreditCard",             group: "Account" },
   { key: "settings",     label: "Settings",      href: "/settings",     icon: "Gear",                   group: "Account" },
 ];
 

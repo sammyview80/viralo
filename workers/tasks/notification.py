@@ -6,6 +6,7 @@ import os
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import Optional
 
 import redis
 from sqlalchemy import create_engine, text
@@ -44,7 +45,7 @@ def _get_session(tenant_id: str):
             raise
 
 
-async def _send_email(to_address: str, title: str, body: str, action_url: str | None) -> None:
+async def _send_email(to_address: str, title: str, body: str, action_url: Optional[str]) -> None:
     import aiosmtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -97,12 +98,12 @@ def _send_web_push(endpoint: str, p256dh: str, auth: str, payload: dict) -> bool
 )
 def send_notification(
     tenant_id: str,
-    user_id: str | None,
+    user_id: Optional[str],
     type: str,
     title: str,
     body: str,
-    action_url: str | None = None,
-    metadata: dict | None = None,
+    action_url: Optional[str] = None,
+    metadata: Optional[dict] = None,
 ):
     notif_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
@@ -200,11 +201,10 @@ def send_notification(
 
             if stale_ids:
                 with engine.connect() as conn:
-                    for sid in stale_ids:
-                        conn.execute(
-                            text("DELETE FROM push_subscriptions WHERE id = CAST(:sid AS uuid)"),
-                            {"sid": sid},
-                        )
+                    conn.execute(
+                        text("DELETE FROM push_subscriptions WHERE id = ANY(CAST(:ids AS uuid[]))"),
+                        {"ids": stale_ids},
+                    )
                     conn.commit()
         except Exception:
             logger.exception("send_notification: push delivery failed for tenant %s", tenant_id)

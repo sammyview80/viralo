@@ -1,12 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Shell } from "../Shell";
 import { ChipRow, DotIcon, Panel, SelectLike, Slider } from "../components";
 
 export function WorkflowsPage() {
   const steps = ["Reddit Trending", "AI Script", "Voiceover", "Generate Video", "Publish"];
   return (
-    <Shell active="workflows">
       <div className="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="p-4 sm:p-6">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="font-display text-2xl font-bold">Workflow Builder</h1><p className="mt-1 text-sm text-zinc-500">Trigger, action chain, config panel.</p></div><Button>Run now</Button></div>
@@ -14,7 +12,6 @@ export function WorkflowsPage() {
         </Card>
         <Card className="p-5"><h3 className="mb-4 text-sm font-semibold">Step settings</h3><div className="space-y-4"><Panel title="Minimum score"><Slider value="68" /></Panel><Panel title="Platforms"><ChipRow items={["TikTok", "Reels", "Shorts"]} active={["TikTok", "Reels"]} /></Panel><Panel title="Schedule"><SelectLike value="AI best time" /></Panel></div></Card>
       </div>
-    </Shell>
   );
 }
 

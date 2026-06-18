@@ -7,13 +7,17 @@ from shared.middleware.tenant import TenantMiddleware
 from video.routers import videos, viral
 
 LOCAL_STORAGE_DIR = os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage")
+_ALLOWED_ORIGINS = [o.strip() for o in os.getenv(
+    "CORS_ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:3000",
+).split(",") if o.strip()]
 
 app = FastAPI(title="Viralo Video Service", version="0.1.0")
 
 app.add_middleware(TenantMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,

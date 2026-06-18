@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, safeFilename, downloadUrl } from "@/lib/utils";
-import { Shell } from "../Shell";
 import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
@@ -44,7 +43,7 @@ const CARD_PLAT_CFG: Record<string, { color: string; icon: string }> = {
   facebook:  { color: "#1877F2", icon: "f"  },
 };
 
-function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isScheduled, clipPosts = [] }: {
+const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isScheduled, clipPosts = [] }: {
   clip: ClipApiResponse; active?: boolean; onClick?: () => void; onRetry?: () => void; delay?: number;
   isPosted?: boolean; isScheduled?: boolean; clipPosts?: ScheduledPost[];
 }) {
@@ -138,7 +137,7 @@ function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isSched
           <span className="rounded-full bg-white/[.035] px-2 py-1">{tags.length} tags</span>
           <span className="rounded-full bg-white/[.035] px-2 py-1">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
           {clipStart && clipEnd && <span className="rounded-full bg-white/[.035] px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
-          <span className="rounded-full bg-white/[.035] px-2 py-1">9:16</span>
+          <span className="rounded-full bg-white/[.035] px-2 py-1">{clip.clip_metadata?.aspect_ratio ?? "9:16"}</span>
         </div>
 
         <div className="h-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
@@ -170,7 +169,7 @@ function ClipCard({ clip, active, onClick, onRetry, delay = 0, isPosted, isSched
       </div>
     </button>
   );
-}
+});
 
 function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () => void }) {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
@@ -270,8 +269,17 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
     const account = accounts.find((a) => a.id === selectedAccountId);
     if (!account) return;
     const hashtagList = hashtags.split(",").map((h) => h.trim().replace(/^#/, "")).filter(Boolean);
+    const isYouTube = ["youtube", "shorts"].includes(account.platform.toLowerCase());
+    const platformKey = platformKeyMap[account.platform.toLowerCase()] ?? account.platform.toLowerCase();
+    const platContent = clip.clip_metadata?.platforms?.[platformKey];
+    const platform_kwargs = isYouTube ? {
+      title: clip.clip_metadata?.ai_title ?? clip.title ?? undefined,
+      description: caption || platContent?.description || undefined,
+      tags: hashtagList.length > 0 ? hashtagList : (platContent?.tags ?? []),
+      made_for_kids: false,
+    } : undefined;
     setSubmitting(true); setError(null);
-    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: new Date(scheduledAt).toISOString(), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined }); setSuccess(true); setTimeout(onClose, 1500); }
+    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: new Date(scheduledAt).toISOString(), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined, platform_kwargs }); setSuccess(true); setTimeout(onClose, 1500); }
     catch (e) { setError(e instanceof Error ? e.message : "Something went wrong."); }
     finally { setSubmitting(false); }
   }
@@ -390,9 +398,12 @@ function ShortsPlayer({ clip }: { clip: ClipApiResponse }) {
   const content = clip.clip_metadata?.platforms?.[platform];
   const description = content?.description ?? clip.title ?? "";
   const tags = content?.tags ?? [];
+  const aspectRatioStr = clip.clip_metadata?.aspect_ratio ?? "9:16";
+  const aspectRatioCss = aspectRatioStr === "1:1" ? "1/1" : aspectRatioStr === "16:9" ? "16/9" : aspectRatioStr === "4:5" ? "4/5" : "9/16";
+  const playerWidth = aspectRatioStr === "16:9" ? 240 : aspectRatioStr === "1:1" ? 160 : 160;
   return (
     <div className="select-none">
-      <div className="relative mx-auto overflow-hidden rounded-[24px] bg-black shadow-[0_0_0_2px_rgba(255,255,255,.1),0_12px_40px_rgba(0,0,0,.7)]" style={{ width: 160, aspectRatio: "9/16" }}>
+      <div className="relative mx-auto overflow-hidden rounded-[24px] bg-black shadow-[0_0_0_2px_rgba(255,255,255,.1),0_12px_40px_rgba(0,0,0,.7)]" style={{ width: playerWidth, aspectRatio: aspectRatioCss }}>
         {hasVideo ? <video ref={videoRef} src={clip.storage_url!} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" poster={clip.thumbnail_url ?? undefined} />
           : clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
           : <div className="absolute inset-0 bg-gradient-to-br from-rose-600/60 to-violet-700/60" />}
@@ -817,7 +828,7 @@ export function ClipsPage() {
       try {
         const [clipsResp, postsResp] = await Promise.all([
           videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined, sort === "score_desc" ? "score" : undefined),
-          platformApi.listPosts({ per_page: 100 }),
+          platformApi.listPosts({ per_page: 20 }),
         ]);
         const allClips = Array.isArray(clipsResp.items) ? clipsResp.items : [];
         setClips(allClips);
@@ -954,7 +965,7 @@ export function ClipsPage() {
   function clearFilters() { setPlatforms(new Set()); setStatuses(new Set()); setDurations(new Set()); setScores(new Set()); setPublished(new Set()); setSearch(""); setMinViralityScore(0); setPage(1); }
 
   return (
-    <Shell active="clips">
+    <>
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0b1018] shadow-[0_18px_80px_rgba(0,0,0,.28)]">
         {/* Header */}
         <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
@@ -1408,7 +1419,7 @@ export function ClipsPage() {
         />
       )}
       <EmojiOverlay emojis={emojis} />
-    </Shell>
+    </>
   );
 }
 

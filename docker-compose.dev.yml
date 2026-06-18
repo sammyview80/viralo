@@ -48,8 +48,26 @@ services:
       - ./shared:/app/shared
       - ./workers:/app/workers
 
-  celery-video:
-    command: celery -A workers.celery_app worker -Q viralo.video.generate,viralo.video.upload --concurrency=2 --loglevel=debug
+  celery-video-pipeline:
+    command: celery -A workers.celery_app worker -Q viralo.video.pipeline --concurrency=4 --loglevel=debug
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+
+  celery-video-ai:
+    command: celery -A workers.celery_app worker -Q viralo.video.ai --concurrency=2 --loglevel=debug
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+
+  celery-video-upload:
+    command: celery -A workers.celery_app worker -Q viralo.video.upload --concurrency=8 --pool=threads --loglevel=debug
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+
+  celery-video-generate:
+    command: celery -A workers.celery_app worker -Q viralo.video.generate --concurrency=2 --loglevel=debug
     volumes:
       - ./workers:/app/workers
       - ./shared:/app/shared
@@ -79,3 +97,13 @@ services:
     volumes:
       - ./workers:/app/workers
       - ./shared:/app/shared
+
+  frontend:
+    build:
+      target: development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+

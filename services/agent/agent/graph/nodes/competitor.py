@@ -43,6 +43,6 @@ async def competitor_agent_fn(state: BrainstormState, config: RunnableConfig) ->
     competitor_data = parse_json_block(full_text) or {"raw": full_text}
 
     await broadcast(redis, session_id, "competitor_agent", "agent_change",
-                    "Competitor analysis complete", extra={"next": "monetization_agent", "progress": 40})
+                    "Competitor analysis complete", extra={"next": "monetization_agent", "progress": 44})
 
     return {"competitor_data": competitor_data}

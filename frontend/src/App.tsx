@@ -1,15 +1,23 @@
 import { useEffect } from "react";
-import { Dashboard } from "@/components/dashboard";
+import { DashboardContent } from "@/components/dashboard";
 import { routeToPage, WorkspacePage } from "@/components/workspace-pages";
 import { LoginPage } from "@/app/auth/LoginPage";
 import { RegisterPage } from "@/app/auth/RegisterPage";
 import { lazy, Suspense } from "react";
 import { OAuthCallbackPage } from "@/workspace/pages/OAuthCallbackPage";
-const OnboardingPage = lazy(() => import("@/workspace/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 import { useAuth, hydrate } from "@/stores/auth";
 import { usePathname } from "@/lib/router";
+import { ViraloIcon } from "@/components/ViraloLogo";
+import { Shell } from "@/workspace/Shell";
 
 const AUTH_ROUTES = ["/login", "/register"];
+
+const Splash = () => (
+  <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#080b12]">
+    <ViraloIcon size={40} />
+    <div className="h-5 w-5 rounded-full border-2 border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
+  </div>
+);
 
 export default function App() {
   const { user, ready } = useAuth();
@@ -18,18 +26,7 @@ export default function App() {
   useEffect(() => { hydrate(); }, []);
 
   /* ── Splash while restoring session ── */
-  if (!ready) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#080b12]">
-        <div className="grid h-10 w-10 place-items-center rounded-[11px] bg-gradient-to-br from-[#ff4d78] to-[#ff8040] shadow-[0_6px_24px_rgba(255,61,106,.35)]">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-          </svg>
-        </div>
-        <div className="h-5 w-5 rounded-full border-2 border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
-      </div>
-    );
-  }
+  if (!ready) return <Splash />;
 
   /* ── Authenticated user on auth pages → away ── */
   if (user && AUTH_ROUTES.includes(path)) {
@@ -49,18 +46,38 @@ export default function App() {
     return null;
   }
 
-  /* ── Onboarding gate: step 0 means fresh user ── */
-  if (user.onboarding_step === 0) {
-    return <Suspense fallback={null}><OnboardingPage /></Suspense>;
+  /* ── Onboarding gate ── */
+  if (user.onboarding_step === 0) return <WorkspacePage page="onboarding" />;
+
+  /* ── Legacy billing redirect ── */
+  if (path === "/billing/success") {
+    const sp = new URLSearchParams(window.location.search);
+    const sid = sp.get("session_id") ?? "";
+    window.location.replace(`/billing?success=1&session_id=${sid}`);
+    return null;
   }
 
-  /* ── Upload page (not in sidebar) and project detail ── */
+  /* ── Workspace pages ── */
+  if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage page="billing" />;
+  if (path === "/notifications") return <WorkspacePage page="notifications" />;
   if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage page="upload" />;
 
-  /* ── Workspace pages ── */
   const page = routeToPage(path);
   if (page) return <WorkspacePage page={page} />;
 
-  /* ── Dashboard ── */
-  return <Dashboard />;
+  /* ── Dashboard (Home) ── */
+  if (path === "/") {
+    return (
+      <Shell active="dashboard">
+        <DashboardContent />
+      </Shell>
+    );
+  }
+
+  // Default fallback (e.g. if routeToPage failed but user authenticated)
+  return (
+    <Shell active="dashboard">
+      <DashboardContent />
+    </Shell>
+  );
 }

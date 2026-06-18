@@ -82,32 +82,6 @@ def _platform_live_url(platform: str, platform_post_id: str | None) -> str | Non
     return None
 
 
-def _insert_notification(
-    session,
-    tenant_id: str,
-    title: str,
-    body: str,
-    post_id: str,
-    notification_type: str = "post",
-    action_url: str | None = None,
-) -> None:
-    url = action_url or f"/workspace/scheduler?post={post_id}"
-    session.execute(
-        text("""
-            INSERT INTO notifications (id, tenant_id, type, title, body, action_url, created_at)
-            VALUES (:id, CAST(:tid AS uuid), :type, :title, :body, :action_url, NOW())
-        """),
-        {
-            "id": str(uuid.uuid4()),
-            "tid": tenant_id,
-            "type": notification_type,
-            "title": title,
-            "body": body,
-            "action_url": url,
-        },
-    )
-
-
 def _try_insert_notification(
     tenant_id: str,
     title: str,
@@ -116,20 +90,20 @@ def _try_insert_notification(
     notification_type: str = "post",
     action_url: str | None = None,
 ) -> None:
-    """Best-effort notification; never roll back publish status updates."""
+    """Best-effort notification via full pipeline (DB + Redis SSE + email + push)."""
     try:
-        with _get_session(tenant_id) as session:
-            _insert_notification(
-                session,
-                tenant_id,
-                title=title,
-                body=body,
-                post_id=post_id,
-                notification_type=notification_type,
-                action_url=action_url,
-            )
+        from workers.tasks.notification import send_notification
+        send_notification.delay(
+            tenant_id,
+            user_id=None,
+            type=notification_type,
+            title=title,
+            body=body,
+            action_url=action_url or f"/workspace/scheduler?post={post_id}",
+            metadata={"post_id": post_id},
+        )
     except Exception:
-        logger.exception("failed to insert notification for post %s", post_id)
+        logger.exception("failed to enqueue notification for post %s", post_id)
 
 
 # ── Beat task: scan for due posts ─────────────────────────────────────────────

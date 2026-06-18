@@ -8,7 +8,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { platformApi, SocialAccount } from "@/lib/api";
-import { Shell } from "../Shell";
 
 /* ─── env / redirect ─── */
 const YOUTUBE_CLIENT_ID = import.meta.env.VITE_YOUTUBE_CLIENT_ID ?? "";
@@ -35,22 +34,100 @@ function randomCodeVerifier() {
   return base64UrlEncode(bytes.buffer);
 }
 
+function randomOAuthState() {
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes.buffer);
+}
+
+function rememberOAuthAttempt(platform: string, state: string, codeVerifier?: string) {
+  sessionStorage.setItem("oauth_state", JSON.stringify({ platform, state, codeVerifier: codeVerifier ?? null }));
+}
+
+async function buildOAuthUrl(platform: Platform) {
+  const state = randomOAuthState();
+  const paramsByPlatform: Record<string, { base: string; params: Record<string, string> }> = {
+    youtube: {
+      base: "https://accounts.google.com/o/oauth2/v2/auth",
+      params: {
+        client_id: YOUTUBE_CLIENT_ID,
+        redirect_uri: REDIRECT,
+        response_type: "code",
+        scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+        access_type: "offline",
+        prompt: "consent",
+        state,
+      },
+    },
+    instagram: {
+      base: "https://api.instagram.com/oauth/authorize",
+      params: {
+        client_id: IG_CLIENT_ID,
+        redirect_uri: REDIRECT,
+        scope: "instagram_business_basic,instagram_content_publish",
+        response_type: "code",
+        state,
+      },
+    },
+    twitter: {
+      base: "https://twitter.com/i/oauth2/authorize",
+      params: {
+        response_type: "code",
+        client_id: TWITTER_KEY,
+        redirect_uri: REDIRECT,
+        scope: "tweet.write users.read media.write",
+        code_challenge: "challenge",
+        code_challenge_method: "plain",
+        state,
+      },
+    },
+    linkedin: {
+      base: "https://www.linkedin.com/oauth/v2/authorization",
+      params: {
+        response_type: "code",
+        client_id: LI_CLIENT_ID,
+        redirect_uri: REDIRECT,
+        scope: "w_member_social",
+        state,
+      },
+    },
+    facebook: {
+      base: "https://www.facebook.com/v21.0/dialog/oauth",
+      params: {
+        client_id: FB_APP_ID,
+        redirect_uri: REDIRECT,
+        scope: "public_profile",
+        response_type: "code",
+        state,
+      },
+    },
+  };
+
+  if (platform.id === "tiktok") return buildTikTokOAuthUrl(state);
+
+  const config = paramsByPlatform[platform.id];
+  if (!config) throw new Error("Unsupported platform");
+  rememberOAuthAttempt(platform.id, state);
+  const params = new URLSearchParams(config.params);
+  return `${config.base}?${params.toString()}`;
+}
+
 async function sha256Base64Url(value: string) {
   const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return base64UrlEncode(digest);
 }
 
-async function buildTikTokOAuthUrl() {
+async function buildTikTokOAuthUrl(state: string) {
   const verifier = randomCodeVerifier();
   const challenge = await sha256Base64Url(verifier);
-  sessionStorage.setItem("tiktok_cv", verifier);
+  rememberOAuthAttempt("tiktok", state, verifier);
 
   const params = new URLSearchParams({
     client_key: TIKTOK_KEY,
     scope: "user.info.basic,video.publish",
     response_type: "code",
     redirect_uri: REDIRECT,
-    state: "tiktok",
+    state,
     code_challenge: challenge,
     code_challenge_method: "S256",
   });
@@ -403,23 +480,11 @@ export function IntegrationsPage() {
   };
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    const state = params.get("state");
-    if (code && state) {
-      window.history.replaceState({}, "", window.location.pathname);
-      platformApi.connectOAuth(state, code, REDIRECT)
-        .then(() => { setToast(`${state.charAt(0).toUpperCase() + state.slice(1)} connected!`); load(); })
-        .catch(() => setToast("OAuth failed — please try again."));
-    } else {
-      load();
-    }
+    load();
   }, []);
 
   const handleConnect = async (platform: Platform) => {
-    window.location.href = platform.id === "tiktok"
-      ? await buildTikTokOAuthUrl()
-      : platform.oauth_url;
+    window.location.href = await buildOAuthUrl(platform);
   };
 
   const handleDisconnect = async (platform: Platform, account: SocialAccount) => {
@@ -449,7 +514,7 @@ export function IntegrationsPage() {
   }, [accounts]);
 
   return (
-    <Shell active="integrations">
+    <>
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-2xl border border-white/[.07] bg-[#0b111c]">
 
         {/* ── Header ── */}
@@ -523,6 +588,6 @@ export function IntegrationsPage() {
       </div>
 
       {toast && <ToastAlert msg={toast} onClose={() => setToast(null)} />}
-    </Shell>
+    </>
   );
 }

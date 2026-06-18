@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { cn, safeFilename, downloadBlob, downloadUrl, stripSrtTimecodes } from "@/lib/utils";
-import { Shell } from "../Shell";
 import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
 import { VirtualizedGrid } from "../components/VirtualizedCollection";
@@ -37,6 +36,11 @@ export const DEFAULT_CONFIG: ClipConfig = {
   duration_min: 20,
   duration_max: 60,
   output_quality: "1080p",
+  music: true,
+  voiceover: false,
+  template_id: null,
+  music_track: null,
+  occasion: null,
 };
 
 export const CAPTION_STYLES = [
@@ -200,6 +204,102 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
             </div>
           </div>
         )}
+
+        {/* ── Template & AI enhancements ── */}
+        <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5 space-y-3">
+          <label className={labelCls}>AI enhancements</label>
+
+          {/* Occasion picker */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-[13px] font-bold text-zinc-100">Content type</div>
+              {!config.occasion && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { id: null,        label: "Auto detect" },
+                { id: "football",  label: "Football" },
+                { id: "cricket",   label: "Cricket" },
+                { id: "ufc",       label: "UFC / MMA" },
+                { id: "gaming",    label: "Gaming" },
+                { id: "concert",   label: "Concert" },
+                { id: "podcast",   label: "Podcast" },
+                { id: "wedding",   label: "Wedding" },
+                { id: "general",   label: "Other" },
+              ].map((o) => (
+                <button key={String(o.id)} type="button"
+                  onClick={() => set({ occasion: o.id })}
+                  className={cn("rounded-[8px] border px-2 py-1.5 text-[11px] font-medium transition-colors text-center",
+                    (config.occasion ?? null) === o.id
+                      ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10 text-[#ff5f86]"
+                      : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12]")}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Style picker */}
+          <div className="border-t border-white/[.05] pt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-[13px] font-bold text-zinc-100">Style</div>
+              {!config.template_id && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {[
+                { id: null,             label: "Auto",      desc: "Matched to content type" },
+                { id: "sports-hype",    label: "Hype",      desc: "Bold hook + blur bg" },
+                { id: "cinematic",      label: "Cinematic", desc: "Dramatic music + overlay" },
+                { id: "gaming-clutch",  label: "Clutch",    desc: "Gaming style captions" },
+                { id: "talking-head",   label: "Talk",      desc: "Clean + chill music" },
+                { id: "generic",        label: "Minimal",   desc: "No extras, clean cut" },
+              ].map((t) => (
+                <button key={String(t.id)} type="button"
+                  onClick={() => set({ template_id: t.id })}
+                  className={cn("rounded-[8px] border px-2 py-1.5 text-left transition-colors",
+                    (config.template_id ?? null) === t.id
+                      ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10"
+                      : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
+                  <div className={cn("text-[11px] font-bold", (config.template_id ?? null) === t.id ? "text-[#ff5f86]" : "text-zinc-200")}>{t.label}</div>
+                  <div className="text-[10px] text-zinc-500 mt-0.5">{t.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Music toggle */}
+          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-3">
+            <div>
+              <div className="text-[13px] font-bold text-zinc-100">Background music</div>
+              <div className="mt-0.5 text-[11.5px] text-zinc-500">Mix a royalty-free hype/chill track under the clip audio.</div>
+            </div>
+            <button type="button" onClick={() => set({ music: !(config.music ?? true) })}
+              aria-pressed={config.music ?? true}
+              className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+                (config.music ?? true) ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+              <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+                (config.music ?? true) ? "left-[calc(100%-24px)]" : "left-1")} />
+            </button>
+          </div>
+
+          {/* Voiceover toggle */}
+          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="text-[13px] font-bold text-zinc-100">AI voiceover</div>
+                <span className="rounded-full border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-2 py-0.5 text-[10px] font-bold text-[#ff6c90]">NEW</span>
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-zinc-500">Generate a punchy narrator script and mix it over the clip — the viral faceless format.</div>
+            </div>
+            <button type="button" onClick={() => set({ voiceover: !config.voiceover })}
+              aria-pressed={!!config.voiceover}
+              className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+                config.voiceover ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+              <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+                config.voiceover ? "left-[calc(100%-24px)]" : "left-1")} />
+            </button>
+          </div>
+        </div>
 
         <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
           <label className={labelCls}>Output quality</label>
@@ -872,10 +972,17 @@ function ProcessingView({
   const [errorMsg, setErrorMsg] = useState<string>(video.error_message ?? "");
   const [now, setNow] = useState(Date.now());
 
+  const sanitize = (s: string) => {
+    if (!s) return s;
+    // Replace absolute paths (esp. /tmp/viralo-video/UUID/) with [internal-path]
+    return s.replace(/\/tmp\/viralo-video\/[a-f0-9-]+\//gi, "[internal-path]/")
+            .replace(/\/app\/[^\s)]+/gi, "[app-path]");
+  };
+
   const STORAGE_KEY = `viralo_live_${video.celery_task_id ?? video.id}`;
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = sessionStorage.getItem(STORAGE_KEY);
       return raw ? (JSON.parse(raw) as LiveEvent[]) : [];
     } catch { return []; }
   });
@@ -890,95 +997,123 @@ function ProcessingView({
   const lastStepRef = useRef<string>("");
   const pushEvent = (ev: Omit<LiveEvent, "id" | "ts">) =>
     setLiveEvents((prev) => {
-      const next = [{ ...ev, id: Math.random().toString(36).slice(2), ts: Date.now() }, ...prev].slice(0, 30);
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota */ }
+      const sanitizedEv = { ...ev, label: sanitize(ev.label), sub: ev.sub ? sanitize(ev.sub) : undefined };
+      const next = [{ ...sanitizedEv, id: Math.random().toString(36).slice(2), ts: Date.now() }, ...prev].slice(0, 30);
+      try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota */ }
       return next;
     });
 
   useEffect(() => {
     setCurrent(video);
-    setErrorMsg(video.error_message ?? "");
+    setErrorMsg(sanitize(video.error_message ?? ""));
     doneRef.current = false;
   }, [video.id, video.status, video.pipeline_step, video.pipeline_pct, video.error_message]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    const id = window.setInterval(() => setNow(Date.now()), 5000);
     return () => window.clearInterval(id);
   }, []);
 
-  // SSE — primary real-time progress channel
+  // SSE — primary real-time progress channel with exponential backoff reconnect
+  const retryRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+
   useEffect(() => {
     if (!current.celery_task_id || doneRef.current) return;
-    const t = authToken.get() || "";
-    if (!t) return;
-    const url = `${VIDEO_SSE_BASE}/video/progress/${current.celery_task_id}`;
-    const es = new EventSource(`${url}?token=${encodeURIComponent(t)}`);
 
-    es.onopen = () => { sseActiveRef.current = true; };
+    const isRanking = current.source_type === "ranking";
 
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.type === "keepalive") return;
+    const clippingStepLabels: Record<string, string> = {
+      download: "Downloading video…", upload: "Uploading to storage…",
+      transcribe: "Transcribing speech…", scoring: "Finding viral moments…",
+      ai_content: "Generating titles & hashtags…", export: "Rendering clips…",
+      captions: "Burning captions…", saving: "Saving clips…", complete: "All done!",
+      template: "Applying template…", render: "Rendering with effects…",
+      voiceover: "Generating AI voiceover…", audio_mix: "Mixing audio tracks…",
+      enhance: "Enhancing quality…",
+    };
+    const rankingStepLabels: Record<string, string> = {
+      starting: "Preparing ranking video…",
+      downloading: "Resolving & downloading sources…",
+      rendering: "Rendering segments…",
+      concatenating: "Joining segments into final video…",
+      upload: "Uploading to cloud…",
+      complete: "Ranking video ready!",
+    };
+    const stepLabels = isRanking ? rankingStepLabels : clippingStepLabels;
 
-        // Pipeline progress
-        if (d.message) setLiveMsg(d.message);
-        if (d.pct != null) setCurrent((prev) => ({ ...prev, pipeline_pct: d.pct, pipeline_step: d.step ?? prev.pipeline_step }));
-        if (d.status === "failed" && d.message) setErrorMsg(d.message);
+    function connect() {
+      if (doneRef.current) return;
+      const t = authToken.get() || "";
+      if (!t) return;
+      const url = `${VIDEO_SSE_BASE}/video/progress/${current.celery_task_id}`;
+      const es = new EventSource(`${url}?token=${encodeURIComponent(t)}`);
+      esRef.current = es;
 
-        // Clip upload events
-        if (d.event === "clip_upload_complete") {
-          clipCountRef.current += 1;
-          pushEvent({
-            kind: "clip_ready",
-            label: `Clip ${clipCountRef.current} ready`,
-            sub: d.title ?? undefined,
-            thumbnail: d.thumbnail_url ?? undefined,
-          });
-        }
-        if (d.event === "clips_ready") {
-          pushEvent({ kind: "clips_ready", label: `${d.count ?? ""} clips found`, sub: "Uploading to cloud…" });
-        }
-        // Detailed message events — push every unique message
-        if (d.message && d.step && d.step !== "keepalive") {
-          const isNewStep = d.step !== lastStepRef.current;
-          if (isNewStep) lastStepRef.current = d.step;
-          pushEvent({
-            kind: "info",
-            label: d.message,
-            pct: d.pct ?? undefined,
-            step: d.step,
-          });
-        } else if (d.step && d.step !== "keepalive" && d.step !== lastStepRef.current) {
-          // Step transition with no message
-          lastStepRef.current = d.step;
-          const stepLabels: Record<string, string> = {
-            download: "Downloading video…", upload: "Uploading to storage…",
-            transcribe: "Transcribing speech…", scoring: "Finding viral moments…",
-            ai_content: "Generating titles & hashtags…", export: "Rendering clips…",
-            captions: "Burning captions…", saving: "Saving clips…", complete: "All done!",
-          };
-          if (stepLabels[d.step]) pushEvent({ kind: "info", label: stepLabels[d.step], step: d.step });
-        }
+      es.onopen = () => { sseActiveRef.current = true; retryRef.current = 0; };
 
-        if (d.status === "complete" || d.status === "failed") {
-          es.close();
-          sseActiveRef.current = false;
-          if (!doneRef.current) {
-            doneRef.current = true;
-            try { localStorage.removeItem(STORAGE_KEY); } catch { /* ok */ }
-            videoApi.get(current.id).then(onDone).catch(() => onDone(current));
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "keepalive") return;
+
+          if (d.message) setLiveMsg(sanitize(d.message));
+          if (d.pct != null) setCurrent((prev) => ({ ...prev, pipeline_pct: d.pct, pipeline_step: d.step ?? prev.pipeline_step }));
+          if (d.status === "failed" && d.message) setErrorMsg(sanitize(d.message));
+
+          if (!isRanking) {
+            if (d.event === "clip_upload_complete") {
+              clipCountRef.current += 1;
+              pushEvent({ kind: "clip_ready", label: `Clip ${clipCountRef.current} ready`, sub: d.title ?? undefined, thumbnail: d.thumbnail_url ?? undefined });
+            }
+            if (d.event === "clips_ready") {
+              pushEvent({ kind: "clips_ready", label: `${d.count ?? ""} clips found`, sub: "Uploading to cloud…" });
+            }
           }
-        }
-      } catch { /* ignore malformed */ }
-    };
 
-    es.onerror = () => {
+          if (d.message && d.step && d.step !== "keepalive") {
+            const isNewStep = d.step !== lastStepRef.current;
+            if (isNewStep) lastStepRef.current = d.step;
+            pushEvent({ kind: "info", label: d.message, pct: d.pct ?? undefined, step: d.step });
+          } else if (d.step && d.step !== "keepalive" && d.step !== lastStepRef.current) {
+            lastStepRef.current = d.step;
+            if (stepLabels[d.step]) pushEvent({ kind: "info", label: stepLabels[d.step], step: d.step });
+          }
+
+          if (d.status === "complete" || d.status === "failed") {
+            es.close();
+            esRef.current = null;
+            sseActiveRef.current = false;
+            if (!doneRef.current) {
+              doneRef.current = true;
+              try { localStorage.removeItem(STORAGE_KEY); } catch { /* ok */ }
+              videoApi.get(current.id).then(onDone).catch(() => onDone(current));
+            }
+          }
+        } catch { /* ignore malformed */ }
+      };
+
+      es.onerror = () => {
+        sseActiveRef.current = false;
+        es.close();
+        esRef.current = null;
+        if (doneRef.current) return;
+        // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
+        const delay = Math.min(1000 * Math.pow(2, retryRef.current), 30_000);
+        retryRef.current += 1;
+        retryTimerRef.current = setTimeout(connect, delay);
+      };
+    }
+
+    connect();
+
+    return () => {
+      esRef.current?.close();
+      esRef.current = null;
       sseActiveRef.current = false;
-      es.close();
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
-
-    return () => { es.close(); sseActiveRef.current = false; };
   }, [current.celery_task_id]);
 
   // Queued-only timeout check — SSE handles all progress once the worker starts.
@@ -1015,13 +1150,14 @@ function ProcessingView({
   const grad = gradFromId(current.id);
   const queuedFor = formatElapsedSince(current.created_at, now);
   const isQueued = current.status === "queued" || (!current.pipeline_step && overallPct === 0);
-  const sourceLabel = current.source_type === "youtube_url" ? "YouTube" : "Uploaded file";
+  const isRankingVideo = current.source_type === "ranking";
+  const sourceLabel = isRankingVideo ? "Ranking video" : current.source_type === "youtube_url" ? "YouTube" : "Uploaded file";
 
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3.5 rounded-[13px] border border-white/[.07] bg-[#0e1420] p-4">
         <div className={cn("grid h-12 w-16 flex-none place-items-center overflow-hidden rounded-[9px] bg-gradient-to-br", grad)}>
-          <span className="text-xl">🎬</span>
+          <span className="text-xl">{isRankingVideo ? "🏆" : "🎬"}</span>
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13.5px] font-semibold">{current.title ?? "Untitled"}</div>
@@ -1043,9 +1179,9 @@ function ProcessingView({
         <div className="rounded-[12px] border border-yellow-300/15 bg-yellow-400/[.045] p-3.5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-[12.5px] font-semibold text-yellow-200">Waiting for a video worker</div>
+              <div className="text-[12.5px] font-semibold text-yellow-200">{isRankingVideo ? "Waiting for a ranking worker" : "Waiting for a video worker"}</div>
               <div className="mt-0.5 text-[11.5px] text-zinc-500">
-                This clipping job has been queued for <span className="font-mono text-zinc-300">{queuedFor}</span>.
+                This {isRankingVideo ? "ranking" : "clipping"} job has been queued for <span className="font-mono text-zinc-300">{queuedFor}</span>.
               </div>
             </div>
             <div className="flex flex-wrap gap-1.5 text-[10.5px] font-mono text-zinc-500">
@@ -1078,7 +1214,11 @@ function ProcessingView({
       {onCancel && current.status !== "failed" && !isTerminal(current) && (
         <div className="flex justify-end">
           <button
-            onClick={onCancel}
+            onClick={() => {
+              if (window.confirm("Are you sure you want to cancel processing? This cannot be undone.")) {
+                onCancel();
+              }
+            }}
             className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[12px] font-semibold text-zinc-400 transition hover:border-red-500/30 hover:bg-red-500/[.07] hover:text-red-400"
           >
             Cancel processing
@@ -1093,7 +1233,10 @@ function ProcessingView({
           const active = !done && i === stepIdx;
           const state = done ? "done" : active ? "active" : "wait";
           return (
-            <div key={step.keys[0]} className={cn(
+            <div key={step.keys[0]} 
+              role="status"
+              aria-label={`${step.label}: ${state === "done" ? "Completed" : state === "active" ? "In progress" : "Waiting"}`}
+              className={cn(
               "flex items-start gap-3.5 rounded-[11px] border p-3.5 transition",
               state === "done"   ? "border-white/[.05] bg-white/[.015] opacity-70"
             : state === "active" ? "border-[#ff3d6a]/20 bg-[#ff3d6a]/[.04]"
@@ -1125,7 +1268,12 @@ function ProcessingView({
                 </span>
               )}
               {state === "active" && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300/20 bg-yellow-400/10 px-2 py-0.5 text-[10px] font-semibold text-yellow-300">
+                <span 
+                  role="progressbar"
+                  aria-valuenow={overallPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  className="inline-flex items-center gap-1 rounded-full border border-yellow-300/20 bg-yellow-400/10 px-2 py-0.5 text-[10px] font-semibold text-yellow-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-yellow-300" />{overallPct}%
                 </span>
               )}
@@ -2193,11 +2341,13 @@ function ResultsView({
           >
             ↗ Publish all
           </button>
-          <button onClick={() => setRegenModal(true)}
-            className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:text-white">
-            ✦ Regenerate all
-          </button>
-          {video.storage_url && (
+          {video.source_type !== "ranking" && (
+            <button onClick={() => setRegenModal(true)}
+              className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:text-white">
+              ✦ Regenerate all
+            </button>
+          )}
+          {video.source_type !== "ranking" && video.storage_url && (
             <button
               onClick={() => void downloadUrl(video.storage_url!, safeFilename(video.title, "mp4"))}
               className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white"
@@ -2542,7 +2692,7 @@ export function UploadPage() {
   }, [deleteTarget, activeVideo]);
 
   return (
-    <Shell active="upload">
+    <>
       {deleteTarget && (
         <DeleteModal
           video={deleteTarget}
@@ -2574,7 +2724,7 @@ export function UploadPage() {
             </div>
             <p className="mt-1 text-[11px] text-zinc-600">
               {view === "upload" ? "Upload a file or paste a YouTube link."
-              : view === "processing" ? "AI is analyzing your video and generating clips."
+              : view === "processing" ? (activeVideo?.source_type === "ranking" ? "Rendering your ranked countdown video from the provided segments." : "AI is analyzing your video and generating clips.")
               : "Preview, edit, download or publish your clips below."}
             </p>
           </div>
@@ -2746,6 +2896,6 @@ export function UploadPage() {
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </Shell>
+    </>
   );
 }

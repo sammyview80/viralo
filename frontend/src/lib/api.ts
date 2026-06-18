@@ -1,23 +1,25 @@
+import { clearQueryCache } from "./query";
+
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost/api/v1";
 const LS_ACCESS  = "viralo_access_token";
 const LS_SESSION = "viralo_has_session"; // flag: refresh cookie likely valid
 
-/* ─── Token store — access token persisted, refresh token is httpOnly cookie ─── */
-let _accessToken: string | null = localStorage.getItem(LS_ACCESS);
+/* ─── Token store — access token in sessionStorage (XSS stopgap), refresh token is httpOnly cookie ─── */
+let _accessToken: string | null = sessionStorage.getItem(LS_ACCESS);
 
 export const token = {
   get: () => _accessToken,
 
   set: (t: string) => {
     _accessToken = t;
-    localStorage.setItem(LS_ACCESS, t);
+    sessionStorage.setItem(LS_ACCESS, t);
     localStorage.setItem(LS_SESSION, "1"); // mark that a refresh cookie was issued
     clearApiCaches();
   },
 
   clear: () => {
     _accessToken = null;
-    localStorage.removeItem(LS_ACCESS);
+    sessionStorage.removeItem(LS_ACCESS);
     localStorage.removeItem(LS_SESSION);
     clearApiCaches();
   },
@@ -195,6 +197,7 @@ export interface VideoResponse {
   celery_task_id: string | null;
   clip_config: ClipConfig | null;
   error_message: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -235,6 +238,9 @@ export interface ClipApiResponse {
     trending_hashtags?: string[];
     composite?: boolean;
     source_clip_ids?: string[];
+    aspect_ratio?: string;
+    platform_copy?: Record<string, { description: string; tags: string[] }>;
+    ranking?: boolean;
   } | null;
   upload_attempts: number | null;
   upload_error: string | null;
@@ -270,6 +276,11 @@ export interface ClipConfig {
   duration_min?: number;
   output_quality?: "source" | "1080p" | "720p" | "480p";
   precision_mode?: boolean;
+  template_id?: string | null;
+  music?: boolean;
+  music_track?: string | null;
+  voiceover?: boolean;
+  occasion?: string | null;
 }
 
 export const videoApi = {
@@ -289,6 +300,9 @@ export const videoApi = {
   get:     (id: string) => videoReq<VideoResponse>("GET", `/videos/${id}`),
   list:    (page = 1, per_page = 20) =>
     videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
+  listClipping: (page = 1, per_page = 20) =>
+    videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos/clipping?page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
   clips:   (videoId: string, page = 1, per_page = 100) =>
     videoReq<ClipListResponse | ClipApiResponse[]>("GET", `/clips?video_id=${videoId}&page=${page}&per_page=${per_page}`)
@@ -326,6 +340,24 @@ export const videoApi = {
     videoReq<{ task_id: string; message: string }>("POST", "/clips/merge-ai", { clip_ids: clipIds }),
   retryClipUpload: (clipId: string) =>
     videoReq<ClipApiResponse>("POST", `/clips/${clipId}/retry-upload`),
+  listRanking: (page = 1, per_page = 20) =>
+    videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos/ranking?page=${page}&per_page=${per_page}`)
+      .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
+  createRanking: (payload: {
+    title: string;
+    theme: string;
+    order: string;
+    segments: Array<{
+      source_type: string;
+      url?: string;
+      video_id?: string;
+      start_sec: number;
+      end_sec: number;
+      segment_title?: string;
+    }>;
+  }) => videoReq<{ video_id: string; job_id: string }>("POST", "/video/ranking", payload),
+  suggestRankingTitle: (topic: string, segment_count: number) =>
+    videoReq<{ title: string; highlight_words: string[] }>("POST", "/video/ranking/suggest-title", { topic, segment_count }),
 };
 
 /* ─── Platform service (port 8006) ─── */
@@ -364,6 +396,7 @@ export interface ScheduledPostCreate {
   scheduled_at: string; // ISO datetime
   caption?: string;
   hashtags?: string[];
+  platform_kwargs?: Record<string, unknown>;
 }
 
 export interface CalendarDay {
@@ -422,6 +455,7 @@ let _accountsCache: { data: SocialAccount[]; at: number } | null = null;
 function clearApiCaches() {
   _accountsInflight = null;
   _accountsCache = null;
+  clearQueryCache();
 }
 function _listAccountsCached(): Promise<SocialAccount[]> {
   if (_accountsCache && Date.now() - _accountsCache.at < 30_000) return Promise.resolve(_accountsCache.data);
@@ -483,12 +517,39 @@ export const platformApi = {
   deleteNotification: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
 
+export interface AutoPublishConfig {
+  num_clips: number;
+  aspect_ratio: string;
+  platforms: string[];
+  social_account_ids: string[];
+  publish_per_day: number;
+  publish_interval_hours: number;
+  caption_template: string;
+  burn_captions: boolean;
+  min_clip_duration: number;
+  max_clip_duration: number;
+}
+
+export const DEFAULT_AUTO_PUBLISH_CONFIG: AutoPublishConfig = {
+  num_clips: 4,
+  aspect_ratio: "9:16",
+  platforms: ["tiktok", "instagram"],
+  social_account_ids: [],
+  publish_per_day: 3,
+  publish_interval_hours: 8,
+  caption_template: "",
+  burn_captions: false,
+  min_clip_duration: 30,
+  max_clip_duration: 60,
+};
+
 export interface ChannelSubscription {
   id: string;
   channel_id: string;
   channel_name: string | null;
   channel_url: string | null;
   auto_publish: boolean;
+  auto_publish_config: AutoPublishConfig | null;
   active: boolean;
   subscribed_at: string | null;
   lease_expires_at: string | null;
@@ -514,14 +575,16 @@ export const channelsApi = {
   list: () => platformReq<ChannelSubscription[]>("GET", "/websub/channels"),
   resolve: (q: string) =>
     platformReq<{ channel_id: string; channel_name: string }>("GET", `/websub/resolve?q=${encodeURIComponent(q)}`),
-  subscribe: (body: { channel_id: string; channel_name?: string; channel_url?: string; auto_publish?: boolean }) =>
+  subscribe: (body: { channel_id: string; channel_name?: string; channel_url?: string; auto_publish?: boolean; auto_publish_config?: AutoPublishConfig }) =>
     platformReq<{ channel_id: string; channel_name: string; status: string }>("POST", "/websub/channels", body),
+  update: (channelId: string, body: { auto_publish?: boolean; auto_publish_config?: AutoPublishConfig }) =>
+    platformReq<{ channel_id: string; updated: boolean }>("PATCH", `/websub/channels/${channelId}`, body),
   unsubscribe: (channelId: string) => platformReq<void>("DELETE", `/websub/channels/${channelId}`),
   recentVideos: (channelId: string) =>
     platformReq<{ channel_id: string; videos: ChannelVideo[] }>("GET", `/websub/channels/${channelId}/videos`),
   topVideos: (channelId: string, order: "viewCount" | "date" | "rating" = "viewCount") =>
     platformReq<{ channel_id: string; videos: ChannelVideo[]; order: string }>(
-      "GET", `/websub/channels/${channelId}/top-videos?order=${order}&max_results=25`
+      "GET", `/websub/channels/${channelId}/top-videos?order=${order}&max_results=10`
     ),
 };
 
@@ -598,4 +661,105 @@ export const agentApi = {
     agentReq<{ status: string; session_id: string }>("POST", `/sessions/${id}/run`),
   deleteSession: (id: string) =>
     agentReq<void>("DELETE", `/sessions/${id}`),
+};
+
+// ─── Billing API (via core service) ───
+export interface PlanInfo {
+  id: string;
+  name: string;
+  price_monthly: number;
+  videos_per_month: number;  // -1 = unlimited
+  storage_gb: number;
+  brainstorm: boolean;
+  workflows: boolean;
+  channels: boolean;
+  watermark: boolean;
+  accounts_per_platform: number;
+  video_duration_limit_min: number | null;
+}
+
+export interface SubscriptionInfo {
+  plan_name: string;
+  status: string;
+  billing_cycle: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  videos_used: number;
+  storage_bytes_used: number;
+  brainstorm_used: number;
+}
+
+export interface EsewaQR {
+  merchant_id: string;
+  amount_npr: number;
+  product_id: string;
+  plan_name: string;
+  instructions: string;
+}
+
+// ─── Trends API (via agent service) ───
+export interface VideoMeta {
+  platform: "youtube" | "tiktok" | "web" | string;
+  video_id: string;
+  title: string;
+  url: string;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  duration_sec: number | null;
+  published_at: string | null;
+  channel: string | null;
+  channel_id: string | null;
+  channel_url: string | null;
+  hashtags: string[];
+  thumbnail: string | null;
+  description: string;
+}
+
+export interface PlatformSummary {
+  youtube_count: number;
+  tiktok_count: number;
+  web_count: number;
+  total: number;
+  from_cache: boolean;
+}
+
+export interface TrendSearchResponse {
+  topic: string;
+  from_cache: boolean;
+  summary: PlatformSummary;
+  top_by_views: VideoMeta[];
+  common_hashtags: string[];
+  youtube: VideoMeta[];
+  tiktok: VideoMeta[];
+  web: VideoMeta[];
+  analysis?: {
+    insights: string;
+    suggested_topics: string[];
+  };
+}
+
+export const trendsApi = {
+  search: (topic: string, platforms?: string[], forceRefresh?: boolean) => {
+    const qs = new URLSearchParams({ topic });
+    (platforms ?? ["youtube", "tiktok", "web"]).forEach((p) => qs.append("platforms", p));
+    if (forceRefresh) qs.set("force_refresh", "true");
+    return agentReq<TrendSearchResponse>("GET", `/trends/search?${qs}`);
+  },
+  clearCache: (topic?: string) =>
+    agentReq<{ deleted: number }>(
+      "DELETE",
+      `/trends/cache${topic ? `?topic=${encodeURIComponent(topic)}` : ""}`,
+    ),
+};
+
+export const billingApi = {
+  plans: () => req<PlanInfo[]>("GET", "/billing/plans", undefined, { auth: false }),
+  subscription: () => req<SubscriptionInfo>("GET", "/billing/subscription"),
+  checkout: (plan_name: string, billing_cycle: string, success_url: string, cancel_url: string) =>
+    req<{ checkout_url: string }>("POST", "/billing/checkout", { plan_name, billing_cycle, success_url, cancel_url }),
+  confirm: (session_id: string) =>
+    req<{ status: string; plan: string }>("POST", "/billing/confirm", { session_id }),
+  esewaQR: (plan_name: string) =>
+    req<EsewaQR>("GET", `/billing/esewa-qr?plan=${plan_name}`),
 };
