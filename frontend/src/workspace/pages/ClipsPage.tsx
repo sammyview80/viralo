@@ -6,11 +6,11 @@ import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
 import { Pagination } from "../components/Pagination";
-import { videoApi, platformApi, agentApi, token, type ClipApiResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
+import { videoApi, platformApi, agentApi, token, API_BASES, type ClipApiResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
 import { VideoEditor } from "../components/VideoEditor";
 import { addToast } from "@/stores/notifications";
 
-const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
+const VIDEO_SSE_BASE = API_BASES.video;
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return "--:--";

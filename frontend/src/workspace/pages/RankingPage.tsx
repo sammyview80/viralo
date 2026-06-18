@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { videoApi, token as authToken } from "@/lib/api";
+import { videoApi, token as authToken, API_BASES } from "@/lib/api";
 import type { VideoResponse, ClipApiResponse } from "@/lib/api";
 
-const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
+const VIDEO_SSE_BASE = API_BASES.video;
 
 type View = "list" | "create";
 type InputType = "url" | "upload";

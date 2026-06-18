@@ -3,9 +3,9 @@ import { cn, safeFilename, downloadBlob, downloadUrl, stripSrtTimecodes } from "
 import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
 import { VirtualizedGrid } from "../components/VirtualizedCollection";
-import { videoApi, platformApi, token as authToken, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount, type ScheduledPost } from "@/lib/api";
+import { videoApi, platformApi, token as authToken, API_BASES, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount, type ScheduledPost } from "@/lib/api";
 
-const VIDEO_SSE_BASE = import.meta.env.VITE_VIDEO_BASE ?? "/video-api";
+const VIDEO_SSE_BASE = API_BASES.video;
 
 /* ─── Types ─── */
 type Source = "file" | "yt";
