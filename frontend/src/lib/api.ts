@@ -1,6 +1,6 @@
 import { clearQueryCache } from "./query";
 
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost/api/v1";
+const BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
 const LS_ACCESS  = "viralo_access_token";
 const LS_SESSION = "viralo_has_session"; // flag: refresh cookie likely valid
 

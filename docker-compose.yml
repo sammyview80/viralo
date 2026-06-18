@@ -109,7 +109,7 @@ services:
       - "3000:80"
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1"]
 
   # ── API Services ──────────────────────────────────────────────────────────
 
