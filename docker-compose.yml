@@ -105,6 +105,18 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: production
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-}
+        VITE_VIDEO_BASE: ${VITE_VIDEO_BASE:-}
+        VITE_AGENT_BASE: ${VITE_AGENT_BASE:-}
+        VITE_PLATFORM_BASE: ${VITE_PLATFORM_BASE:-}
+        VITE_OAUTH_REDIRECT: ${VITE_OAUTH_REDIRECT:-}
+        VITE_YOUTUBE_CLIENT_ID: ${VITE_YOUTUBE_CLIENT_ID:-}
+        VITE_FB_APP_ID: ${VITE_FB_APP_ID:-}
+        VITE_IG_CLIENT_ID: ${VITE_IG_CLIENT_ID:-}
+        VITE_LI_CLIENT_ID: ${VITE_LI_CLIENT_ID:-}
+        VITE_TWITTER_KEY: ${VITE_TWITTER_KEY:-}
+        VITE_TIKTOK_KEY: ${VITE_TIKTOK_KEY:-}
     ports:
       - "3000:80"
     healthcheck:
