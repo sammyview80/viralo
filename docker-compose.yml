@@ -106,10 +106,10 @@ services:
       dockerfile: Dockerfile
       target: production
     ports:
-      - "3000:5173"
+      - "3000:80"
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5173/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
 
   # ── API Services ──────────────────────────────────────────────────────────
 
