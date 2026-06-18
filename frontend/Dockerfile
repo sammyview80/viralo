@@ -39,7 +39,7 @@ RUN pnpm run build
 
 FROM base AS production
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml vite.config.ts ./
 RUN pnpm install --frozen-lockfile
 COPY --from=builder /app/dist ./dist
 EXPOSE 3000
