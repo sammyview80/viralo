@@ -3497,7 +3497,8 @@ def _ytdlp_proxies() -> list[str]:
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> list[str]:
     """Return common yt-dlp flags. Cookies are omitted when proxy is set (IP mismatch invalidates session)."""
     flags = ["--no-check-certificate", "--retries", "3",
-             "--sleep-interval", "2", "--max-sleep-interval", "5"]
+             "--sleep-interval", "2", "--max-sleep-interval", "5",
+             "--js-runtimes", "node"]
     if use_cookies and not proxy:
         cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
         if cookies_file and Path(cookies_file).exists():
