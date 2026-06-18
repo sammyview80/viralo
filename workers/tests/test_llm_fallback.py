@@ -3,11 +3,9 @@ Tests for _call_llm_json fallback chain and parallel upload logic.
 Run: pytest workers/tests/test_llm_fallback.py -v
 Requires: conftest.py stubs in same directory (auto-loaded by pytest).
 """
-import asyncio
-import json
-import os
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ── _call_llm_json tests ───────────────────────────────────────────────────────
 
@@ -28,7 +26,8 @@ def test_call_llm_json_first_provider_succeeds(monkeypatch):
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = _make_llm_response('{"clips": []}')
 
-    with patch("openai.OpenAI", return_value=mock_client):
+    with patch("shared.llm._probe_cached", return_value=True), \
+         patch("openai.OpenAI", return_value=mock_client):
         result = _call_llm_json([{"role": "user", "content": "test"}])
 
     assert result == {"clips": []}
@@ -54,7 +53,8 @@ def test_call_llm_json_falls_back_on_failure(monkeypatch):
     mock_client = MagicMock()
     mock_client.chat.completions.create.side_effect = _create_side_effect
 
-    with patch("openai.OpenAI", return_value=mock_client):
+    with patch("shared.llm._probe_cached", return_value=True), \
+         patch("openai.OpenAI", return_value=mock_client):
         result = _call_llm_json([{"role": "user", "content": "test"}])
 
     assert result == {"result": "ok"}
@@ -76,7 +76,8 @@ def test_call_llm_json_skips_missing_env(monkeypatch):
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = _make_llm_response('{"data": 1}')
 
-    with patch("openai.OpenAI", return_value=mock_client) as MockOpenAI:
+    with patch("shared.llm._probe_cached", return_value=True), \
+         patch("openai.OpenAI", return_value=mock_client) as MockOpenAI:
         result = _call_llm_json([{"role": "user", "content": "test"}])
 
     # Should have been called with Cerebras base_url
@@ -95,7 +96,8 @@ def test_call_llm_json_parses_markdown_wrapped_json(monkeypatch):
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = _make_llm_response(raw)
 
-    with patch("openai.OpenAI", return_value=mock_client):
+    with patch("shared.llm._probe_cached", return_value=True), \
+         patch("openai.OpenAI", return_value=mock_client):
         result = _call_llm_json([{"role": "user", "content": "test"}])
 
     assert result["clips"][0]["score"] == 7.5
@@ -104,16 +106,16 @@ def test_call_llm_json_parses_markdown_wrapped_json(monkeypatch):
 def test_call_llm_json_all_fail_raises(monkeypatch):
     """Raises RuntimeError when all providers fail."""
     from workers.tasks.video import _call_llm_json
-    import pytest
 
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
 
     mock_client = MagicMock()
     mock_client.chat.completions.create.side_effect = RuntimeError("all down")
 
-    with patch("openai.OpenAI", return_value=mock_client):
-        with pytest.raises(RuntimeError, match="All LLM providers exhausted"):
-            _call_llm_json([{"role": "user", "content": "test"}])
+    with patch("shared.llm._probe_cached", return_value=True), \
+         patch("openai.OpenAI", return_value=mock_client), \
+         pytest.raises(RuntimeError, match="All free LLM providers exhausted"):
+        _call_llm_json([{"role": "user", "content": "test"}])
 
 
 # ── Parallel upload tests ──────────────────────────────────────────────────────

@@ -13,16 +13,11 @@ import sys
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Make celery task decorator a pass-through so the real function body is callable
 _celery_mock = MagicMock()
 _celery_mock.task = lambda **_kw: (lambda f: f)
 _celery_mock.task.__call__ = lambda **_kw: (lambda f: f)
 sys.modules["workers.celery_app"] = MagicMock(celery_app=_celery_mock)
-
-# Ensure sqlalchemy.orm.Session is importable as a real context manager base
-import sqlalchemy.orm as _orm  # noqa: E402  (imported after sys.modules patch)
 
 
 WEBSUB_SECRET = "test-secret"
@@ -155,7 +150,7 @@ def test_process_notification_no_subscriptions(mock_session_cls):
 def test_process_notification_triggers_pipeline(mock_session_cls):
     """Active subscription triggers video pipeline job."""
     tenant_id = uuid.uuid4()
-    sub_row = (uuid.uuid4(), tenant_id, False, {})
+    sub_row = (uuid.uuid4(), tenant_id, False, {}, "Test Channel")
 
     session = MagicMock()
     fetch_results = [

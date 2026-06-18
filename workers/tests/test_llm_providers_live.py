@@ -12,6 +12,8 @@ import os
 import sys
 import time
 
+import pytest
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
@@ -118,7 +120,10 @@ def test_fallback_chain_end_to_end():
     pytest-compatible: call_llm_json must succeed using the real hierarchy.
     Passes as long as at least one provider works.
     """
-    from shared.llm import call_llm_json
+    from shared.llm import LLM_PROVIDERS, call_llm_json
+
+    if not any(_resolve(p)[0] for p in LLM_PROVIDERS):
+        pytest.skip("No LLM provider credentials configured")
 
     notified = []
     result = call_llm_json(
