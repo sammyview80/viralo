@@ -3516,6 +3516,9 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> lis
 def _is_429(stderr: str) -> bool:
     return "429" in stderr or "Too Many Requests" in stderr
 
+def _is_bot_blocked(stderr: str) -> bool:
+    return "Sign in to confirm" in stderr or "bot" in stderr.lower() or "not a bot" in stderr
+
 
 def _download_youtube(url: str, out_path: str, quality: str = "source", progress_cb=None) -> None:
     import time, random
@@ -3540,6 +3543,12 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         """Return ordered strategy list — best quality first, fallbacks after."""
         base = _ytdlp_base_flags(proxy)
         return [
+            # tv_embedded: no JS required, bypasses bot detection — best server-side client
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=tv_embedded",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # ios: no JS required, different quota bucket
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=ios",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
             # android_testsuite: bypasses bot detection, unlocks 4K AV1/VP9 streams
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_testsuite",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
@@ -3600,7 +3609,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return
             stderr = "\n".join(stderr_lines[-20:])
             errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
-            if _is_429(stderr) and proxies:
+            if (_is_429(stderr) or _is_bot_blocked(stderr)) and proxies:
                 # Switch to next proxy, append proxy-based strategies after current position
                 proxy = proxies[proxy_idx % len(proxies)]
                 proxy_idx += 1
