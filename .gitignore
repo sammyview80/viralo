@@ -1,8 +1,11 @@
 # ── Environment ───────────────────────────────────────────────────────────────
 .env
 .env.local
+.env.production
 .env.*.local
 *.env
+frontend/.env.production
+frontend/.env.local
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/

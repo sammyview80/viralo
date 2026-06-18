@@ -513,7 +513,7 @@ services:
     ports:
       - "5555:5555"
     environment:
-      CELERY_BROKER_URL: amqp://viralo:viralo@rabbitmq:5672//
+      CELERY_BROKER_URL: ${RABBITMQ_URL:-amqp://viralo:viralo@rabbitmq:5672//}
     depends_on:
       rabbitmq:
         condition: service_healthy
