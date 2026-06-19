@@ -50,7 +50,7 @@ export const CAPTION_STYLES = [
   { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline" },
 ];
 
-export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onChange: (c: ClipConfig) => void }) {
+export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig; onChange: (c: ClipConfig) => void; step?: 1 | 2 | 3 }) {
   const set = (patch: Partial<ClipConfig>) => onChange({ ...config, ...patch });
   const togglePlat = (id: string) => {
     const cur = config.platforms ?? [];
@@ -66,18 +66,19 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
   const chipOn  = "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.13] text-[#ff5f86] shadow-[inset_0_1px_0_rgba(255,255,255,.05)]";
   const chipOff = "border-white/[.08] bg-white/[.035] text-zinc-400 hover:border-white/[.15] hover:bg-white/[.06] hover:text-zinc-200";
 
+  const showAll = !step;
+  const s1 = showAll || step === 1;
+  const s2 = showAll || step === 2;
+  const s3 = showAll || step === 3;
+
   return (
-    <section className="overflow-hidden rounded-[22px] border border-white/[.08] bg-[#0b111a] shadow-[0_24px_70px_rgba(0,0,0,.22)]">
-      <div className="border-b border-white/[.07] bg-[radial-gradient(circle_at_0%_0%,rgba(255,61,106,.16),transparent_35%),linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015))] p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div>
+      {/* Header row with summary chips — only in full (non-stepped) mode */}
+      {showAll && (
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-[10px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[14px] text-[#ff668a]">⚙</span>
-              <div>
-                <h3 className="font-display text-[17px] font-bold text-white">Clip recipe</h3>
-                <p className="mt-0.5 text-[12px] text-zinc-500">Tune output once. Viralo uses these rules for every generated clip.</p>
-              </div>
-            </div>
+            <h3 className="font-display text-[15px] font-bold text-white">Clip recipe</h3>
+            <p className="mt-0.5 text-[12px] text-zinc-500">Tune output once. Viralo uses these rules for every generated clip.</p>
           </div>
           <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-300">
             <span className="rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1">{selectedPlatforms.length} platforms</span>
@@ -85,10 +86,11 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
             <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[#ff6c90]">≥ {virality}/10</span>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="space-y-5 p-4 sm:p-5">
-        <div>
+      <div className="space-y-6">
+        {/* Step 1: Destinations */}
+        {s1 && <div>
           <label className={labelCls}>Destinations</label>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             {PLATFORM_OPTIONS.map((p) => {
@@ -103,43 +105,47 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
             })}
           </div>
           <p className="mt-2 text-[11.5px] text-zinc-600">Select every platform you plan to publish on so framing and captions stay safe.</p>
-        </div>
+        </div>}
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_1.2fr]">
-          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
-            <label className={labelCls}>Aspect ratio</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {ASPECT_OPTIONS.map((r) => (
-                <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
-                  className={cn(chipBase, "px-2 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
-                  {r}
-                </button>
-              ))}
+        {/* Step 1 continued: Aspect ratio + Language + Target length */}
+        {s1 && <div className={showAll ? "border-t border-white/[.06] pt-5" : ""}>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr_1.2fr]">
+            <div>
+              <label className={labelCls}>Aspect ratio</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {ASPECT_OPTIONS.map((r) => (
+                  <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
+                    className={cn(chipBase, "px-2 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Language</label>
+              <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
+                className={inputCls}>
+                {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Target length</label>
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                <input type="number" min={5} max={config.duration_max} value={config.duration_min}
+                  onChange={(e) => set({ duration_min: Number(e.target.value) })}
+                  className={inputCls} />
+                <span className="text-zinc-600 text-sm">to</span>
+                <input type="number" min={config.duration_min} max={300} value={config.duration_max}
+                  onChange={(e) => set({ duration_max: Number(e.target.value) })}
+                  className={inputCls} />
+              </div>
             </div>
           </div>
-          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
-            <label className={labelCls}>Language</label>
-            <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
-              className={inputCls}>
-              {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
-            </select>
-          </div>
-          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
-            <label className={labelCls}>Target length</label>
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-              <input type="number" min={5} max={config.duration_max} value={config.duration_min}
-                onChange={(e) => set({ duration_min: Number(e.target.value) })}
-                className={inputCls} />
-              <span className="text-zinc-600 text-sm">to</span>
-              <input type="number" min={config.duration_min} max={300} value={config.duration_max}
-                onChange={(e) => set({ duration_max: Number(e.target.value) })}
-                className={inputCls} />
-            </div>
-          </div>
-        </div>
+        </div>}
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+        {/* Step 2: Max clips + Viral score */}
+        {s2 && <div className={cn("grid grid-cols-1 gap-4 lg:grid-cols-2", showAll && "border-t border-white/[.06] pt-5")}>
+          <div>
             <div className="mb-2 flex items-center justify-between">
               <label className={cn(labelCls, "mb-0")}>Max clips</label>
               <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[12px] font-bold text-[#ff5f86]">{config.max_clips}</span>
@@ -150,7 +156,7 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
             <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1 focused clip</span><span>20 batch clips</span></div>
           </div>
 
-          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+          <div>
             <div className="mb-2 flex items-center justify-between">
               <label className={cn(labelCls, "mb-0")}>Minimum viral score</label>
               <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[12px] font-bold text-[#ff5f86]">{virality}/10</span>
@@ -160,10 +166,11 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
               className="w-full accent-[#ff3d6a]" />
             <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any usable</span><span>Balanced</span><span>Viral only</span></div>
           </div>
-        </div>
+        </div>}
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_.9fr]">
-          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
+        {/* Step 2 continued: Topic focus + Auto captions */}
+        {s2 && <div className={cn("grid grid-cols-1 gap-4 lg:grid-cols-[1fr_.9fr]", showAll && "border-t border-white/[.06] pt-5")}>
+          <div>
             <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-zinc-600">optional</span></label>
             <input type="text" placeholder="e.g. controversial moment, product demo, founder story…"
               value={config.topic_focus ?? ""}
@@ -172,25 +179,23 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
             <p className="mt-2 text-[11.5px] text-zinc-600">Use this to bias clip selection without changing the source video.</p>
           </div>
 
-          <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[13px] font-bold text-zinc-100">Auto captions</div>
-                <div className="mt-0.5 text-[11.5px] text-zinc-500">Burn readable subtitles into every clip.</div>
-              </div>
-              <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
-                aria-pressed={!!config.add_captions}
-                className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
-                  config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
-                <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
-                  config.add_captions ? "left-[calc(100%-24px)]" : "left-1")} />
-              </button>
+          <div className="flex items-start justify-between gap-3 pt-[22px]">
+            <div>
+              <div className="text-[13px] font-bold text-zinc-100">Auto captions</div>
+              <div className="mt-0.5 text-[11.5px] text-zinc-500">Burn readable subtitles into every clip.</div>
             </div>
+            <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
+              aria-pressed={!!config.add_captions}
+              className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+                config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+              <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+                config.add_captions ? "left-[calc(100%-24px)]" : "left-1")} />
+            </button>
           </div>
-        </div>
+        </div>}
 
-        {config.add_captions && (
-          <div className="rounded-[14px] border border-[#ff3d6a]/18 bg-[#ff3d6a]/[.04] p-3.5">
+        {s2 && config.add_captions && (
+          <div className="border-t border-[#ff3d6a]/15 pt-5">
             <label className={labelCls}>Caption style</label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {CAPTION_STYLES.map((s) => (
@@ -205,8 +210,8 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
           </div>
         )}
 
-        {/* ── Template & AI enhancements ── */}
-        <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5 space-y-3">
+        {/* Step 3: AI enhancements */}
+        {s3 && <div className={cn("space-y-4", showAll && "border-t border-white/[.06] pt-5")}>
           <label className={labelCls}>AI enhancements</label>
 
           {/* Occasion picker */}
@@ -229,7 +234,7 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
               ].map((o) => (
                 <button key={String(o.id)} type="button"
                   onClick={() => set({ occasion: o.id })}
-                  className={cn("rounded-[8px] border px-2 py-1.5 text-[11px] font-medium transition-colors text-center",
+                  className={cn("rounded-[8px] border px-2 py-1.5 text-[11px] font-medium transition-colors text-center cursor-pointer",
                     (config.occasion ?? null) === o.id
                       ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10 text-[#ff5f86]"
                       : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12]")}>
@@ -240,7 +245,7 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
           </div>
 
           {/* Style picker */}
-          <div className="border-t border-white/[.05] pt-3">
+          <div className="border-t border-white/[.05] pt-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="text-[13px] font-bold text-zinc-100">Style</div>
               {!config.template_id && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
@@ -256,7 +261,7 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
               ].map((t) => (
                 <button key={String(t.id)} type="button"
                   onClick={() => set({ template_id: t.id })}
-                  className={cn("rounded-[8px] border px-2 py-1.5 text-left transition-colors",
+                  className={cn("rounded-[8px] border px-2 py-1.5 text-left transition-colors cursor-pointer",
                     (config.template_id ?? null) === t.id
                       ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10"
                       : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
@@ -268,14 +273,14 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
           </div>
 
           {/* Music toggle */}
-          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-3">
+          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-4">
             <div>
               <div className="text-[13px] font-bold text-zinc-100">Background music</div>
               <div className="mt-0.5 text-[11.5px] text-zinc-500">Mix a royalty-free hype/chill track under the clip audio.</div>
             </div>
             <button type="button" onClick={() => set({ music: !(config.music ?? true) })}
               aria-pressed={config.music ?? true}
-              className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+              className={cn("relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
                 (config.music ?? true) ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
               <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
                 (config.music ?? true) ? "left-[calc(100%-24px)]" : "left-1")} />
@@ -283,7 +288,7 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
           </div>
 
           {/* Voiceover toggle */}
-          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-3">
+          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-4">
             <div>
               <div className="flex items-center gap-2">
                 <div className="text-[13px] font-bold text-zinc-100">AI voiceover</div>
@@ -293,27 +298,28 @@ export function ClipConfigPanel({ config, onChange }: { config: ClipConfig; onCh
             </div>
             <button type="button" onClick={() => set({ voiceover: !config.voiceover })}
               aria-pressed={!!config.voiceover}
-              className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+              className={cn("relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
                 config.voiceover ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
               <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
                 config.voiceover ? "left-[calc(100%-24px)]" : "left-1")} />
             </button>
           </div>
-        </div>
 
-        <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] p-3.5">
-          <label className={labelCls}>Output quality</label>
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-            {(["source","1080p","720p","480p"] as const).map((q) => (
-              <button key={q} type="button" onClick={() => set({ output_quality: q })}
-                className={cn(chipBase, "text-center", config.output_quality === q ? chipOn : chipOff)}>
-                {q === "source" ? "Full res" : q}
-              </button>
-            ))}
+          {/* Output quality */}
+          <div className="border-t border-white/[.05] pt-4">
+            <label className={labelCls}>Output quality</label>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {(["source","1080p","720p","480p"] as const).map((q) => (
+                <button key={q} type="button" onClick={() => set({ output_quality: q })}
+                  className={cn(chipBase, "text-center", config.output_quality === q ? chipOn : chipOff)}>
+                  {q === "source" ? "Full res" : q}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        </div>}
       </div>
-    </section>
+    </div>
   );
 }
 

@@ -12,6 +12,7 @@ import { connectSSE, fetchUnreadCount } from "@/stores/notifications";
 import { Icons } from "@/components/icons";
 import { ViraloLogo, ViraloIcon } from "@/components/ViraloLogo";
 import { CommandPalette, openCommandPalette } from "./components/CommandPalette";
+import { settingsApi } from "@/lib/api";
 
 type ActiveKey = PageKey | "dashboard";
 
@@ -196,6 +197,14 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
     fetchUnreadCount();
     const cleanup = connectSSE();
     return cleanup;
+  }, []);
+
+  useEffect(() => {
+    settingsApi.getBrandKit().then(kit => {
+      const root = document.documentElement;
+      if (kit.primary_color) root.style.setProperty("--brand", kit.primary_color);
+      if (kit.font) root.style.setProperty("--brand-font", kit.font);
+    }).catch(() => {});
   }, []);
 
   // Update document title

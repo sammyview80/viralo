@@ -159,7 +159,7 @@ async def create_api_key(
 ):
     raw_key = f"vk_live_{secrets.token_hex(16)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    key_prefix = raw_key[:12] + "••••••••••••" + raw_key[-4:]
+    key_prefix = raw_key[:8] + "…" + raw_key[-4:]  # e.g. vk_live_…2b52 (16 chars max)
 
     api_key = TenantApiKey(
         id=uuid.uuid4(),

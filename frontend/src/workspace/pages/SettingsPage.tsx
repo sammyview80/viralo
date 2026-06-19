@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
@@ -14,17 +12,45 @@ import {
   type SubscriptionInfo,
 } from "@/lib/api";
 
+/* ─── Nav sections ──────────────────────────────────────────────────────── */
+
 const SECTIONS = [
-  { id: "workspace",     label: "Workspace",      icon: "◈", desc: "Name, URL, logo, and timezone for your workspace." },
-  { id: "brand",         label: "Brand kit",      icon: "⬡", desc: "Colors, fonts, and watermarks applied to exported clips." },
-  { id: "team",          label: "Team",            icon: "⬢", desc: "Manage members and access roles." },
-  { id: "billing",       label: "Billing",         icon: "◉", desc: "Plan, usage, and payment method." },
-  { id: "notifications", label: "Notifications",   icon: "◎", desc: "Choose what Viralo emails and alerts you about." },
-  { id: "api",           label: "API keys",        icon: "⋈", desc: "Keys for accessing the Viralo API programmatically." },
-  { id: "security",      label: "Security",        icon: "⬟", desc: "Password, two-factor authentication, and active sessions." },
+  { id: "workspace",     label: "Workspace",    icon: <IconWorkspace />,    desc: "Name, URL, and timezone for your workspace." },
+  { id: "brand",         label: "Brand kit",    icon: <IconBrand />,        desc: "Colors, fonts, and watermarks applied to exported clips." },
+  { id: "team",          label: "Team",          icon: <IconTeam />,         desc: "Manage members and access roles." },
+  { id: "billing",       label: "Billing",       icon: <IconBilling />,      desc: "Plan, usage, and payment method." },
+  { id: "notifications", label: "Notifications", icon: <IconNotifications />,desc: "Choose what Viralo emails and alerts you about." },
+  { id: "api",           label: "API keys",      icon: <IconApi />,          desc: "Keys for accessing the Viralo API programmatically." },
+  { id: "security",      label: "Security",      icon: <IconSecurity />,     desc: "Password, two-factor authentication, and active sessions." },
 ] as const;
 
 type SectionId = typeof SECTIONS[number]["id"];
+
+/* ─── Icons ─────────────────────────────────────────────────────────────── */
+
+function IconWorkspace() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>;
+}
+function IconBrand() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><circle cx="8" cy="8" r="5"/><path d="M8 3v10M3 8h10"/></svg>;
+}
+function IconTeam() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><circle cx="6" cy="6" r="2.5"/><circle cx="11" cy="5" r="2"/><path d="M1 13c0-2 2-3.5 5-3.5s5 1.5 5 3.5"/><path d="M11 7c1.5.3 3 1.3 3 3"/></svg>;
+}
+function IconBilling() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M1.5 6.5h13"/><path d="M4.5 9.5h2"/></svg>;
+}
+function IconNotifications() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><path d="M8 2a4.5 4.5 0 014.5 4.5c0 2.5.5 4 1.5 5H2c1-1 1.5-2.5 1.5-5A4.5 4.5 0 018 2z"/><path d="M6.5 13.5a1.5 1.5 0 003 0"/></svg>;
+}
+function IconApi() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><path d="M2 8h3M11 8h3M5 5l-2 3 2 3M11 5l2 3-2 3"/></svg>;
+}
+function IconSecurity() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><path d="M8 2L3 4v4c0 3 2.5 5 5 6 2.5-1 5-3 5-6V4L8 2z"/></svg>;
+}
+
+/* ─── Primitives ─────────────────────────────────────────────────────────── */
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -33,66 +59,124 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative h-5 w-9 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a]/50",
-        checked ? "bg-[#ff3d6a]" : "bg-zinc-700"
+        "relative h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a]/40",
+        checked ? "bg-[#ff3d6a]" : "bg-zinc-700/60"
       )}
     >
-      <span
-        className={cn(
-          "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200",
-          checked ? "translate-x-4" : "translate-x-0.5"
-        )}
-      />
+      <span className={cn(
+        "absolute top-[3px] h-4 w-4 rounded-full bg-white shadow transition-all duration-200",
+        checked ? "left-[22px]" : "left-[3px]"
+      )} />
     </button>
   );
 }
 
-function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function FieldRow({
+  label, hint, children, border = true,
+}: {
+  label: string; hint?: string; children: React.ReactNode; border?: boolean;
+}) {
   return (
-    <div className="flex items-start justify-between gap-8 py-4">
+    <div className={cn(
+      "flex items-center justify-between gap-6 px-5 py-4",
+      border && "border-b border-white/[.055] last:border-0"
+    )}>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-zinc-200">{label}</p>
-        {hint && <p className="mt-0.5 text-xs text-zinc-500">{hint}</p>}
+        <p className="text-[13px] font-medium text-zinc-200">{label}</p>
+        {hint && <p className="mt-0.5 text-[12px] text-zinc-500">{hint}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
   );
 }
 
-function TextInput({ placeholder, value, onChange, className }: {
-  placeholder?: string;
-  value?: string;
-  onChange?: (v: string) => void;
-  className?: string;
+function TextInput({ placeholder, value, onChange, mono, className }: {
+  placeholder?: string; value?: string; onChange?: (v: string) => void;
+  mono?: boolean; className?: string;
 }) {
   return (
     <input
-      value={value}
+      value={value ?? ""}
       placeholder={placeholder}
       onChange={e => onChange?.(e.target.value)}
       className={cn(
-        "h-9 rounded-lg border border-white/[.08] bg-white/[.03] px-3 text-sm text-zinc-200 placeholder-zinc-600 transition focus:border-[#ff3d6a]/40 focus:bg-white/[.05] focus:outline-none",
+        "h-8 rounded-[8px] border border-white/[.08] bg-[#0e1420] px-3 text-[13px] text-zinc-200 placeholder-zinc-600",
+        "transition-colors focus:border-[#ff3d6a]/50 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20",
+        mono && "font-mono text-xs tracking-tight",
         className
       )}
     />
   );
 }
 
-function SaveBar({ onSave, saving }: { onSave: () => void; saving: boolean }) {
+function OutlineBtn({ children, onClick, disabled, red }: {
+  children: React.ReactNode; onClick?: () => void; disabled?: boolean; red?: boolean;
+}) {
   return (
-    <div className="pt-4">
-      <Button
-        onClick={onSave}
-        disabled={saving}
-        className="h-9 cursor-pointer rounded-lg bg-[#ff3d6a] px-5 text-sm font-semibold text-white hover:bg-[#e8304f] disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Save changes"}
-      </Button>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "h-8 cursor-pointer rounded-[8px] border px-3 text-[13px] font-medium transition-colors disabled:opacity-40",
+        red
+          ? "border-red-900/50 text-red-400 hover:border-red-700/60 hover:text-red-300"
+          : "border-white/[.08] text-zinc-400 hover:border-white/[.14] hover:text-zinc-200"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PrimaryBtn({ children, onClick, disabled }: {
+  children: React.ReactNode; onClick?: () => void; disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="h-8 cursor-pointer rounded-[8px] bg-[#ff3d6a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#e8304f] active:scale-[.98] disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-[10px] border border-white/[.055] bg-[#0e1420]">
+      {children}
     </div>
   );
 }
 
-// ── Workspace ────────────────────────────────────────────────────────────────
+function FieldSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <Card>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center justify-between px-5 py-4 border-b border-white/[.055] last:border-0">
+          <div className="space-y-1.5">
+            <Skeleton className="h-3.5 w-32 bg-white/[.04]" />
+            <Skeleton className="h-3 w-48 bg-white/[.025]" />
+          </div>
+          <Skeleton className="h-8 w-24 rounded-[8px] bg-white/[.04]" />
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+function SaveBar({ onSave, saving }: { onSave: () => void; saving: boolean }) {
+  return (
+    <div className="pt-3">
+      <PrimaryBtn onClick={onSave} disabled={saving}>
+        {saving ? "Saving…" : "Save changes"}
+      </PrimaryBtn>
+    </div>
+  );
+}
+
+/* ─── Workspace ──────────────────────────────────────────────────────────── */
 
 function WorkspaceSection() {
   const [data, setData] = useState<WorkspaceInfo | null>(null);
@@ -110,33 +194,41 @@ function WorkspaceSection() {
   if (!data) return <FieldSkeleton rows={3} />;
 
   return (
-    <div className="divide-y divide-white/[.05]">
-      <FieldRow label="Workspace name" hint="Appears in the top bar and on exported content.">
-        <TextInput value={data.display_name} onChange={v => setData(d => d && { ...d, display_name: v })} className="w-52" />
-      </FieldRow>
-      <FieldRow label="Workspace URL" hint="Used for sharing links and team invites.">
-        <div className="flex h-9 items-center gap-1 rounded-lg border border-white/[.08] bg-white/[.03] px-3">
-          <span className="text-xs text-zinc-600">viralo.co/</span>
-          <span className="text-sm text-zinc-200">{data.subdomain}</span>
-        </div>
-      </FieldRow>
-      <FieldRow label="Timezone" hint="Used for scheduling and analytics reporting.">
-        <select
-          value={data.timezone}
-          onChange={e => setData(d => d && { ...d, timezone: e.target.value })}
-          className="h-9 cursor-pointer appearance-none rounded-lg border border-white/[.08] bg-[#0d1520] px-3 pr-7 text-sm text-zinc-300 focus:border-[#ff3d6a]/40 focus:outline-none"
-        >
-          {["UTC", "America/New_York", "America/Los_Angeles", "Europe/London", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo"].map(tz => (
-            <option key={tz} value={tz}>{tz}</option>
-          ))}
-        </select>
-      </FieldRow>
+    <div className="space-y-3">
+      <Card>
+        <FieldRow label="Workspace name" hint="Shown in the top bar and on exported content.">
+          <TextInput value={data.display_name} onChange={v => setData(d => d && { ...d, display_name: v })} className="w-48" />
+        </FieldRow>
+        <FieldRow label="Workspace URL" hint="Used for sharing links and team invites.">
+          <div className="flex h-8 items-center rounded-[8px] border border-white/[.08] bg-[#0e1420] px-3 transition-colors focus-within:border-[#ff3d6a]/50">
+            <span className="text-[12px] text-zinc-600 select-none">viralo.co/</span>
+            <input
+              defaultValue={data.subdomain}
+              className="w-28 bg-transparent text-[13px] text-zinc-200 focus:outline-none"
+            />
+          </div>
+        </FieldRow>
+        <FieldRow label="Timezone" hint="Used for scheduling and analytics reports." border={false}>
+          <div className="relative">
+            <select
+              value={data.timezone}
+              onChange={e => setData(d => d && { ...d, timezone: e.target.value })}
+              className="h-8 cursor-pointer appearance-none rounded-[8px] border border-white/[.08] bg-[#0e1420] pl-3 pr-8 text-[13px] text-zinc-200 focus:border-[#ff3d6a]/50 focus:outline-none"
+            >
+              {["UTC","America/New_York","America/Los_Angeles","Europe/London","Asia/Kolkata","Asia/Singapore","Asia/Tokyo"].map(tz => (
+                <option key={tz} value={tz}>{tz.replace("_", " ")}</option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-[10px]">▾</span>
+          </div>
+        </FieldRow>
+      </Card>
       <SaveBar onSave={save} saving={saving} />
     </div>
   );
 }
 
-// ── Brand kit ────────────────────────────────────────────────────────────────
+/* ─── Brand kit ──────────────────────────────────────────────────────────── */
 
 function BrandSection() {
   const [data, setData] = useState<BrandKit | null>(null);
@@ -147,51 +239,58 @@ function BrandSection() {
   const save = async () => {
     if (!data) return;
     setSaving(true);
-    try { await settingsApi.updateBrandKit(data); }
-    finally { setSaving(false); }
+    try {
+      await settingsApi.updateBrandKit(data);
+      const root = document.documentElement;
+      if (data.primary_color) root.style.setProperty("--brand", data.primary_color);
+      if (data.font) root.style.setProperty("--brand-font", data.font);
+    } finally { setSaving(false); }
   };
 
-  if (!data) return <FieldSkeleton rows={3} />;
+  if (!data) return <FieldSkeleton rows={4} />;
 
   return (
-    <div className="divide-y divide-white/[.05]">
-      <FieldRow label="Primary color" hint="Used on exported clips, thumbnails, and overlays.">
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-md border border-white/[.08]" style={{ background: data.primary_color }} />
-          <TextInput value={data.primary_color} onChange={v => setData(d => d && { ...d, primary_color: v })} className="w-24 font-mono text-xs" />
-        </div>
-      </FieldRow>
-      <FieldRow label="Secondary color" hint="Used for backgrounds and secondary UI elements.">
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-md border border-white/[.08]" style={{ background: data.secondary_color }} />
-          <TextInput value={data.secondary_color} onChange={v => setData(d => d && { ...d, secondary_color: v })} className="w-24 font-mono text-xs" />
-        </div>
-      </FieldRow>
-      <FieldRow label="Default font" hint="Applied to text overlays in exported clips.">
-        <select
-          value={data.font}
-          onChange={e => setData(d => d && { ...d, font: e.target.value })}
-          className="h-9 cursor-pointer rounded-lg border border-white/[.08] bg-[#0d1520] px-3 text-sm text-zinc-300 focus:outline-none"
-        >
-          {["Inter", "Geist", "DM Sans", "Sora", "Poppins"].map(f => <option key={f}>{f}</option>)}
-        </select>
-      </FieldRow>
-      <FieldRow label="Watermark" hint="Overlay applied to exported video clips.">
-        <div className="flex items-center gap-3">
-          <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2.5 py-1 text-xs text-zinc-500">
-            {data.watermark_url ? "Uploaded" : "None"}
-          </span>
-          <button className="h-9 cursor-pointer rounded-lg border border-white/[.08] bg-white/[.03] px-3 text-xs font-medium text-zinc-400 transition hover:border-white/[.15] hover:text-zinc-200">
-            Upload
-          </button>
-        </div>
-      </FieldRow>
+    <div className="space-y-3">
+      <Card>
+        <FieldRow label="Primary color" hint="Used on exported clips, thumbnails, and overlays.">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-[6px] border border-white/[.08]" style={{ background: data.primary_color }} />
+            <TextInput mono value={data.primary_color} onChange={v => setData(d => d && { ...d, primary_color: v })} className="w-24" />
+          </div>
+        </FieldRow>
+        <FieldRow label="Secondary color" hint="Used for backgrounds and secondary elements.">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-[6px] border border-white/[.08]" style={{ background: data.secondary_color }} />
+            <TextInput mono value={data.secondary_color} onChange={v => setData(d => d && { ...d, secondary_color: v })} className="w-24" />
+          </div>
+        </FieldRow>
+        <FieldRow label="Default font" hint="Applied to text overlays in exported clips.">
+          <div className="relative">
+            <select
+              value={data.font}
+              onChange={e => setData(d => d && { ...d, font: e.target.value })}
+              className="h-8 cursor-pointer appearance-none rounded-[8px] border border-white/[.08] bg-[#0e1420] pl-3 pr-8 text-[13px] text-zinc-200 focus:border-[#ff3d6a]/50 focus:outline-none"
+            >
+              {["Inter","Geist","DM Sans","Sora","Poppins"].map(f => <option key={f}>{f}</option>)}
+            </select>
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-[10px]">▾</span>
+          </div>
+        </FieldRow>
+        <FieldRow label="Watermark" hint="Overlay applied to exported video clips." border={false}>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-white/[.06] bg-white/[.03] px-2.5 py-1 text-[11px] text-zinc-500">
+              {data.watermark_url ? "Uploaded" : "None"}
+            </span>
+            <OutlineBtn>Upload</OutlineBtn>
+          </div>
+        </FieldRow>
+      </Card>
       <SaveBar onSave={save} saving={saving} />
     </div>
   );
 }
 
-// ── Team ─────────────────────────────────────────────────────────────────────
+/* ─── Team ───────────────────────────────────────────────────────────────── */
 
 function TeamSection() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
@@ -202,42 +301,42 @@ function TeamSection() {
   const initials = workspace?.display_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() ?? "??";
 
   return (
-    <div className="space-y-5 py-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">1 member</p>
-        <button className="h-8 cursor-pointer rounded-lg bg-[#ff3d6a] px-4 text-xs font-semibold text-white transition hover:bg-[#e8304f]">
-          Invite member
-        </button>
-      </div>
-      <div className="space-y-2">
+    <div className="space-y-3">
+      <Card>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[.055]">
+          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500">Members</p>
+          <PrimaryBtn>Invite</PrimaryBtn>
+        </div>
         {workspace ? (
-          <div className="flex items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.02] px-4 py-3">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 text-xs font-bold text-[#ff3d6a]">{initials}</div>
+          <div className="flex items-center gap-3 px-5 py-3.5">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-[8px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 text-[11px] font-bold text-[#ff3d6a]">
+              {initials}
+            </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-zinc-200">{workspace.display_name}</p>
-              <p className="text-xs text-zinc-500">{workspace.subdomain}</p>
+              <p className="text-[13px] font-medium text-zinc-200">{workspace.display_name}</p>
+              <p className="text-[12px] text-zinc-500">{workspace.subdomain}</p>
             </div>
             <Badge variant="ready" className="text-[10px]">Owner</Badge>
           </div>
         ) : (
-          <Skeleton className="h-16 w-full rounded-xl bg-white/[.04]" />
+          <div className="px-5 py-3.5"><Skeleton className="h-11 rounded-[8px] bg-white/[.04]" /></div>
         )}
-      </div>
-      <Separator className="bg-white/[.05]" />
-      <div>
-        <p className="mb-2 text-sm font-medium text-zinc-200">Invite by email</p>
-        <div className="flex gap-2">
-          <TextInput placeholder="colleague@email.com" value={inviteEmail} onChange={setInviteEmail} className="flex-1" />
-          <button className="h-9 cursor-pointer rounded-lg border border-white/[.08] bg-white/[.03] px-4 text-xs font-medium text-zinc-400 transition hover:border-white/[.15] hover:text-zinc-200">
-            Send invite
-          </button>
+      </Card>
+
+      <Card>
+        <div className="px-5 py-4 space-y-3">
+          <p className="text-[13px] font-medium text-zinc-200">Invite by email</p>
+          <div className="flex gap-2">
+            <TextInput placeholder="colleague@email.com" value={inviteEmail} onChange={setInviteEmail} className="flex-1" />
+            <OutlineBtn>Send invite</OutlineBtn>
+          </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
-// ── Billing ──────────────────────────────────────────────────────────────────
+/* ─── Billing ────────────────────────────────────────────────────────────── */
 
 function BillingSection() {
   const [sub, setSub] = useState<SubscriptionInfo | null>(null);
@@ -246,61 +345,78 @@ function BillingSection() {
 
   const storageGB = sub ? Math.round((sub.storage_bytes_used ?? 0) / 1e9 * 10) / 10 : 0;
 
+  const usageRows = [
+    { label: "Videos processed", used: sub?.videos_used ?? 0,    total: 100, suffix: "" },
+    { label: "Storage",          used: storageGB,                  total: 50,  suffix: " GB" },
+    { label: "Brainstorm",       used: sub?.brainstorm_used ?? 0, total: 30,  suffix: "" },
+  ];
+
   return (
-    <div className="space-y-5 py-4">
-      {sub ? (
-        <div className="relative overflow-hidden rounded-xl border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 p-5">
-          <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-[#ff3d6a]/60 to-transparent" />
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#ff3d6a]">Current plan</p>
-              <p className="mt-1 text-xl font-black capitalize text-white">{sub.plan_name}</p>
-              {sub.current_period_end && (
-                <p className="mt-0.5 text-sm text-zinc-400">
-                  Renews {new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                </p>
-              )}
-            </div>
-            <button className="h-9 cursor-pointer rounded-lg border border-white/[.08] bg-white/[.03] px-4 text-xs font-medium text-zinc-400 transition hover:border-white/[.15] hover:text-zinc-200">
-              Manage plan
-            </button>
+    <div className="space-y-3">
+      <Card>
+        <div className="flex items-start justify-between gap-4 px-5 py-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-1">Current plan</p>
+            {sub ? (
+              <>
+                <p className="text-xl font-bold capitalize text-white tracking-tight">{sub.plan_name}</p>
+                {sub.current_period_end && (
+                  <p className="mt-0.5 text-[12px] text-zinc-500">
+                    Renews {new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                  </p>
+                )}
+              </>
+            ) : (
+              <Skeleton className="mt-1 h-6 w-16 bg-white/[.06]" />
+            )}
+          </div>
+          <OutlineBtn>Manage plan</OutlineBtn>
+        </div>
+
+        <div className="border-t border-white/[.055] px-5 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-4">Usage this period</p>
+          <div className="space-y-3.5">
+            {usageRows.map(({ label, used, total, suffix }) => (
+              <div key={label}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[13px] text-zinc-300">{label}</p>
+                  <p className="tabular-nums text-[12px] text-zinc-500">{used}{suffix}<span className="text-zinc-700"> / {total}{suffix}</span></p>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-white/[.05]">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min((used / total) * 100, 100)}%`,
+                      background: used / total > 0.85 ? "#f97316" : "#ff3d6a",
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      ) : (
-        <Skeleton className="h-28 w-full rounded-xl bg-white/[.04]" />
-      )}
 
-      <div className="divide-y divide-white/[.05]">
-        {[
-          { label: "Videos processed", used: sub?.videos_used ?? 0,  total: 100,  suffix: "" },
-          { label: "Storage used",      used: storageGB,               total: 50,   suffix: " GB" },
-          { label: "Brainstorm sessions",used: sub?.brainstorm_used ?? 0, total: 30, suffix: "" },
-        ].map(({ label, used, total, suffix }) => (
-          <div key={label} className="py-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm text-zinc-300">{label}</p>
-              <p className="tabular-nums text-xs text-zinc-500">{used}{suffix} / {total}{suffix}</p>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[.05]">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#ff3d6a] to-rose-400 transition-all"
-                style={{ width: `${Math.min((used / total) * 100, 100)}%` }}
-              />
-            </div>
+        <div className="border-t border-white/[.055] px-5 py-4">
+          <p className="text-[12px] text-zinc-500 mb-2.5">Payment method</p>
+          <div className="flex items-center gap-3 rounded-[8px] border border-white/[.055] bg-white/[.02] px-3 py-2.5">
+            <div className="grid h-6 w-9 place-items-center rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 shrink-0">VISA</div>
+            <p className="flex-1 text-[13px] text-zinc-300">•••• •••• •••• 4242</p>
+            <p className="text-[12px] text-zinc-600">12/27</p>
+            <button className="cursor-pointer text-[12px] text-zinc-500 transition hover:text-zinc-300">Update</button>
           </div>
-        ))}
-      </div>
+        </div>
+      </Card>
     </div>
   );
 }
 
-// ── Notifications ─────────────────────────────────────────────────────────────
+/* ─── Notifications ──────────────────────────────────────────────────────── */
 
 const NOTIF_ROWS: { key: keyof NotificationPrefs; label: string; hint: string }[] = [
   { key: "uploads_complete", label: "Upload complete",  hint: "When a video finishes processing." },
-  { key: "clip_ready",       label: "Clip ready",       hint: "When a clip is ready for review or publishing." },
+  { key: "clip_ready",       label: "Clip ready",       hint: "When a clip is ready to review or publish." },
   { key: "team_activity",    label: "Team activity",    hint: "When teammates make changes to shared projects." },
-  { key: "weekly_digest",    label: "Weekly digest",    hint: "Summary of performance and top clips every Monday." },
+  { key: "weekly_digest",    label: "Weekly digest",    hint: "Performance summary every Monday." },
   { key: "billing_alerts",   label: "Billing alerts",   hint: "Invoices, renewals, and payment failures." },
   { key: "product_updates",  label: "Product updates",  hint: "New features and release notes." },
 ];
@@ -320,17 +436,17 @@ function NotificationsSection() {
   if (!prefs) return <FieldSkeleton rows={6} />;
 
   return (
-    <div className="divide-y divide-white/[.05]">
+    <Card>
       {NOTIF_ROWS.map(({ key, label, hint }) => (
         <FieldRow key={key} label={label} hint={hint}>
           <Toggle checked={prefs[key]} onChange={() => toggle(key)} />
         </FieldRow>
       ))}
-    </div>
+    </Card>
   );
 }
 
-// ── API Keys ──────────────────────────────────────────────────────────────────
+/* ─── API keys ───────────────────────────────────────────────────────────── */
 
 function ApiKeysSection() {
   const [keys, setKeys] = useState<ApiKeyInfo[] | null>(null);
@@ -350,9 +466,7 @@ function ApiKeysSection() {
       setRevealedKey(created.key);
       setNewKeyName("");
       load();
-    } finally {
-      setCreating(false);
-    }
+    } finally { setCreating(false); }
   };
 
   const revoke = async (id: string) => {
@@ -360,21 +474,22 @@ function ApiKeysSection() {
     try {
       await settingsApi.revokeApiKey(id);
       setKeys(prev => prev?.filter(k => k.id !== id) ?? null);
-    } finally {
-      setRevoking(null);
-    }
+      setRevealedKey(null);
+    } finally { setRevoking(null); }
   };
 
   return (
-    <div className="space-y-5 py-4">
+    <div className="space-y-3">
       {revealedKey && (
-        <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-4">
-          <p className="mb-2 text-xs font-semibold text-emerald-400">Key generated — copy it now, it won't be shown again.</p>
+        <div className="rounded-[10px] border border-emerald-800/40 bg-emerald-950/20 p-4">
+          <p className="mb-2.5 text-[12px] font-semibold text-emerald-400">Copy this key — it won't be shown again.</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto rounded bg-black/30 px-3 py-2 font-mono text-xs text-emerald-300">{revealedKey}</code>
+            <code className="flex-1 overflow-x-auto rounded-[8px] bg-black/30 px-3 py-2 font-mono text-[12px] text-emerald-300">
+              {revealedKey}
+            </code>
             <button
               onClick={() => { navigator.clipboard.writeText(revealedKey); setRevealedKey(null); }}
-              className="h-8 cursor-pointer rounded-lg border border-emerald-800/40 bg-emerald-950/30 px-3 text-xs font-medium text-emerald-400 transition hover:bg-emerald-950/50"
+              className="shrink-0 h-8 cursor-pointer rounded-[8px] border border-emerald-800/40 bg-emerald-950/30 px-3 text-[12px] font-medium text-emerald-400 transition hover:bg-emerald-950/50"
             >
               Copy & close
             </button>
@@ -382,115 +497,81 @@ function ApiKeysSection() {
         </div>
       )}
 
-      <div className="flex items-end gap-2">
-        <div className="flex-1">
-          <p className="mb-1.5 text-xs font-medium text-zinc-400">Key name</p>
-          <TextInput
-            placeholder="e.g. Production"
-            value={newKeyName}
-            onChange={setNewKeyName}
-            className="w-full"
-          />
+      <Card>
+        <div className="flex items-end gap-2 px-5 py-4 border-b border-white/[.055]">
+          <div className="flex-1">
+            <p className="mb-1.5 text-[12px] text-zinc-500">Key name</p>
+            <TextInput placeholder="e.g. Production" value={newKeyName} onChange={setNewKeyName} className="w-full" />
+          </div>
+          <PrimaryBtn onClick={create} disabled={creating || !newKeyName.trim()}>
+            {creating ? "Generating…" : "Generate key"}
+          </PrimaryBtn>
         </div>
-        <button
-          onClick={create}
-          disabled={creating || !newKeyName.trim()}
-          className="h-9 cursor-pointer rounded-lg bg-[#ff3d6a] px-4 text-xs font-semibold text-white transition hover:bg-[#e8304f] disabled:opacity-50"
-        >
-          {creating ? "Generating…" : "Generate key"}
-        </button>
-      </div>
 
-      {keys === null ? (
-        <FieldSkeleton rows={2} />
-      ) : keys.length === 0 ? (
-        <p className="py-4 text-center text-sm text-zinc-600">No API keys yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {keys.map(k => (
-            <div key={k.id} className="rounded-xl border border-white/[.06] bg-white/[.02] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-200">{k.name}</p>
-                  <p className="mt-1 font-mono text-xs text-zinc-500">{k.key_prefix}</p>
-                </div>
+        {keys === null ? (
+          <div className="px-5 py-4"><Skeleton className="h-12 rounded-[8px] bg-white/[.04]" /></div>
+        ) : keys.length === 0 ? (
+          <p className="px-5 py-6 text-center text-[13px] text-zinc-600">No API keys yet.</p>
+        ) : (
+          keys.map(k => (
+            <div key={k.id} className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[.055] last:border-0">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-zinc-200">{k.name}</p>
+                <p className="mt-0.5 font-mono text-[11px] text-zinc-500">{k.key_prefix}</p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <p className="text-[12px] text-zinc-600">{new Date(k.created_at).toLocaleDateString()}</p>
                 <button
                   onClick={() => revoke(k.id)}
                   disabled={revoking === k.id}
-                  className="cursor-pointer text-xs text-red-500/70 transition hover:text-red-400 disabled:opacity-50"
+                  className="cursor-pointer text-[12px] text-red-500/60 transition hover:text-red-400 disabled:opacity-40"
                 >
                   {revoking === k.id ? "Revoking…" : "Revoke"}
                 </button>
               </div>
-              <div className="mt-3 flex items-center gap-4">
-                <span className="text-xs text-zinc-600">Created {new Date(k.created_at).toLocaleDateString()}</span>
-                {k.last_used_at && <span className="text-xs text-zinc-600">Last used {new Date(k.last_used_at).toLocaleDateString()}</span>}
-              </div>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </Card>
 
-      <div className="rounded-xl border border-amber-900/30 bg-amber-950/20 p-4">
-        <p className="text-xs font-medium text-amber-400/80">API keys grant full access to your workspace. Never share them in client-side code or public repos.</p>
-      </div>
+      <p className="text-[12px] text-zinc-600">Never share API keys in client-side code or public repos — they grant full workspace access.</p>
     </div>
   );
 }
 
-// ── Security ──────────────────────────────────────────────────────────────────
+/* ─── Security ───────────────────────────────────────────────────────────── */
 
 function SecuritySection() {
   const [twoFactor, setTwoFactor] = useState(false);
   return (
-    <div className="divide-y divide-white/[.05]">
-      <FieldRow label="Change password" hint="Update your account password.">
-        <button className="h-9 cursor-pointer rounded-lg border border-white/[.08] bg-white/[.03] px-4 text-xs font-medium text-zinc-400 transition hover:border-white/[.15] hover:text-zinc-200">
-          Update password
-        </button>
-      </FieldRow>
-      <FieldRow label="Two-factor authentication" hint="Require a second factor when signing in.">
-        <Toggle checked={twoFactor} onChange={setTwoFactor} />
-      </FieldRow>
-      <FieldRow label="Active sessions" hint="Devices currently signed into your workspace.">
-        <button className="h-9 cursor-pointer rounded-lg border border-white/[.08] bg-white/[.03] px-4 text-xs font-medium text-zinc-400 transition hover:border-white/[.15] hover:text-zinc-200">
-          View sessions
-        </button>
-      </FieldRow>
-      <FieldRow label="Sign out everywhere" hint="Revoke all active sessions except this one.">
-        <button className="h-9 cursor-pointer rounded-lg border border-red-900/30 bg-red-950/20 px-4 text-xs font-medium text-red-400/80 transition hover:border-red-800/50 hover:text-red-400">
-          Sign out all
-        </button>
-      </FieldRow>
-      <div className="py-4">
-        <p className="mb-3 text-sm font-medium text-zinc-200">Danger zone</p>
-        <button className="h-9 cursor-pointer rounded-lg border border-red-900/30 bg-red-950/10 px-4 text-xs font-medium text-red-500/70 transition hover:border-red-800/50 hover:bg-red-950/20 hover:text-red-400">
-          Delete workspace
-        </button>
-      </div>
-    </div>
-  );
-}
+    <div className="space-y-3">
+      <Card>
+        <FieldRow label="Password" hint="Last changed 30 days ago.">
+          <OutlineBtn>Update password</OutlineBtn>
+        </FieldRow>
+        <FieldRow label="Two-factor authentication" hint="Require a second factor when signing in.">
+          <Toggle checked={twoFactor} onChange={setTwoFactor} />
+        </FieldRow>
+        <FieldRow label="Active sessions" hint="Devices currently signed into your workspace.">
+          <OutlineBtn>View sessions</OutlineBtn>
+        </FieldRow>
+        <FieldRow label="Sign out everywhere" hint="Revoke all sessions except this one." border={false}>
+          <OutlineBtn red>Sign out all</OutlineBtn>
+        </FieldRow>
+      </Card>
 
-// ── Loading skeleton ──────────────────────────────────────────────────────────
-
-function FieldSkeleton({ rows }: { rows: number }) {
-  return (
-    <div className="divide-y divide-white/[.05]">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex items-center justify-between py-4">
-          <div className="space-y-1.5">
-            <Skeleton className="h-4 w-36 bg-white/[.04]" />
-            <Skeleton className="h-3 w-56 bg-white/[.025]" />
-          </div>
-          <Skeleton className="h-9 w-28 rounded-lg bg-white/[.04]" />
+      <Card>
+        <div className="px-5 py-5">
+          <p className="text-[13px] font-medium text-zinc-200 mb-1">Danger zone</p>
+          <p className="text-[12px] text-zinc-500 mb-4">Permanently delete this workspace and all its content. This cannot be undone.</p>
+          <OutlineBtn red>Delete workspace</OutlineBtn>
         </div>
-      ))}
+      </Card>
     </div>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+/* ─── Section content map ────────────────────────────────────────────────── */
 
 const CONTENT: Record<SectionId, React.ReactNode> = {
   workspace:     <WorkspaceSection />,
@@ -502,57 +583,66 @@ const CONTENT: Record<SectionId, React.ReactNode> = {
   security:      <SecuritySection />,
 };
 
+/* ─── Page ───────────────────────────────────────────────────────────────── */
+
 export function SettingsPage() {
   const [active, setActive] = useState<SectionId>("workspace");
   const section = SECTIONS.find(s => s.id === active)!;
 
   return (
-    <div className="flex min-h-[calc(100vh-116px)] overflow-hidden rounded-2xl border border-white/[.07] bg-[#0b111c]">
+    <div className="flex min-h-[calc(100vh-116px)] overflow-hidden rounded-[12px] border border-white/[.055]">
+
       {/* Sidebar */}
-      <nav className="hidden w-52 shrink-0 flex-col border-r border-white/[.05] bg-[#090e16]/60 p-3 sm:flex">
-        <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Settings</p>
+      <nav className="hidden w-[200px] shrink-0 flex-col border-r border-white/[.055] bg-[#0e1420] p-2 sm:flex">
+        <p className="px-2.5 pt-3 pb-2 text-[9.5px] font-bold uppercase tracking-[.14em] text-zinc-600">Settings</p>
         {SECTIONS.map(s => (
           <button
             key={s.id}
             onClick={() => setActive(s.id)}
             className={cn(
-              "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition",
+              "relative mb-0.5 flex w-full cursor-pointer items-center gap-2.5 overflow-hidden rounded-[8px] px-2.5 py-2 text-left text-[13px] font-medium transition-colors",
               active === s.id
-                ? "bg-white/[.06] font-semibold text-zinc-100"
-                : "text-zinc-500 hover:bg-white/[.03] hover:text-zinc-300"
+                ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
+                : "text-zinc-400 hover:bg-[#141926] hover:text-zinc-200"
             )}
           >
-            <span className="text-base leading-none">{s.icon}</span>
+            <span className={cn("shrink-0 transition-opacity", active === s.id ? "opacity-100" : "opacity-60")}>
+              {s.icon}
+            </span>
             {s.label}
           </button>
         ))}
       </nav>
 
-      {/* Mobile tab strip */}
-      <div className="absolute left-0 right-0 top-0 border-b border-white/[.05] sm:hidden">
-        <div className="flex overflow-x-auto gap-1 p-2">
-          {SECTIONS.map(s => (
-            <button
-              key={s.id}
-              onClick={() => setActive(s.id)}
-              className={cn(
-                "shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                active === s.id ? "bg-white/[.08] text-zinc-100" : "text-zinc-500"
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+      {/* Mobile strip */}
+      <div className="sm:hidden border-b border-white/[.055] bg-[#0e1420] flex overflow-x-auto gap-0.5 p-1.5">
+        {SECTIONS.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setActive(s.id)}
+            className={cn(
+              "shrink-0 cursor-pointer rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-colors",
+              active === s.id ? "bg-white/[.06] text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="border-b border-white/[.05] bg-[#090e16]/40 px-6 py-5">
-          <h1 className="text-xl font-black text-white">{section.label}</h1>
-          <p className="mt-0.5 text-sm text-zinc-500">{section.desc}</p>
+      <div className="flex-1 overflow-y-auto bg-[#080d14]">
+        {/* Section header */}
+        <div className="border-b border-white/[.055] px-7 py-5">
+          <div className="flex items-center gap-2.5 mb-0.5">
+            <span className="text-[#ff3d6a]">{section.icon}</span>
+            <h1 className="text-[15px] font-semibold text-white">{section.label}</h1>
+          </div>
+          <p className="text-[13px] text-zinc-500">{section.desc}</p>
         </div>
-        <div className="px-6 py-2">
+
+        {/* Section body */}
+        <div className="px-7 py-6">
           {CONTENT[active]}
         </div>
       </div>

@@ -75,4 +75,5 @@ media/
 # ── Agents / AI tooling ───────────────────────────────────────────────────────
 .agents/
 .claude/
+.superpowers/
 skills-lock.json

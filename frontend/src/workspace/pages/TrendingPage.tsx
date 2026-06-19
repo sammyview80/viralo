@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 import { trendsApi, type VideoMeta, type TrendSearchResponse } from "@/lib/api";
 import { navigate } from "@/lib/router";
@@ -100,20 +100,6 @@ function PlatformBadge({ platform }: { platform: string }) {
 // ── Video card ────────────────────────────────────────────────────────────────
 
 function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: number; searchQuery?: string }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [menuOpen]);
-
   function handleClipIt(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -124,7 +110,6 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
   function handleSubscribe(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setMenuOpen(false);
     const channelUrl = video.channel_url ?? video.url;
     const params = new URLSearchParams();
     params.set("channel_url", channelUrl);
@@ -133,12 +118,12 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
   }
 
   return (
-    <div className="relative">
+    <div className="group/card relative">
       <a
         href={video.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="group flex gap-3 rounded-xl border border-white/[.06] bg-white/[.03] p-3
+        className="flex gap-3 rounded-xl border border-white/[.06] bg-white/[.03] p-3
                    transition hover:border-white/[.12] hover:bg-white/[.06]"
       >
         {/* Thumbnail */}
@@ -164,9 +149,9 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
         </div>
 
         {/* Info */}
-        <div className="min-w-0 flex-1 pr-6">
+        <div className="min-w-0 flex-1 pr-24 sm:pr-40">
           <p className="line-clamp-2 text-sm font-medium leading-snug text-white/90
-                        group-hover:text-white">
+                        group-hover/card:text-white">
             {video.title}
           </p>
           {video.channel && (
@@ -189,47 +174,33 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
         </div>
       </a>
 
-      {/* 3-dot menu */}
-      <div ref={menuRef} className="absolute right-3 top-3">
+      {/* Clean inline actions */}
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
         <button
-          onClick={(e) => { e.preventDefault(); setMenuOpen((o) => !o); }}
-          className="flex size-7 items-center justify-center rounded-lg text-white/40
-                     hover:bg-white/[.08] hover:text-white/80 transition"
-          aria-label="More options"
+          onClick={handleClipIt}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#ff3d6a]/25
+                     bg-[#ff3d6a]/10 px-3 text-xs font-semibold text-[#ff6f91]
+                     shadow-[0_8px_24px_rgba(255,61,106,.08)] transition
+                     hover:border-[#ff3d6a]/45 hover:bg-[#ff3d6a]/18 hover:text-white"
         >
-          <svg viewBox="0 0 16 16" className="size-4 fill-current">
-            <circle cx="8" cy="3" r="1.4" />
-            <circle cx="8" cy="8" r="1.4" />
-            <circle cx="8" cy="13" r="1.4" />
+          <svg viewBox="0 0 16 16" className="size-3.5 fill-current" aria-hidden>
+            <path d="M13.4 2.6a2 2 0 0 0-2.8 0L4 9.2 2 14l4.8-2 6.6-6.6a2 2 0 0 0 0-2.8zM5.9 11.1l-2 .8.8-2 5.3-5.3 1.2 1.2-5.3 5.3z" />
           </svg>
+          Clip
         </button>
-
-        {menuOpen && (
-          <div className="absolute right-0 top-8 z-50 min-w-[130px] rounded-xl border border-white/[.08]
-                          bg-[#1a1a2e] py-1 shadow-xl">
-            <button
-              onClick={handleClipIt}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-white/80
-                         hover:bg-white/[.06] hover:text-white transition"
-            >
-              <svg viewBox="0 0 16 16" className="size-3.5 fill-current text-[#ff3d6a]">
-                <path d="M13.4 2.6a2 2 0 0 0-2.8 0L4 9.2 2 14l4.8-2 6.6-6.6a2 2 0 0 0 0-2.8zM5.9 11.1l-2 .8.8-2 5.3-5.3 1.2 1.2-5.3 5.3z"/>
-              </svg>
-              Clip it
-            </button>
-            {video.platform === "youtube" && (
-              <button
-                onClick={handleSubscribe}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-white/80
-                           hover:bg-white/[.06] hover:text-white transition"
-              >
-                <svg viewBox="0 0 16 16" className="size-3.5 fill-current text-red-400">
-                  <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm1 10H7V8H5l3-4 3 4H9v3z"/>
-                </svg>
-                Subscribe to channel
-              </button>
-            )}
-          </div>
+        {video.platform === "youtube" && (
+          <button
+            onClick={handleSubscribe}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/[.08]
+                       bg-white/[.04] px-2.5 text-xs font-medium text-white/55 transition
+                       hover:border-red-400/25 hover:bg-red-500/10 hover:text-red-300"
+            title="Subscribe to channel"
+          >
+            <svg viewBox="0 0 16 16" className="size-3.5 fill-current" aria-hidden>
+              <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm1 10H7V8H5l3-4 3 4H9v3z" />
+            </svg>
+            <span className="hidden sm:inline">Channel</span>
+          </button>
         )}
       </div>
     </div>
@@ -317,10 +288,10 @@ function AiAnalysis({ analysis, onSearch }: {
   onSearch: (t: string) => void;
 }) {
   return (
-    <div className="rounded-2xl border border-[#ff3d6a]/20 bg-gradient-to-br from-[#ff3d6a]/10 to-transparent p-5">
+    <div className="rounded-xl border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.055] p-4">
       <div className="flex items-center gap-2 text-[#ff3d6a]">
         <SparklesIcon />
-        <span className="text-xs font-bold uppercase tracking-widest">AI Trend Analysis</span>
+        <span className="text-[11px] font-bold uppercase tracking-widest">AI Trend Analysis</span>
       </div>
       <p className="mt-3 text-[13px] leading-relaxed text-white/80">
         {analysis.insights}
@@ -346,6 +317,68 @@ function AiAnalysis({ analysis, onSearch }: {
         </div>
       )}
     </div>
+  );
+}
+
+function TrendInsightRail({ result, onSearch }: {
+  result: TrendSearchResponse;
+  onSearch: (t: string) => void;
+}) {
+  const platformStats = [
+    { label: "YouTube", count: result.summary.youtube_count, color: "text-red-400" },
+    { label: "TikTok", count: result.summary.tiktok_count, color: "text-pink-400" },
+    { label: "Web", count: result.summary.web_count, color: "text-blue-400" },
+  ];
+
+  return (
+    <aside className="space-y-4 lg:sticky lg:top-6">
+      {result.analysis ? (
+        <AiAnalysis analysis={result.analysis} onSearch={onSearch} />
+      ) : (
+        <div className="rounded-xl border border-white/[.06] bg-white/[.03] p-4">
+          <div className="flex items-center gap-2 text-white/70">
+            <SparklesIcon />
+            <span className="text-[11px] font-bold uppercase tracking-widest">AI Trend Analysis</span>
+          </div>
+          <p className="mt-3 text-[13px] leading-6 text-white/45">
+            Analysis is not available for this search yet. Refresh the trend scan to request a new read.
+          </p>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-white/[.06] bg-white/[.03] p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-white/35">
+            Platform mix
+          </p>
+          {result.from_cache && (
+            <span className="rounded-full border border-white/[.06] px-2 py-0.5 text-[10px] text-white/35">
+              cached
+            </span>
+          )}
+        </div>
+        <div className="space-y-2">
+          {platformStats.map(({ label, count, color }) => (
+            <div key={label} className="flex items-center justify-between rounded-lg bg-white/[.035] px-3 py-2">
+              <span className="text-xs text-white/55">{label}</span>
+              <span className={`text-sm font-bold ${color}`}>{count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {result.common_hashtags.length > 0 && (
+        <div className="rounded-xl border border-white/[.06] bg-white/[.03] p-4">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-white/35">
+            Trending hashtags
+          </p>
+          <HashtagCloud
+            tags={result.common_hashtags.slice(0, 12)}
+            onSearch={onSearch}
+          />
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -409,7 +442,7 @@ export function TrendingPage() {
 
   return (
     <>
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
+    <div className="mx-auto max-w-[1400px] space-y-6 px-4 py-6">
 
         {/* Header */}
         <div>
@@ -537,80 +570,51 @@ export function TrendingPage() {
 
         {/* Results */}
         {result && !loading && (
-          <div className="space-y-5">
-            {/* AI analysis */}
-            {result.analysis && (
-              <AiAnalysis analysis={result.analysis} onSearch={(t) => doSearch(t)} />
-            )}
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="min-w-0 space-y-5">
+              {/* Meta bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <PlatformTabs
+                    active={activeTab}
+                    onChange={setActiveTab}
+                    counts={{
+                      youtube: result.summary.youtube_count,
+                      tiktok: result.summary.tiktok_count,
+                      web: result.summary.web_count,
+                      total: result.summary.total,
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-xs text-white/40">
+                  <span>{result.summary.total} videos found</span>
+                </div>
+              </div>
 
-            {/* Meta bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <PlatformTabs
-                  active={activeTab}
-                  onChange={setActiveTab}
-                  counts={{
-                    youtube: result.summary.youtube_count,
-                    tiktok: result.summary.tiktok_count,
-                    web: result.summary.web_count,
-                    total: result.summary.total,
-                  }}
-                />
-              </div>
-              <div className="flex items-center gap-2 text-xs text-white/40">
-                {result.from_cache && (
-                  <span className="rounded-full border border-white/[.06] px-2 py-0.5">
-                    cached
-                  </span>
-                )}
-                <span>{result.summary.total} videos found</span>
-              </div>
+              {/* Video list */}
+              {visibleVideos.length > 0 ? (
+                <div className="space-y-2">
+                  {visibleVideos.map((v, i) => (
+                    <VideoCard
+                      key={`${v.platform}-${v.video_id}-${i}`}
+                      video={v}
+                      rank={activeTab === "all" ? i + 1 : undefined}
+                      searchQuery={query}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="py-8 text-center text-sm text-white/40">
+                  No {activeTab === "all" ? "" : activeTab + " "}results found.
+                </p>
+              )}
             </div>
 
-            {/* Video list */}
-            {visibleVideos.length > 0 ? (
-              <div className="space-y-2">
-                {visibleVideos.map((v, i) => (
-                  <VideoCard
-                    key={`${v.platform}-${v.video_id}-${i}`}
-                    video={v}
-                    rank={activeTab === "all" ? i + 1 : undefined}
-                    searchQuery={query}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="py-8 text-center text-sm text-white/40">
-                No {activeTab === "all" ? "" : activeTab + " "}results found.
-              </p>
-            )}
-
-            {/* Hashtag cloud */}
-            {result.common_hashtags.length > 0 && (
-              <div className="rounded-xl border border-white/[.06] bg-white/[.03] p-4 space-y-3">
-                <p className="text-xs font-medium uppercase tracking-wider text-white/30">
-                  Trending hashtags
-                </p>
-                <HashtagCloud
-                  tags={result.common_hashtags}
-                  onSearch={(t) => doSearch(t)}
-                />
-              </div>
-            )}
-
-            {/* Platform breakdown */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "YouTube", count: result.summary.youtube_count, color: "text-red-400" },
-                { label: "TikTok", count: result.summary.tiktok_count, color: "text-pink-400" },
-                { label: "Web", count: result.summary.web_count, color: "text-blue-400" },
-              ].map(({ label, count, color }) => (
-                <div key={label}
-                  className="rounded-xl border border-white/[.06] bg-white/[.03] p-4 text-center">
-                  <p className={`text-2xl font-bold ${color}`}>{count}</p>
-                  <p className="mt-0.5 text-xs text-white/40">{label}</p>
-                </div>
-              ))}
+            <div className="min-w-0">
+              <TrendInsightRail
+                result={result}
+                onSearch={(t) => doSearch(t)}
+              />
             </div>
           </div>
         )}
