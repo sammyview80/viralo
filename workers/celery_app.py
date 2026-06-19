@@ -36,8 +36,8 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    task_soft_time_limit=1200,   # 20 min: SoftTimeLimitExceeded raised — task can clean up
-    task_time_limit=1260,        # 21 min: hard SIGKILL if soft ignored
+    task_soft_time_limit=3540,   # 59 min: SoftTimeLimitExceeded raised — task can clean up
+    task_time_limit=3600,        # 60 min: hard SIGKILL if soft ignored
     worker_prefetch_multiplier=1,  # each worker takes 1 task at a time — prevents one worker hoarding queue
     task_acks_late=True,           # ack only after task completes — safe redelivery on worker crash
     task_routes={
