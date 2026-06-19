@@ -1,3 +1,5 @@
+"use client";
+
 import type { BrainstormSession } from "@/lib/api";
 
 function formatRelative(iso: string) {
