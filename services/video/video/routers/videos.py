@@ -109,6 +109,9 @@ def _ytdlp_fetch_json(url: str, timeout: int = 30) -> dict:
 router = APIRouter(tags=["video"])
 
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+_TIKTOK_HOSTS = {"tiktok.com", "www.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"}
+_INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com"}
+_SUPPORTED_HOSTS = _YOUTUBE_HOSTS | _TIKTOK_HOSTS | _INSTAGRAM_HOSTS
 
 
 def _validate_youtube_url(url: str) -> str:
@@ -121,6 +124,16 @@ def _validate_youtube_url(url: str) -> str:
             raise ValueError("YouTube URL is missing a video id")
     elif parsed.path != "/watch" or "v=" not in parsed.query:
         raise ValueError("YouTube URL must be a watch URL")
+    return url.strip()
+
+
+def _validate_video_url(url: str) -> str:
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in _SUPPORTED_HOSTS:
+        raise ValueError("Only HTTPS YouTube, TikTok, or Instagram URLs are supported")
+    if not parsed.path.strip("/"):
+        raise ValueError("URL is missing a video path")
     return url.strip()
 
 
@@ -1157,7 +1170,7 @@ async def create_ranking(
             if not seg.url:
                 raise HTTPException(status_code=400, detail=f"segment {i}: url required")
             try:
-                seg.url = _validate_youtube_url(seg.url)
+                seg.url = _validate_video_url(seg.url)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"segment {i}: {e}")
         if seg.end_sec <= seg.start_sec:

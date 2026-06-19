@@ -5143,7 +5143,7 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
             if seg.get("source_type") == "upload" and seg.get("video_id"):
                 _download_stored_video(seg["video_id"], tenant_id, src_path)
             elif seg.get("url"):
-                _download_youtube(seg["url"], src_path)
+                _download_youtube(seg["url"], src_path)  # handles YouTube, TikTok, Instagram via yt-dlp
             else:
                 raise ValueError(f"Segment {i} has no url or video_id")
             source_paths.append(src_path)
