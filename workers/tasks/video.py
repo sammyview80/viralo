@@ -3492,11 +3492,11 @@ def _get_youtube_duration(url: str) -> float | None:
 
 _proxy_cache: list[str] = []
 _proxy_cache_ts: float = 0.0
-_PROXY_CACHE_TTL = 1800  # 30 min
+_PROXY_CACHE_TTL = 300  # 5 min
 
 
 def _fetch_fresh_proxies() -> list[str]:
-    import time, subprocess as _sp
+    import subprocess as _sp
     try:
         r = _sp.run(
             ["curl", "-s", "--max-time", "10",
@@ -3507,33 +3507,27 @@ def _fetch_fresh_proxies() -> list[str]:
         )
         proxies = [l.strip() for l in r.stdout.splitlines() if l.strip()]
         logging.info("Fetched %d fresh proxies from ProxyScrape", len(proxies))
-        return proxies[:20]  # top 20
+        return proxies[:20]
     except Exception as e:
         logging.warning("Failed to fetch fresh proxies: %s", e)
         return []
 
 
 def _ytdlp_proxies() -> list[str]:
-    """Return list of proxies from YTDLP_PROXY_LIST (comma-sep) or YTDLP_PROXY. Empty = no proxy."""
-    proxy_list = os.getenv("YTDLP_PROXY_LIST", "")
-    if proxy_list:
-        return [p.strip() for p in proxy_list.split(",") if p.strip()]
-    single = os.getenv("YTDLP_PROXY", "")
-    return [single] if single else []
+    """Always fetch fresh proxies; TTL 5 min. Env vars ignored — free proxies rotate too fast."""
+    import time
+    global _proxy_cache, _proxy_cache_ts
+    now = time.time()
+    if not _proxy_cache or (now - _proxy_cache_ts) > _PROXY_CACHE_TTL:
+        fresh = _fetch_fresh_proxies()
+        if fresh:
+            _proxy_cache = fresh
+            _proxy_cache_ts = now
+    return _proxy_cache
 
 
 def _ytdlp_proxies_with_refresh() -> list[str]:
-    """Return proxies; auto-fetch fresh ones from ProxyScrape if list empty or stale."""
-    import time
-    global _proxy_cache, _proxy_cache_ts
-    static = _ytdlp_proxies()
-    if static:
-        return static
-    now = time.time()
-    if not _proxy_cache or (now - _proxy_cache_ts) > _PROXY_CACHE_TTL:
-        _proxy_cache = _fetch_fresh_proxies()
-        _proxy_cache_ts = now
-    return _proxy_cache
+    return _ytdlp_proxies()
 
 
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> list[str]:
@@ -3717,9 +3711,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         except Exception as e:
             errors.append(f"RapidAPI TikTok: {e}")
 
-    # Bust proxy cache so next retry gets fresh proxies
-    global _proxy_cache, _proxy_cache_ts
-    _proxy_cache = []
+    # Bust proxy cache — force fresh fetch on next retry
+    _proxy_cache.clear()
     _proxy_cache_ts = 0.0
     raise RuntimeError("YouTube download failed after all strategies.\n" + "\n".join(errors))
 
