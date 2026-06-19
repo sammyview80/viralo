@@ -3464,9 +3464,14 @@ def _get_youtube_info(url: str) -> dict:
     """Return {duration, is_live, live_status} via yt-dlp --dump-json (no download).
     Returns empty dict on failure so callers can decide whether to block or proceed."""
     try:
+        # Strip playlist params — yt-dlp hangs enumerating playlists
+        from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+        parsed = urlparse(url)
+        qs = {k: v for k, v in parse_qs(parsed.query).items() if k not in ("list", "index", "start_radio")}
+        url = urlunparse(parsed._replace(query=urlencode({k: v[0] for k, v in qs.items()})))
         base = _ytdlp_base_flags(None)
         result = subprocess.run(
-            ["yt-dlp"] + base + ["--dump-json", "--no-download", url],
+            ["yt-dlp"] + base + ["--dump-json", "--no-download", "--no-playlist", url],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0:
@@ -4684,8 +4689,13 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
                  time_limit=3600, soft_time_limit=3540)
 def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: dict | None = None):
     from celery.exceptions import SoftTimeLimitExceeded
+    from urllib.parse import urlparse, urlencode, parse_qs, urlunparse as _urlunparse
     job_id = self.request.id or video_id
     cfg = cfg or {}
+    # Strip playlist params — yt-dlp hangs enumerating playlists
+    _p = urlparse(url)
+    _qs = {k: v[0] for k, v in parse_qs(_p.query).items() if k not in ("list", "index", "start_radio")}
+    url = _urlunparse(_p._replace(query=urlencode(_qs)))
     try:
         _update_video(tenant_id, video_id, status="processing",
                       celery_task_id=job_id, pipeline_step="download", pipeline_pct=5)
