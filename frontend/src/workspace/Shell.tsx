@@ -284,9 +284,9 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
 
       {/* Page content */}
       <main
-        className="relative z-[1] px-3 pb-24 pt-5 transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] sm:px-4 sm:pt-7 lg:ml-[var(--sidebar-width)] lg:pb-7"
+        className="relative z-[1] flex h-[calc(100vh-3.5rem)] flex-col overflow-y-auto px-3 pb-6 pt-5 transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] sm:px-4 sm:pt-6 lg:ml-[var(--sidebar-width)] lg:pb-6"
       >
-        <div className="mx-auto w-full max-w-[1240px] space-y-5 sm:space-y-6">{children}</div>
+        <div className="mx-auto flex w-full flex-1 flex-col max-w-[1240px] space-y-5 sm:space-y-6">{children}</div>
       </main>
     </div>
   );
