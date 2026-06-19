@@ -387,7 +387,7 @@ def _probe(api_key: str, base_url: str, model: str, json_mode: bool, timeout: fl
             resp = client.chat.completions.create(
                 model=deployment,
                 messages=[{"role": "user", "content": "Say hi"}],
-                max_tokens=5, temperature=0,
+                max_completion_tokens=5, temperature=0,
             )
             content = (resp.choices[0].message.content or "").strip()
             return bool(content)
