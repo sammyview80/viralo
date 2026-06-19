@@ -211,107 +211,109 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
         )}
 
         {/* Step 3: AI enhancements */}
-        {s3 && <div className={cn("space-y-4", showAll && "border-t border-white/[.06] pt-5")}>
+        {s3 && <div className={cn("space-y-3", showAll && "border-t border-white/[.06] pt-5")}>
           <label className={labelCls}>AI enhancements</label>
 
-          {/* Occasion picker */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="text-[13px] font-bold text-zinc-100">Content type</div>
-              {!config.occasion && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: null,        label: "Auto detect" },
-                { id: "football",  label: "Football" },
-                { id: "cricket",   label: "Cricket" },
-                { id: "ufc",       label: "UFC / MMA" },
-                { id: "gaming",    label: "Gaming" },
-                { id: "concert",   label: "Concert" },
-                { id: "podcast",   label: "Podcast" },
-                { id: "wedding",   label: "Wedding" },
-                { id: "general",   label: "Other" },
-              ].map((o) => (
-                <button key={String(o.id)} type="button"
-                  onClick={() => set({ occasion: o.id })}
-                  className={cn("rounded-[8px] border px-2 py-1.5 text-[11px] font-medium transition-colors text-center cursor-pointer",
-                    (config.occasion ?? null) === o.id
-                      ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10 text-[#ff5f86]"
-                      : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12]")}>
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Style picker */}
-          <div className="border-t border-white/[.05] pt-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="text-[13px] font-bold text-zinc-100">Style</div>
-              {!config.template_id && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-              {[
-                { id: null,             label: "Auto",      desc: "Matched to content type" },
-                { id: "sports-hype",    label: "Hype",      desc: "Bold hook + blur bg" },
-                { id: "cinematic",      label: "Cinematic", desc: "Dramatic music + overlay" },
-                { id: "gaming-clutch",  label: "Clutch",    desc: "Gaming style captions" },
-                { id: "talking-head",   label: "Talk",      desc: "Clean + chill music" },
-                { id: "generic",        label: "Minimal",   desc: "No extras, clean cut" },
-              ].map((t) => (
-                <button key={String(t.id)} type="button"
-                  onClick={() => set({ template_id: t.id })}
-                  className={cn("rounded-[8px] border px-2 py-1.5 text-left transition-colors cursor-pointer",
-                    (config.template_id ?? null) === t.id
-                      ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10"
-                      : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
-                  <div className={cn("text-[11px] font-bold", (config.template_id ?? null) === t.id ? "text-[#ff5f86]" : "text-zinc-200")}>{t.label}</div>
-                  <div className="text-[10px] text-zinc-500 mt-0.5">{t.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Music toggle */}
-          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-4">
+          {/* Occasion + Style side by side when stepped */}
+          <div className={cn(!showAll && "grid grid-cols-2 gap-4")}>
             <div>
-              <div className="text-[13px] font-bold text-zinc-100">Background music</div>
-              <div className="mt-0.5 text-[11.5px] text-zinc-500">Mix a royalty-free hype/chill track under the clip audio.</div>
-            </div>
-            <button type="button" onClick={() => set({ music: !(config.music ?? true) })}
-              aria-pressed={config.music ?? true}
-              className={cn("relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
-                (config.music ?? true) ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
-              <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
-                (config.music ?? true) ? "left-[calc(100%-24px)]" : "left-1")} />
-            </button>
-          </div>
-
-          {/* Voiceover toggle */}
-          <div className="flex items-center justify-between gap-3 border-t border-white/[.05] pt-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="text-[13px] font-bold text-zinc-100">AI voiceover</div>
-                <span className="rounded-full border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-2 py-0.5 text-[10px] font-bold text-[#ff6c90]">NEW</span>
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="text-[12px] font-bold text-zinc-100">Content type</div>
+                {!config.occasion && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
               </div>
-              <div className="mt-0.5 text-[11.5px] text-zinc-500">Generate a punchy narrator script and mix it over the clip — the viral faceless format.</div>
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { id: null,        label: "Auto" },
+                  { id: "football",  label: "Football" },
+                  { id: "cricket",   label: "Cricket" },
+                  { id: "ufc",       label: "UFC/MMA" },
+                  { id: "gaming",    label: "Gaming" },
+                  { id: "concert",   label: "Concert" },
+                  { id: "podcast",   label: "Podcast" },
+                  { id: "wedding",   label: "Wedding" },
+                  { id: "general",   label: "Other" },
+                ].map((o) => (
+                  <button key={String(o.id)} type="button"
+                    onClick={() => set({ occasion: o.id })}
+                    className={cn("rounded-[7px] border px-1.5 py-1 text-[10.5px] font-medium transition-colors text-center cursor-pointer",
+                      (config.occasion ?? null) === o.id
+                        ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10 text-[#ff5f86]"
+                        : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12]")}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <button type="button" onClick={() => set({ voiceover: !config.voiceover })}
-              aria-pressed={!!config.voiceover}
-              className={cn("relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
-                config.voiceover ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
-              <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
-                config.voiceover ? "left-[calc(100%-24px)]" : "left-1")} />
-            </button>
+
+            {/* Style picker */}
+            <div className={cn(showAll && "border-t border-white/[.05] pt-3")}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="text-[12px] font-bold text-zinc-100">Style</div>
+                {!config.template_id && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+                {[
+                  { id: null,             label: "Auto",      desc: "Matched to content" },
+                  { id: "sports-hype",    label: "Hype",      desc: "Bold hook + blur bg" },
+                  { id: "cinematic",      label: "Cinematic", desc: "Dramatic + overlay" },
+                  { id: "gaming-clutch",  label: "Clutch",    desc: "Gaming captions" },
+                  { id: "talking-head",   label: "Talk",      desc: "Clean + chill music" },
+                  { id: "generic",        label: "Minimal",   desc: "No extras, clean cut" },
+                ].map((t) => (
+                  <button key={String(t.id)} type="button"
+                    onClick={() => set({ template_id: t.id })}
+                    className={cn("rounded-[7px] border px-1.5 py-1 text-left transition-colors cursor-pointer",
+                      (config.template_id ?? null) === t.id
+                        ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10"
+                        : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
+                    <div className={cn("text-[10.5px] font-bold", (config.template_id ?? null) === t.id ? "text-[#ff5f86]" : "text-zinc-200")}>{t.label}</div>
+                    <div className="text-[9.5px] text-zinc-500 mt-0.5 leading-tight">{t.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Music + Voiceover side by side */}
+          <div className={cn("border-t border-white/[.05] pt-3 grid gap-3", !showAll ? "grid-cols-2" : "grid-cols-1")}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[12px] font-bold text-zinc-100">Background music</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500">Royalty-free hype/chill track.</div>
+              </div>
+              <button type="button" onClick={() => set({ music: !(config.music ?? true) })}
+                aria-pressed={config.music ?? true}
+                className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
+                  (config.music ?? true) ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+                  (config.music ?? true) ? "left-[calc(100%-22px)]" : "left-0.5")} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <div className="text-[12px] font-bold text-zinc-100">AI voiceover</div>
+                  <span className="rounded-full border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-1.5 py-0.5 text-[9.5px] font-bold text-[#ff6c90]">NEW</span>
+                </div>
+                <div className="mt-0.5 text-[11px] text-zinc-500">Narrator script over clip.</div>
+              </div>
+              <button type="button" onClick={() => set({ voiceover: !config.voiceover })}
+                aria-pressed={!!config.voiceover}
+                className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
+                  config.voiceover ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+                  config.voiceover ? "left-[calc(100%-22px)]" : "left-0.5")} />
+              </button>
+            </div>
           </div>
 
           {/* Output quality */}
-          <div className="border-t border-white/[.05] pt-4">
+          <div className="border-t border-white/[.05] pt-3">
             <label className={labelCls}>Output quality</label>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <div className="grid grid-cols-4 gap-1.5">
               {(["source","1080p","720p","480p"] as const).map((q) => (
                 <button key={q} type="button" onClick={() => set({ output_quality: q })}
-                  className={cn(chipBase, "text-center", config.output_quality === q ? chipOn : chipOff)}>
+                  className={cn(chipBase, "text-center py-1.5", config.output_quality === q ? chipOn : chipOff)}>
                   {q === "source" ? "Full res" : q}
                 </button>
               ))}

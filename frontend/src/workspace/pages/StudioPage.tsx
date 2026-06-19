@@ -622,7 +622,7 @@ export function StudioPage() {
         />
       )}
 
-      <div className="flex flex-col overflow-hidden rounded-[22px] border border-white/[.08] bg-[#0e1420] shadow-[0_28px_90px_rgba(0,0,0,.28)]">
+      <div className="flex flex-1 flex-col overflow-hidden rounded-[22px] border border-white/[.08] bg-[#0e1420] shadow-[0_28px_90px_rgba(0,0,0,.28)]">
 
         {/* ── Header ── */}
         <div className="relative overflow-hidden border-b border-white/[.07] px-4 py-3.5 sm:px-6">
@@ -740,8 +740,8 @@ export function StudioPage() {
 
         {/* ── Upload ── */}
         {tab === "upload" && (
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[190px_minmax(0,1fr)]">
-            <div className="border-b border-white/[.07] bg-[#0b101a] p-4 sm:p-5 lg:border-b-0 lg:border-r">
+          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)]" style={{overflow:"hidden"}}>
+            <div className="overflow-y-auto border-b border-white/[.07] bg-[#0b101a] p-4 sm:p-5 lg:border-b-0 lg:border-r">
               <div className="mb-5">
                 <p className="text-[10.5px] font-bold uppercase tracking-[.18em] text-[#ff6f92]">Upload workflow</p>
                 <h2 className="mt-1 font-display text-[18px] font-bold tracking-[-.02em] text-white">New source</h2>
@@ -794,7 +794,7 @@ export function StudioPage() {
               </div>
             </div>
 
-            <div className="min-h-[560px] overflow-y-auto p-4 sm:p-6">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
               <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
 
               {uploadStep === "source" && (

@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { agentApi, type BrainstormSession, type VideoIdea } from "@/lib/api";
+import { IdeaCard } from "@/components/brainstorm/IdeaCard";
+import { SessionRow } from "@/components/brainstorm/SessionRow";
+import { EmptyState } from "@/components/brainstorm/EmptyState";
 
 /* ─── Helpers ─── */
 const AGENTS = ["viral_search_agent", "trend_agent", "competitor_agent", "monetization_agent", "audience_agent", "content_agent", "synthesizer"];
@@ -58,7 +61,7 @@ function splitVerdict(verdict: string) {
   };
 }
 
-function sessionProgress(session: BrainstormSession | null) {
+function sessionProgressForPage(session: BrainstormSession | null) {
   if (!session) return 0;
   if (session.status === "complete") return 100;
   if (session.status === "failed") return Math.max(8, ((session.agents_completed?.length ?? 0) / AGENTS.length) * 100);
@@ -215,157 +218,6 @@ function AgentSteps({ current, completed }: { current: string | null; completed:
   );
 }
 
-/* ─── Video idea card ─── */
-function IdeaCard({ idea, index }: { idea: VideoIdea; index: number }) {
-  const [open, setOpen] = useState(false);
-  const sc = idea.virality_score ?? 0;
-  const color = scoreColor(sc);
-  return (
-    <div
-      className="group cursor-pointer rounded-[16px] border border-white/[.07] bg-[#0c111b]/80 p-4 transition hover:-translate-y-0.5 hover:border-white/[.14] hover:bg-white/[.035]"
-      style={{ animation: `fadeUp .25s ${index * 40}ms cubic-bezier(.22,.8,.4,1) both` }}
-      onClick={() => setOpen(o => !o)}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 gap-3">
-          <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/[.06] bg-white/[.04] text-[10px] font-black text-zinc-400">
-            {index + 1}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-semibold leading-5 text-white">{idea.title}</p>
-            <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-zinc-500">“{idea.hook}”</p>
-          </div>
-        </div>
-        <div className="flex w-[74px] shrink-0 flex-col items-end gap-1.5">
-          <div className="flex items-center gap-1 rounded-full border px-2 py-0.5" style={{ borderColor: `${color}30`, background: `${color}10` }}>
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-            <span className="font-mono text-[11px] font-bold" style={{ color }}>{sc}</span>
-          </div>
-          <div className="h-1 w-full overflow-hidden rounded-full bg-white/[.06]">
-            <div className="h-full rounded-full" style={{ width: `${Math.max(4, Math.min(100, sc))}%`, background: color }} />
-          </div>
-          <span className="text-[9px] text-zinc-600">{open ? "Hide" : "Expand"}</span>
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2 pl-9">
-        <span className="rounded-full border border-white/[.06] bg-white/[.03] px-2 py-0.5 text-[10px] text-zinc-500 capitalize">{idea.format?.replace(/_/g, " ")}</span>
-        <span className="rounded-full border border-white/[.06] bg-white/[.03] px-2 py-0.5 text-[10px] text-zinc-500 capitalize">{idea.estimated_views_potential}</span>
-      </div>
-
-      {open && (
-        <div className="mt-3 space-y-2 pl-9">
-          <div className="rounded-[10px] border border-white/[.05] bg-white/[.03] px-3 py-2">
-            <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-zinc-600">Hook</p>
-            <p className="text-[12px] leading-5 text-zinc-300">“{idea.hook}”</p>
-          </div>
-          {idea.reasoning && (
-            <div className="rounded-[10px] border border-white/[.05] bg-white/[.02] px-3 py-2">
-              <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-zinc-600">Why it can work</p>
-              <p className="text-[11px] leading-[1.6] text-zinc-500">{idea.reasoning}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Session row ─── */
-function SessionRow({ session, onSelect, active }: { session: BrainstormSession; onSelect: () => void; active: boolean }) {
-  const statusColor = session.status === "complete" ? "#34d399" : session.status === "running" ? "#ff3d6a" : session.status === "failed" ? "#f87171" : "#71717a";
-  const progress = sessionProgress(session);
-  return (
-    <button
-      onClick={onSelect}
-      className={`w-full rounded-[14px] border px-3 py-3 text-left transition hover:border-white/[.14] ${active ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/[.06]" : "border-white/[.06] bg-white/[.018]"}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-[12px] font-semibold text-white">{session.name || session.topic}</p>
-          <p className="mt-0.5 truncate text-[10px] text-zinc-600">{formatRelative(session.created_at)}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusColor }} />
-          <span className="text-[10px] capitalize" style={{ color: statusColor }}>{session.status}</span>
-        </div>
-      </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[.05]">
-        <div className="h-full rounded-full bg-[#ff3d6a] transition-all" style={{ width: `${progress}%` }} />
-      </div>
-    </button>
-  );
-}
-
-function EmptyState({ onPickExample }: { onPickExample: (topic: string) => void }) {
-  return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-10">
-      <div className="rounded-[24px] border border-white/[.07] bg-gradient-to-br from-white/[.055] to-white/[.015] p-6 shadow-2xl shadow-black/20">
-        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 px-3 py-1 text-[11px] font-bold text-rose-200">
-          ✦ AI content strategy room
-        </div>
-        <h2 className="max-w-2xl text-[28px] font-black leading-tight tracking-tight text-white sm:text-[34px]">
-          Turn a niche into clear, ranked video ideas.
-        </h2>
-        <p className="mt-3 max-w-2xl text-[13px] leading-6 text-zinc-500">
-          Seven agents scan live viral signals, trends, competitors, audience angles, monetization fit, and content formats, then synthesize a verdict with 10 video ideas you can expand.
-        </p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          {[
-            ["7", "specialized agents"],
-            ["10", "ranked video ideas"],
-            ["1", "niche verdict"],
-          ].map(([value, label]) => (
-            <div key={label} className="rounded-[16px] border border-white/[.06] bg-black/20 p-4">
-              <p className="text-[24px] font-black text-white">{value}</p>
-              <p className="mt-1 text-[11px] text-zinc-500">{label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <section className="rounded-[20px] border border-white/[.07] bg-white/[.02] p-5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">What you get</p>
-          <div className="mt-4 space-y-3">
-            {[
-              ["Trend read", "Formats, hooks, and momentum signals for the niche."],
-              ["Market map", "Creator gaps and competitor angles worth attacking."],
-              ["Idea stack", "Titles, hooks, format, estimated views, and virality score."],
-            ].map(([title, copy]) => (
-              <div key={title} className="flex gap-3">
-                <span className="mt-1 h-2 w-2 rounded-full bg-[#ff3d6a]" />
-                <div>
-                  <p className="text-[12px] font-bold text-zinc-200">{title}</p>
-                  <p className="mt-0.5 text-[11px] leading-5 text-zinc-600">{copy}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-[20px] border border-white/[.07] bg-white/[.02] p-5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">Try a topic</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {EXAMPLE_TOPICS.map(example => (
-              <button
-                key={example}
-                onClick={() => onPickExample(example)}
-                className="rounded-full border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[11px] font-semibold text-zinc-300 transition hover:border-[#ff3d6a]/35 hover:bg-[#ff3d6a]/10 hover:text-rose-100"
-              >
-                {example}
-              </button>
-            ))}
-          </div>
-          <p className="mt-4 text-[11px] leading-5 text-zinc-600">
-            Tip: use a focused niche like “meal prep for busy nurses” instead of a broad category like “food”.
-          </p>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Main page ─── */
 export function BrainstormPage() {
   const [sessions, setSessions] = useState<BrainstormSession[]>([]);
@@ -429,7 +281,7 @@ export function BrainstormPage() {
     [ideas],
   );
   const isRunning = selected?.status === "running" || selected?.status === "draft";
-  const progress = sessionProgress(selected);
+  const progress = sessionProgressForPage(selected);
 
   return (
     <>
