@@ -3649,10 +3649,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 # Switch to next proxy, append proxy-based strategies after current position
                 proxy = proxies[proxy_idx % len(proxies)]
                 proxy_idx += 1
-                wait = min(30, (2 ** (proxy_idx - 1)) + random.uniform(1, 3))
-                logging.warning("YouTube 429 on strategy %d (%s), rotating to proxy %s, waiting %.1fs",
-                                attempt + 1, label, proxy, wait)
-                time.sleep(wait)
+                logging.warning("YouTube 429 on strategy %d (%s), rotating to proxy %s",
+                                attempt + 1, label, proxy)
                 # Insert remaining proxy strategies right after current point
                 remaining = [(c, proxy) for c in _client_args(proxy)]
                 ytdlp_strategies[attempt + 1:attempt + 1] = remaining
