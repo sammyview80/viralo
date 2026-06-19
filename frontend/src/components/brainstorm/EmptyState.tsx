@@ -1,3 +1,5 @@
+"use client";
+
 const EXAMPLE_TOPICS = ["AI fitness coach", "Street food Nepal", "Solo travel tips", "Budget skincare"];
 
 export function EmptyState({ onPickExample }: { onPickExample: (topic: string) => void }) {
