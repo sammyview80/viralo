@@ -3496,16 +3496,16 @@ _PROXY_CACHE_TTL = 300  # 5 min
 
 
 def _fetch_fresh_proxies() -> list[str]:
-    import subprocess as _sp
+    import urllib.request as _req
     try:
-        r = _sp.run(
-            ["curl", "-s", "--max-time", "10",
-             "https://api.proxyscrape.com/v3/free-proxy-list/get"
-             "?request=displayproxies&protocol=socks5&timeout=5000"
-             "&proxy_format=protocolipport&format=text"],
-            capture_output=True, text=True, timeout=15,
+        url = (
+            "https://api.proxyscrape.com/v3/free-proxy-list/get"
+            "?request=displayproxies&protocol=socks5&timeout=5000"
+            "&proxy_format=protocolipport&format=text"
         )
-        proxies = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+        with _req.urlopen(url, timeout=10) as resp:
+            text = resp.read().decode()
+        proxies = [l.strip() for l in text.splitlines() if l.strip()]
         logging.info("Fetched %d fresh proxies from ProxyScrape", len(proxies))
         return proxies[:20]
     except Exception as e:
