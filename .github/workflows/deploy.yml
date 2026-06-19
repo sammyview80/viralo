@@ -1,0 +1,48 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.PROD_APP_DIR }}
+
+            echo "==> Pulling latest code"
+            git pull origin dev
+
+            echo "==> Rebuilding and restarting services"
+            docker compose up -d --force-recreate --build \
+              frontend \
+              core-service \
+              video-service \
+              agent-service \
+              platform-service \
+              workflow-service \
+              celery-video-pipeline \
+              celery-video-ai \
+              celery-video-upload \
+              celery-video-generate \
+              celery-video-post \
+              celery-agent \
+              celery-notification \
+              celery-workflow \
+              celery-beat
+
+            echo "==> Reloading nginx"
+            docker compose exec -T nginx nginx -s reload 2>/dev/null || true
+
+            echo "==> Deploy complete"
+            docker ps --format "table {{.Names}}\t{{.Status}}" | grep -v "^NAMES"
