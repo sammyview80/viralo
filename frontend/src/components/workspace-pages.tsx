@@ -21,7 +21,6 @@ const WorkflowsPage    = lazy(() => import("@/workspace/pages/WorkflowsPage").th
 const BillingPage           = lazy(() => import("@/workspace/pages/BillingPage").then((m) => ({ default: m.BillingPage })));
 const NotificationsPage     = lazy(() => import("@/workspace/pages/NotificationsPage").then((m) => ({ default: m.NotificationsPage })));
 const RankingPage           = lazy(() => import("@/workspace/pages/RankingPage").then((m) => ({ default: m.RankingPage })));
-
 export const pages: Record<PageKey, React.ReactNode> = {
   studio:       <StudioPage />,
   clips:        <ClipsPage />,
