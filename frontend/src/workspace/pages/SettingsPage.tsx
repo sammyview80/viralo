@@ -16,12 +16,10 @@ import {
 
 const SECTIONS = [
   { id: "workspace",     label: "Workspace",    icon: <IconWorkspace />,    desc: "Name, URL, and timezone for your workspace." },
-  { id: "brand",         label: "Brand kit",    icon: <IconBrand />,        desc: "Colors, fonts, and watermarks applied to exported clips." },
-  { id: "team",          label: "Team",          icon: <IconTeam />,         desc: "Manage members and access roles." },
-  { id: "billing",       label: "Billing",       icon: <IconBilling />,      desc: "Plan, usage, and payment method." },
-  { id: "notifications", label: "Notifications", icon: <IconNotifications />,desc: "Choose what Viralo emails and alerts you about." },
+  { id: "brand",         label: "Brand kit",    icon: <IconBrand />,        desc: "Colors and font applied to exported clips." },
+  { id: "billing",       label: "Billing",       icon: <IconBilling />,      desc: "Plan and usage." },
+  { id: "notifications", label: "Notifications", icon: <IconNotifications />,desc: "Choose what Viralo alerts you about." },
   { id: "api",           label: "API keys",      icon: <IconApi />,          desc: "Keys for accessing the Viralo API programmatically." },
-  { id: "security",      label: "Security",      icon: <IconSecurity />,     desc: "Password, two-factor authentication, and active sessions." },
 ] as const;
 
 type SectionId = typeof SECTIONS[number]["id"];
@@ -34,9 +32,6 @@ function IconWorkspace() {
 function IconBrand() {
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><circle cx="8" cy="8" r="5"/><path d="M8 3v10M3 8h10"/></svg>;
 }
-function IconTeam() {
-  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><circle cx="6" cy="6" r="2.5"/><circle cx="11" cy="5" r="2"/><path d="M1 13c0-2 2-3.5 5-3.5s5 1.5 5 3.5"/><path d="M11 7c1.5.3 3 1.3 3 3"/></svg>;
-}
 function IconBilling() {
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M1.5 6.5h13"/><path d="M4.5 9.5h2"/></svg>;
 }
@@ -45,9 +40,6 @@ function IconNotifications() {
 }
 function IconApi() {
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><path d="M2 8h3M11 8h3M5 5l-2 3 2 3M11 5l2 3-2 3"/></svg>;
-}
-function IconSecurity() {
-  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><path d="M8 2L3 4v4c0 3 2.5 5 5 6 2.5-1 5-3 5-6V4L8 2z"/></svg>;
 }
 
 /* ─── Primitives ─────────────────────────────────────────────────────────── */
@@ -109,19 +101,14 @@ function TextInput({ placeholder, value, onChange, mono, className }: {
   );
 }
 
-function OutlineBtn({ children, onClick, disabled, red }: {
-  children: React.ReactNode; onClick?: () => void; disabled?: boolean; red?: boolean;
+function OutlineBtn({ children, onClick, disabled }: {
+  children: React.ReactNode; onClick?: () => void; disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={cn(
-        "h-8 cursor-pointer rounded-[8px] border px-3 text-[13px] font-medium transition-colors disabled:opacity-40",
-        red
-          ? "border-red-900/50 text-red-400 hover:border-red-700/60 hover:text-red-300"
-          : "border-white/[.08] text-zinc-400 hover:border-white/[.14] hover:text-zinc-200"
-      )}
+      className="h-8 cursor-pointer rounded-[8px] border border-white/[.08] px-3 text-[13px] font-medium text-zinc-400 transition-colors hover:border-white/[.14] hover:text-zinc-200 disabled:opacity-40"
     >
       {children}
     </button>
@@ -199,7 +186,7 @@ function WorkspaceSection() {
         <FieldRow label="Workspace name" hint="Shown in the top bar and on exported content.">
           <TextInput value={data.display_name} onChange={v => setData(d => d && { ...d, display_name: v })} className="w-48" />
         </FieldRow>
-        <FieldRow label="Workspace URL" hint="Used for sharing links and team invites.">
+        <FieldRow label="Workspace URL" hint="Used for sharing links.">
           <div className="flex h-8 items-center rounded-[8px] border border-white/[.08] bg-[#0e1420] px-3 transition-colors focus-within:border-[#ff3d6a]/50">
             <span className="text-[12px] text-zinc-600 select-none">viralo.co/</span>
             <input
@@ -247,7 +234,7 @@ function BrandSection() {
     } finally { setSaving(false); }
   };
 
-  if (!data) return <FieldSkeleton rows={4} />;
+  if (!data) return <FieldSkeleton rows={3} />;
 
   return (
     <div className="space-y-3">
@@ -264,7 +251,7 @@ function BrandSection() {
             <TextInput mono value={data.secondary_color} onChange={v => setData(d => d && { ...d, secondary_color: v })} className="w-24" />
           </div>
         </FieldRow>
-        <FieldRow label="Default font" hint="Applied to text overlays in exported clips.">
+        <FieldRow label="Default font" hint="Applied to text overlays in exported clips." border={false}>
           <div className="relative">
             <select
               value={data.font}
@@ -276,62 +263,8 @@ function BrandSection() {
             <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-[10px]">▾</span>
           </div>
         </FieldRow>
-        <FieldRow label="Watermark" hint="Overlay applied to exported video clips." border={false}>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-white/[.06] bg-white/[.03] px-2.5 py-1 text-[11px] text-zinc-500">
-              {data.watermark_url ? "Uploaded" : "None"}
-            </span>
-            <OutlineBtn>Upload</OutlineBtn>
-          </div>
-        </FieldRow>
       </Card>
       <SaveBar onSave={save} saving={saving} />
-    </div>
-  );
-}
-
-/* ─── Team ───────────────────────────────────────────────────────────────── */
-
-function TeamSection() {
-  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
-  const [inviteEmail, setInviteEmail] = useState("");
-
-  useEffect(() => { settingsApi.getWorkspace().then(setWorkspace).catch(() => {}); }, []);
-
-  const initials = workspace?.display_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() ?? "??";
-
-  return (
-    <div className="space-y-3">
-      <Card>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[.055]">
-          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500">Members</p>
-          <PrimaryBtn>Invite</PrimaryBtn>
-        </div>
-        {workspace ? (
-          <div className="flex items-center gap-3 px-5 py-3.5">
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-[8px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 text-[11px] font-bold text-[#ff3d6a]">
-              {initials}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-medium text-zinc-200">{workspace.display_name}</p>
-              <p className="text-[12px] text-zinc-500">{workspace.subdomain}</p>
-            </div>
-            <Badge variant="ready" className="text-[10px]">Owner</Badge>
-          </div>
-        ) : (
-          <div className="px-5 py-3.5"><Skeleton className="h-11 rounded-[8px] bg-white/[.04]" /></div>
-        )}
-      </Card>
-
-      <Card>
-        <div className="px-5 py-4 space-y-3">
-          <p className="text-[13px] font-medium text-zinc-200">Invite by email</p>
-          <div className="flex gap-2">
-            <TextInput placeholder="colleague@email.com" value={inviteEmail} onChange={setInviteEmail} className="flex-1" />
-            <OutlineBtn>Send invite</OutlineBtn>
-          </div>
-        </div>
-      </Card>
     </div>
   );
 }
@@ -352,61 +285,49 @@ function BillingSection() {
   ];
 
   return (
-    <div className="space-y-3">
-      <Card>
-        <div className="flex items-start justify-between gap-4 px-5 py-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-1">Current plan</p>
-            {sub ? (
-              <>
-                <p className="text-xl font-bold capitalize text-white tracking-tight">{sub.plan_name}</p>
-                {sub.current_period_end && (
-                  <p className="mt-0.5 text-[12px] text-zinc-500">
-                    Renews {new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                  </p>
-                )}
-              </>
-            ) : (
-              <Skeleton className="mt-1 h-6 w-16 bg-white/[.06]" />
-            )}
-          </div>
-          <OutlineBtn>Manage plan</OutlineBtn>
+    <Card>
+      <div className="flex items-start justify-between gap-4 px-5 py-5">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-1">Current plan</p>
+          {sub ? (
+            <>
+              <p className="text-xl font-bold capitalize text-white tracking-tight">{sub.plan_name}</p>
+              {sub.current_period_end && (
+                <p className="mt-0.5 text-[12px] text-zinc-500">
+                  Renews {new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                </p>
+              )}
+            </>
+          ) : (
+            <Skeleton className="mt-1 h-6 w-16 bg-white/[.06]" />
+          )}
         </div>
+        <OutlineBtn>Manage plan</OutlineBtn>
+      </div>
 
-        <div className="border-t border-white/[.055] px-5 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-4">Usage this period</p>
-          <div className="space-y-3.5">
-            {usageRows.map(({ label, used, total, suffix }) => (
-              <div key={label}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[13px] text-zinc-300">{label}</p>
-                  <p className="tabular-nums text-[12px] text-zinc-500">{used}{suffix}<span className="text-zinc-700"> / {total}{suffix}</span></p>
-                </div>
-                <div className="h-1 w-full overflow-hidden rounded-full bg-white/[.05]">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min((used / total) * 100, 100)}%`,
-                      background: used / total > 0.85 ? "#f97316" : "#ff3d6a",
-                    }}
-                  />
-                </div>
+      <div className="border-t border-white/[.055] px-5 py-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-4">Usage this period</p>
+        <div className="space-y-3.5">
+          {usageRows.map(({ label, used, total, suffix }) => (
+            <div key={label}>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[13px] text-zinc-300">{label}</p>
+                <p className="tabular-nums text-[12px] text-zinc-500">{used}{suffix}<span className="text-zinc-700"> / {total}{suffix}</span></p>
               </div>
-            ))}
-          </div>
+              <div className="h-1 w-full overflow-hidden rounded-full bg-white/[.05]">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min((used / total) * 100, 100)}%`,
+                    background: used / total > 0.85 ? "#f97316" : "#ff3d6a",
+                  }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
-
-        <div className="border-t border-white/[.055] px-5 py-4">
-          <p className="text-[12px] text-zinc-500 mb-2.5">Payment method</p>
-          <div className="flex items-center gap-3 rounded-[8px] border border-white/[.055] bg-white/[.02] px-3 py-2.5">
-            <div className="grid h-6 w-9 place-items-center rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 shrink-0">VISA</div>
-            <p className="flex-1 text-[13px] text-zinc-300">•••• •••• •••• 4242</p>
-            <p className="text-[12px] text-zinc-600">12/27</p>
-            <button className="cursor-pointer text-[12px] text-zinc-500 transition hover:text-zinc-300">Update</button>
-          </div>
-        </div>
-      </Card>
-    </div>
+      </div>
+    </Card>
   );
 }
 
@@ -539,48 +460,14 @@ function ApiKeysSection() {
   );
 }
 
-/* ─── Security ───────────────────────────────────────────────────────────── */
-
-function SecuritySection() {
-  const [twoFactor, setTwoFactor] = useState(false);
-  return (
-    <div className="space-y-3">
-      <Card>
-        <FieldRow label="Password" hint="Last changed 30 days ago.">
-          <OutlineBtn>Update password</OutlineBtn>
-        </FieldRow>
-        <FieldRow label="Two-factor authentication" hint="Require a second factor when signing in.">
-          <Toggle checked={twoFactor} onChange={setTwoFactor} />
-        </FieldRow>
-        <FieldRow label="Active sessions" hint="Devices currently signed into your workspace.">
-          <OutlineBtn>View sessions</OutlineBtn>
-        </FieldRow>
-        <FieldRow label="Sign out everywhere" hint="Revoke all sessions except this one." border={false}>
-          <OutlineBtn red>Sign out all</OutlineBtn>
-        </FieldRow>
-      </Card>
-
-      <Card>
-        <div className="px-5 py-5">
-          <p className="text-[13px] font-medium text-zinc-200 mb-1">Danger zone</p>
-          <p className="text-[12px] text-zinc-500 mb-4">Permanently delete this workspace and all its content. This cannot be undone.</p>
-          <OutlineBtn red>Delete workspace</OutlineBtn>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 /* ─── Section content map ────────────────────────────────────────────────── */
 
 const CONTENT: Record<SectionId, React.ReactNode> = {
   workspace:     <WorkspaceSection />,
   brand:         <BrandSection />,
-  team:          <TeamSection />,
   billing:       <BillingSection />,
   notifications: <NotificationsSection />,
   api:           <ApiKeysSection />,
-  security:      <SecuritySection />,
 };
 
 /* ─── Page ───────────────────────────────────────────────────────────────── */
