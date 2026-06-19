@@ -15,6 +15,7 @@ import { ClipConfigPanel, DEFAULT_CONFIG, PLATFORM_OPTIONS, ASPECT_OPTIONS, LANG
 
 type StudioTab = "ai" | "upload";
 type YtStep = 0 | 1 | 2;
+type UploadStep = "source" | "destinations" | "clips" | "style" | "review";
 
 const YT_STEPS = ["Source", "Clips", "Style"] as const;
 
@@ -572,6 +573,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
 
 export function StudioPage() {
   const [tab, setTab]             = useState<StudioTab>("upload");
+  const [uploadStep, setUploadStep] = useState<UploadStep>("source");
   const [ytModalOpen, setYtModalOpen] = useState(false);
   const [ytInitialUrl, setYtInitialUrl] = useState("");
   const [tone, setTone]           = useState("Strong hook");
@@ -738,124 +740,238 @@ export function StudioPage() {
 
         {/* ── Upload ── */}
         {tab === "upload" && (
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_430px]">
-            <div className="space-y-5 border-b border-white/[.07] p-4 sm:p-6 lg:border-b-0 lg:border-r">
-              <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
-
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                <div>
-                  <p className="text-[10.5px] font-bold uppercase tracking-[.18em] text-[#ff6f92]">Upload workflow</p>
-                  <h2 className="mt-1 font-display text-2xl font-bold tracking-[-.02em] text-white">Turn one long video into ready clips</h2>
-                  <p className="mt-1.5 max-w-2xl text-[13px] leading-6 text-zinc-500">Drop a source file, keep the recipe simple, then Viralo extracts moments, captions, and platform-ready versions.</p>
-                </div>
-                <div className="flex flex-wrap gap-2 text-[11.5px] font-semibold text-zinc-400">
-                  {[
-                    "1 Upload source",
-                    "2 Tune recipe",
-                    "3 Review clips",
-                  ].map((step) => (
-                    <span key={step} className="rounded-full border border-white/[.08] bg-white/[.04] px-3 py-1.5">{step}</span>
-                  ))}
-                </div>
+          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[190px_minmax(0,1fr)]">
+            <div className="border-b border-white/[.07] bg-[#0b101a] p-4 sm:p-5 lg:border-b-0 lg:border-r">
+              <div className="mb-5">
+                <p className="text-[10.5px] font-bold uppercase tracking-[.18em] text-[#ff6f92]">Upload workflow</p>
+                <h2 className="mt-1 font-display text-[18px] font-bold tracking-[-.02em] text-white">New source</h2>
               </div>
 
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
-                <div
-                  onClick={() => !uploading && fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                  onDragLeave={() => setDrag(false)}
-                  onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
-                  className={cn(
-                    "group relative flex min-h-[340px] cursor-pointer flex-col justify-between overflow-hidden rounded-[20px] border p-5 transition sm:p-7",
-                    uploading ? "cursor-default border-[#ff3d6a]/40 bg-[#ff3d6a]/[.04]"
-                    : drag    ? "scale-[1.01] border-[#ff3d6a]/60 bg-[#ff3d6a]/[.07] shadow-[0_24px_70px_rgba(255,61,106,.16)]"
-                    : "border-white/[.09] bg-[radial-gradient(circle_at_50%_0%,rgba(255,61,106,.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.018))] hover:border-[#ff3d6a]/35 hover:bg-white/[.04]"
-                  )}
-                >
-                  <div className="pointer-events-none absolute inset-5 rounded-[16px] border border-dashed border-white/[.11] transition group-hover:border-[#ff3d6a]/35" />
-                  <div className="relative flex items-start justify-between gap-4">
-                    <div className="grid h-[52px] w-[52px] place-items-center rounded-[17px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/[.10] shadow-[0_14px_40px_rgba(255,61,106,.12)]">
-                      {uploading ? (
-                        <span className="block h-6 w-6 animate-spin rounded-full border-[2px] border-[#ff3d6a]/30 border-t-[#ff3d6a]" />
-                      ) : (
-                        <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <div className="space-y-1.5">
+                {([
+                  ["source",       "1", "Source",       "Upload file or YouTube"],
+                  ["destinations", "2", "Destinations", "Platforms & format"],
+                  ["clips",        "3", "Clips",        "Length, count, score"],
+                  ["style",        "4", "Style",        "AI, captions, quality"],
+                  ["review",       "5", "Review",       "Confirm & start"],
+                ] as [UploadStep, string, string, string][]).map(([id, number, label, hint]) => {
+                  const ORDER: UploadStep[] = ["source","destinations","clips","style","review"];
+                  const done   = ORDER.indexOf(id) < ORDER.indexOf(uploadStep);
+                  const active = uploadStep === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setUploadStep(id)}
+                      className={cn(
+                        "flex w-full cursor-pointer items-start gap-3 rounded-[13px] border p-3 text-left transition",
+                        active
+                          ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-white shadow-[0_14px_34px_rgba(255,61,106,.10)]"
+                          : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:border-white/[.13] hover:bg-white/[.04] hover:text-zinc-200"
                       )}
+                    >
+                      <span className={cn(
+                        "grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold transition-all",
+                        active ? "bg-[#ff3d6a] text-white shadow-[0_0_8px_rgba(255,61,106,.4)]"
+                        : done  ? "bg-[#ff3d6a]/70 text-white"
+                        : "bg-white/[.06] text-zinc-500"
+                      )}>
+                        {done
+                          ? <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3.5}><path d="M20 6L9 17l-5-5"/></svg>
+                          : number}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[12.5px] font-bold">{label}</span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-zinc-500">{hint}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 rounded-[14px] border border-white/[.07] bg-white/[.025] p-3 text-[11.5px] leading-5 text-zinc-500">
+                Settings are saved with the project when the source is uploaded.
+              </div>
+            </div>
+
+            <div className="min-h-[560px] overflow-y-auto p-4 sm:p-6">
+              <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
+
+              {uploadStep === "source" && (
+                <div className="space-y-5">
+                  <div>
+                    <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">Choose the source</h2>
+                    <p className="mt-1.5 max-w-2xl text-[13px] leading-6 text-zinc-500">Drop a long-form video or import from YouTube. Viralo opens the project as soon as the source is ready.</p>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                    <div
+                      onClick={() => !uploading && fileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+                      onDragLeave={() => setDrag(false)}
+                      onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
+                      className={cn(
+                        "group relative flex min-h-[360px] cursor-pointer flex-col justify-between overflow-hidden rounded-[18px] border p-5 transition sm:p-7",
+                        uploading ? "cursor-default border-[#ff3d6a]/40 bg-[#ff3d6a]/[.04]"
+                        : drag    ? "scale-[1.01] border-[#ff3d6a]/60 bg-[#ff3d6a]/[.07] shadow-[0_24px_70px_rgba(255,61,106,.16)]"
+                        : "border-white/[.09] bg-[linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.018))] hover:border-[#ff3d6a]/35 hover:bg-white/[.04]"
+                      )}
+                    >
+                      <div className="pointer-events-none absolute inset-5 rounded-[14px] border border-dashed border-white/[.11] transition group-hover:border-[#ff3d6a]/35" />
+                      <div className="relative flex items-start justify-between gap-4">
+                        <div className="grid h-[52px] w-[52px] place-items-center rounded-[15px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/[.10]">
+                          {uploading ? (
+                            <span className="block h-6 w-6 animate-spin rounded-full border-[2px] border-[#ff3d6a]/30 border-t-[#ff3d6a]" />
+                          ) : (
+                            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                          )}
+                        </div>
+                        <span className="rounded-full border border-white/[.08] bg-black/20 px-3 py-1.5 text-[11px] font-bold text-zinc-400">MP4 / MOV / WebM</span>
+                      </div>
+
+                      <div className="relative max-w-xl py-8 text-center sm:mx-auto">
+                        <h3 className="font-display text-3xl font-bold tracking-[-.03em] text-white sm:text-4xl">
+                          {uploading ? "Uploading your video..." : drag ? "Release to upload" : "Drop your video here"}
+                        </h3>
+                        <p className="mx-auto mt-3 max-w-md text-[13.5px] leading-6 text-zinc-500">
+                          {uploading ? "Keep this tab open. We will send you to the project when the source is ready." : "Use a clean long-form source: podcasts, webinars, tutorials, interviews, or raw camera clips."}
+                        </p>
+                        {!uploading && (
+                          <button type="button" className="mt-6 cursor-pointer rounded-[11px] bg-[#ff3d6a] px-6 py-3 text-[13px] font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.30)] transition hover:bg-[#ff537b]">
+                            Browse files
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="relative flex flex-wrap gap-2 text-[11.5px] font-semibold text-zinc-500">
+                        {["Auto captions", "Smart cuts", "Project review"].map((item) => (
+                          <span key={item} className="rounded-full border border-white/[.07] bg-black/15 px-3 py-1.5">{item}</span>
+                        ))}
+                      </div>
                     </div>
-                    <span className="rounded-full border border-white/[.08] bg-black/20 px-3 py-1.5 text-[11px] font-bold text-zinc-400">MP4 · MOV · WebM</span>
-                  </div>
 
-                  <div className="relative max-w-xl py-8 text-center sm:mx-auto">
-                    <h3 className="font-display text-3xl font-bold tracking-[-.03em] text-white sm:text-4xl">
-                      {uploading ? "Uploading your video…" : drag ? "Release to upload" : "Drop your video here"}
-                    </h3>
-                    <p className="mx-auto mt-3 max-w-md text-[13.5px] leading-6 text-zinc-500">
-                      {uploading ? "Keep this tab open. We’ll send you to the project as soon as the source is ready." : "Use a clean source file. Long podcasts, webinars, tutorials, and raw camera clips work best."}
-                    </p>
-                    {!uploading && (
-                      <button type="button" className="mt-6 cursor-pointer rounded-[13px] bg-[#ff3d6a] px-6 py-3 text-[13px] font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.30)] transition hover:bg-[#ff537b]">
-                        Browse files
+                    <div className="space-y-3">
+                      <button
+                        type="button"
+                        onClick={openYtModal}
+                        className="group flex min-h-[178px] w-full cursor-pointer flex-col justify-between rounded-[16px] border border-red-400/20 bg-red-400/[.06] p-4 text-left transition hover:border-red-300/35 hover:bg-red-400/[.10]"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="grid h-10 w-10 place-items-center rounded-[11px] bg-red-400/[.12] text-red-300">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
+                          </span>
+                          <span className="text-[11px] font-bold text-red-200/70 transition group-hover:text-red-200">Open</span>
+                        </div>
+                        <div>
+                          <h3 className="font-display text-[16px] font-bold text-white">Import from YouTube</h3>
+                          <p className="mt-1 text-[12px] leading-5 text-zinc-500">Paste a link, preview metadata, then clip it with the active recipe.</p>
+                        </div>
                       </button>
-                    )}
+
+                      <button
+                        type="button"
+                        onClick={() => setUploadStep("destinations")}
+                        className="w-full cursor-pointer rounded-[12px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-left text-[12.5px] font-bold text-zinc-200 transition hover:bg-white/[.07]"
+                      >
+                        Tune recipe before upload
+                        <span className="mt-1 block text-[11.5px] font-medium text-zinc-500">Format, duration, captions, and platform targets.</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(uploadStep === "destinations" || uploadStep === "clips" || uploadStep === "style") && (() => {
+                const RECIPE_META: Record<string, { title: string; desc: string; panelStep: 1|2|3; prev: UploadStep; next: UploadStep; nextLabel: string }> = {
+                  destinations: { title: "Destinations",  desc: "Pick platforms, aspect ratio, and language for this session.", panelStep: 1, prev: "source",       next: "clips",  nextLabel: "Next — Clips" },
+                  clips:        { title: "Clips",          desc: "Set clip count, target length, and minimum viral score.",       panelStep: 2, prev: "destinations", next: "style",  nextLabel: "Next — Style" },
+                  style:        { title: "Style & quality",desc: "Choose AI enhancements, captions, and output quality.",         panelStep: 3, prev: "clips",        next: "review", nextLabel: "Review settings" },
+                };
+                const meta = RECIPE_META[uploadStep];
+                return (
+                  <div className="mx-auto max-w-3xl space-y-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">{meta.title}</h2>
+                        <p className="mt-1.5 max-w-xl text-[13px] leading-6 text-zinc-500">{meta.desc}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[18px] border border-white/[.07] bg-[#0b101a] px-5 py-5 sm:px-6">
+                      <ClipConfigPanel config={clipConfig} onChange={setClipConfig} step={meta.panelStep} />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setUploadStep(meta.prev)}
+                        className="flex cursor-pointer items-center gap-1.5 rounded-[11px] border border-white/[.08] px-4 py-2.5 text-[12.5px] font-semibold text-zinc-400 transition hover:border-white/[.15] hover:text-zinc-200"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M15 18l-6-6 6-6"/></svg>
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUploadStep(meta.next)}
+                        className="flex cursor-pointer items-center gap-1.5 rounded-[11px] bg-[#ff3d6a] px-5 py-2.5 text-[12.5px] font-bold text-white transition hover:bg-[#ff537b]"
+                      >
+                        {meta.nextLabel}
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M9 18l6-6-6-6"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {uploadStep === "review" && (
+                <div className="mx-auto max-w-3xl space-y-5">
+                  <div>
+                    <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">Review and start</h2>
+                    <p className="mt-1.5 max-w-xl text-[13px] leading-6 text-zinc-500">Confirm the recipe, then choose a source. Uploads and imports start from the source step.</p>
                   </div>
 
-                  <div className="relative grid gap-2 text-[11.5px] text-zinc-500 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     {[
-                      ["Auto captions", "Optional burned-in subtitles"],
-                      ["Smart cuts", "Finds strongest moments"],
-                      ["Direct review", "Opens project after upload"],
-                    ].map(([title, desc]) => (
-                      <div key={title} className="rounded-[12px] border border-white/[.07] bg-black/15 p-3">
-                        <div className="font-bold text-zinc-200">{title}</div>
-                        <div className="mt-0.5 leading-5">{desc}</div>
+                      ["Platforms", `${clipConfig.platforms?.length ?? 0} selected`],
+                      ["Format", clipConfig.aspect_ratio],
+                      ["Length", `${clipConfig.duration_min}-${clipConfig.duration_max}s`],
+                      ["Captions", clipConfig.add_captions ? "On" : "Off"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-[14px] border border-white/[.08] bg-white/[.035] p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-[.14em] text-zinc-600">{label}</p>
+                        <p className="mt-1.5 text-[14px] font-bold text-zinc-100">{value}</p>
                       </div>
                     ))}
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-3">
-                  <button
-                    type="button"
-                    onClick={openYtModal}
-                    className="group flex min-h-[160px] cursor-pointer flex-col justify-between rounded-[18px] border border-red-400/20 bg-red-400/[.06] p-4 text-left transition hover:border-red-300/35 hover:bg-red-400/[.10]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-red-400/[.12] text-red-300">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
-                      </span>
-                      <span className="text-[11px] font-bold text-red-200/70 transition group-hover:text-red-200">Open →</span>
-                    </div>
-                    <div>
-                      <h3 className="font-display text-[16px] font-bold text-white">Import from YouTube</h3>
-                      <p className="mt-1 text-[12px] leading-5 text-zinc-500">Paste a link, preview metadata, then clip it with the same recipe.</p>
-                    </div>
-                  </button>
-
-                  <div className="rounded-[18px] border border-white/[.08] bg-white/[.035] p-4">
-                    <div className="text-[12px] font-bold text-zinc-200">Current recipe</div>
-                    <div className="mt-3 space-y-2 text-[12px] text-zinc-500">
-                      <div className="flex justify-between gap-3"><span>Platforms</span><span className="font-semibold text-zinc-300">{clipConfig.platforms?.length ?? 0} selected</span></div>
-                      <div className="flex justify-between gap-3"><span>Format</span><span className="font-semibold text-zinc-300">{clipConfig.aspect_ratio}</span></div>
-                      <div className="flex justify-between gap-3"><span>Length</span><span className="font-semibold text-zinc-300">{clipConfig.duration_min}-{clipConfig.duration_max}s</span></div>
-                      <div className="flex justify-between gap-3"><span>Captions</span><span className="font-semibold text-zinc-300">{clipConfig.add_captions ? "On" : "Off"}</span></div>
+                  <div className="flex flex-col gap-3 rounded-[16px] border border-white/[.08] bg-[#0b101a] p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[12.5px] leading-5 text-zinc-500">Ready to create a project? Pick a file or YouTube link on the source step.</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setUploadStep("destinations")}
+                        className="h-10 cursor-pointer rounded-[11px] border border-white/[.08] px-4 text-[12.5px] font-bold text-zinc-300 transition hover:bg-white/[.05]"
+                      >
+                        Edit recipe
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUploadStep("source")}
+                        className="h-10 cursor-pointer rounded-[11px] bg-[#ff3d6a] px-4 text-[12.5px] font-bold text-white transition hover:bg-[#ff537b]"
+                      >
+                        Choose source
+                      </button>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {uploadError && (
-                <div className="flex items-center gap-2.5 rounded-[12px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
+                <div className="mt-5 flex items-center gap-2.5 rounded-[12px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                   {uploadError}
                 </div>
               )}
-            </div>
-
-            <div className="overflow-y-auto bg-[#0b101a] p-4 sm:p-5">
-              <div className="mb-3">
-                <p className="text-[10.5px] font-bold uppercase tracking-[.16em] text-zinc-600">Recipe settings</p>
-                <p className="mt-1 text-[12px] leading-5 text-zinc-500">Adjust once before upload. These settings travel with the project.</p>
-              </div>
-              <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
             </div>
           </div>
         )}

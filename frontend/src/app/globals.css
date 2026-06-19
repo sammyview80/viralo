@@ -29,6 +29,7 @@
     --border-strong: rgba(255, 255, 255, .10);
     --brand: #ff3d6a;
     --brand-2: #ff8040;
+    --brand-font: "Inter";
   }
 
   * {
@@ -37,11 +38,12 @@
 
   body {
     @apply min-h-screen bg-background text-foreground antialiased;
+    font-family: var(--brand-font), "Inter", ui-sans-serif, system-ui, sans-serif;
     font-feature-settings: "cv01", "cv02", "cv03", "cv04", "cv11", "ss03";
   }
 
   ::selection {
-    background: rgba(255, 61, 106, .28);
+    background: color-mix(in srgb, var(--brand) 28%, transparent);
     color: #fff;
   }
 
