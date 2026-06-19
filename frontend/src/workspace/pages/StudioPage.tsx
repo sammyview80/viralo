@@ -889,7 +889,7 @@ export function StudioPage() {
                 };
                 const meta = RECIPE_META[uploadStep];
                 return (
-                  <div className="mx-auto max-w-3xl space-y-5">
+                  <div className="space-y-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                       <div>
                         <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">{meta.title}</h2>
@@ -924,7 +924,7 @@ export function StudioPage() {
               })()}
 
               {uploadStep === "review" && (
-                <div className="mx-auto max-w-3xl space-y-5">
+                <div className="space-y-5">
                   <div>
                     <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">Review and start</h2>
                     <p className="mt-1.5 max-w-xl text-[13px] leading-6 text-zinc-500">Confirm the recipe, then choose a source. Uploads and imports start from the source step.</p>
