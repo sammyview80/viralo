@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import ForeignKey, String, Text, TIMESTAMP
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from shared.models.base import Base, TimestampMixin
 
@@ -22,3 +22,5 @@ class Tenant(Base, TimestampMixin):
     niche: Mapped[str | None] = mapped_column(String(100), nullable=True)
     goal: Mapped[str | None] = mapped_column(String(20), nullable=True)  # marketing|hustle|viral|agency
     referral_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    brand_kit: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    notification_prefs: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

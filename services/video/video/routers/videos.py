@@ -33,6 +33,9 @@ from video.schemas import (
     ClipPatchRequest,
     ClipResponse,
     GenerateClipsRequest,
+    SearchClipHit,
+    SearchResponse,
+    SearchVideoHit,
     VideoListResponse,
     VideoResponse,
     VideoUpdateRequest,
@@ -530,6 +533,57 @@ async def list_ranking_videos(
     query = query.order_by(Video.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
     videos = (await db.execute(query)).scalars().all()
     return VideoListResponse(items=list(videos), total=total, page=page, per_page=per_page)
+
+
+@router.get("/search", response_model=SearchResponse)
+async def search_videos_and_clips(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(8, ge=1, le=25),
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> SearchResponse:
+    """Keyword search across videos and clips for the current tenant."""
+    term = f"%{q}%"
+    tenant_uuid = uuid.UUID(token.tenant_id)
+
+    video_stmt = (
+        select(Video)
+        .where(
+            Video.tenant_id == tenant_uuid,
+            Video.status != "deleted",
+            or_(
+                Video.title.ilike(term),
+                Video.topic.ilike(term),
+                Video.script_text.ilike(term),
+            ),
+        )
+        .order_by(Video.created_at.desc())
+        .limit(limit)
+    )
+    video_result = await db.execute(video_stmt)
+    videos = video_result.scalars().all()
+
+    clip_stmt = (
+        select(Clip)
+        .where(
+            Clip.tenant_id == tenant_uuid,
+            Clip.status != "deleted",
+            or_(
+                Clip.title.ilike(term),
+                Clip.caption_srt.ilike(term),
+            ),
+        )
+        .order_by(Clip.created_at.desc())
+        .limit(limit)
+    )
+    clip_result = await db.execute(clip_stmt)
+    clips = clip_result.scalars().all()
+
+    return SearchResponse(
+        query=q,
+        videos=[SearchVideoHit.model_validate(v) for v in videos],
+        clips=[SearchClipHit.model_validate(c) for c in clips],
+    )
 
 
 @router.get("/videos", response_model=VideoListResponse)

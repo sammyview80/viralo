@@ -604,7 +604,7 @@ export const notificationApi = {
   delete: (id: string) => platformReq<void>("DELETE", `/notifications/${id}`),
 };
 
-/* ─── Agent API (via nginx) ─── */
+/* ─── Agent API ─── */
 const agentReq = createServiceClient(() => API_BASES.agent);
 
 export interface TagSuggestRequest {
@@ -769,4 +769,95 @@ export const billingApi = {
     req<{ status: string; plan: string }>("POST", "/billing/confirm", { session_id }),
   esewaQR: (plan_name: string) =>
     req<EsewaQR>("GET", `/billing/esewa-qr?plan=${plan_name}`),
+};
+
+// ── Search ────────────────────────────────────────────────────────────────────
+export interface SearchVideoHit {
+  type: "video";
+  id: string;
+  title: string | null;
+  status: string;
+  thumbnail_url: string | null;
+  duration_sec: number | null;
+  created_at: string;
+}
+
+export interface SearchClipHit {
+  type: "clip";
+  id: string;
+  video_id: string;
+  title: string | null;
+  platform: string | null;
+  score: number | null;
+  status: string;
+  thumbnail_url: string | null;
+  created_at: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  videos: SearchVideoHit[];
+  clips: SearchClipHit[];
+}
+
+export const searchApi = {
+  global: (q: string, limit = 8) =>
+    videoReq<SearchResponse>(
+      "GET",
+      `/search?q=${encodeURIComponent(q)}&limit=${limit}`
+    ),
+};
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export interface WorkspaceInfo {
+  id: string;
+  display_name: string;
+  subdomain: string;
+  timezone: string;
+  niche: string | null;
+  goal: string | null;
+}
+
+export interface BrandKit {
+  primary_color: string;
+  secondary_color: string;
+  font: string;
+  watermark_url: string | null;
+}
+
+export interface NotificationPrefs {
+  uploads_complete: boolean;
+  clip_ready: boolean;
+  team_activity: boolean;
+  weekly_digest: boolean;
+  billing_alerts: boolean;
+  product_updates: boolean;
+}
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface ApiKeyCreated extends ApiKeyInfo {
+  key: string; // shown once
+}
+
+export const settingsApi = {
+  getWorkspace:          ()                              => req<WorkspaceInfo>("GET",   "/tenants/me"),
+  updateWorkspace:       (body: Partial<WorkspaceInfo>)  => req<WorkspaceInfo>("PATCH", "/tenants/me", body),
+
+  getBrandKit:           ()                              => req<BrandKit>("GET",   "/settings/brand-kit"),
+  updateBrandKit:        (body: Partial<BrandKit>)       => req<BrandKit>("PATCH", "/settings/brand-kit", body),
+
+  getNotificationPrefs:  ()                              => req<NotificationPrefs>("GET",   "/settings/notification-prefs"),
+  updateNotificationPrefs: (body: Partial<NotificationPrefs>) => req<NotificationPrefs>("PATCH", "/settings/notification-prefs", body),
+
+  listApiKeys:           ()                              => req<ApiKeyInfo[]>("GET",    "/settings/api-keys"),
+  createApiKey:          (name: string)                  => req<ApiKeyCreated>("POST",  "/settings/api-keys", { name }),
+  revokeApiKey:          (id: string)                    => req<void>("DELETE", `/settings/api-keys/${id}`),
 };

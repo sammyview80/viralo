@@ -90,7 +90,7 @@ function ViraloWordmark({ textSize = "text-[16px]", className }: { textSize?: st
 
 export function ViraloLogo({ size = 32, wordmark = false, textSize, collapsed = false, className }: ViraloLogoProps) {
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
+    <div className={cn("flex items-center", collapsed ? "gap-0" : "gap-2.5", className)}>
       <ViraloIcon size={size} />
       {wordmark && (
         <div

@@ -51,7 +51,6 @@ yarn-error.log*
 .docker/
 
 # ── Certificates / SSL ────────────────────────────────────────────────────────
-nginx/ssl/
 *.pem
 *.key
 *.crt
