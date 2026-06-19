@@ -4681,7 +4681,7 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_youtube_video",
                  queue="viralo.video.pipeline", acks_late=True, max_retries=3,
-                 time_limit=1260, soft_time_limit=1200)
+                 time_limit=3600, soft_time_limit=3540)
 def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: dict | None = None):
     from celery.exceptions import SoftTimeLimitExceeded
     job_id = self.request.id or video_id
