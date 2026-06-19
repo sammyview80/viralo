@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ClipConfig(BaseModel):
@@ -140,3 +141,33 @@ class YouTubeInspectResponse(BaseModel):
     upload_date: str | None = None
     description: str | None = None
     error: str | None = None
+
+
+class SearchVideoHit(BaseModel):
+    type: Literal["video"] = "video"
+    id: uuid.UUID
+    title: str | None
+    status: str
+    thumbnail_url: str | None
+    duration_sec: float | None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SearchClipHit(BaseModel):
+    type: Literal["clip"] = "clip"
+    id: uuid.UUID
+    video_id: uuid.UUID
+    title: str | None
+    platform: str | None
+    score: float | None
+    status: str
+    thumbnail_url: str | None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SearchResponse(BaseModel):
+    query: str
+    videos: list[SearchVideoHit]
+    clips: list[SearchClipHit]

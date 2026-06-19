@@ -11,6 +11,7 @@ import { ToastContainer } from "./components/ToastContainer";
 import { connectSSE, fetchUnreadCount } from "@/stores/notifications";
 import { Icons } from "@/components/icons";
 import { ViraloLogo, ViraloIcon } from "@/components/ViraloLogo";
+import { CommandPalette, openCommandPalette } from "./components/CommandPalette";
 
 type ActiveKey = PageKey | "dashboard";
 
@@ -34,7 +35,7 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
       )}
     >
       {/* Brand */}
-      <div className="flex h-[62px] flex-none items-center gap-2.5 px-3.5">
+      <div className={cn("flex h-[62px] flex-none items-center px-3.5", collapsed ? "justify-center px-0" : "gap-2.5")}>
         <ViraloLogo size={30} wordmark collapsed={collapsed} textSize="text-[16px]" />
         {!collapsed && (
           <button
@@ -54,8 +55,8 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
           href="/"
           onClick={(e) => { e.preventDefault(); navigate("/"); }}
           className={cn(
-            "relative mb-0.5 flex items-center gap-2.5 overflow-hidden rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-[background,color]",
-            collapsed ? "justify-center" : "",
+            "relative mb-0.5 flex items-center overflow-hidden rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-[background,color]",
+            collapsed ? "justify-center gap-0" : "gap-2.5",
             active === "dashboard"
               ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
               : "text-zinc-300 hover:bg-[#141926] hover:text-white"
@@ -89,8 +90,8 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
                   href={item.href}
                   onClick={(e) => { e.preventDefault(); navigate(item.href); }}
                   className={cn(
-                    "relative mb-0.5 flex items-center gap-2.5 overflow-hidden rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-[background,color]",
-                    collapsed ? "justify-center px-2.5" : "",
+                    "relative mb-0.5 flex items-center overflow-hidden rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-[background,color]",
+                    collapsed ? "justify-center gap-0" : "gap-2.5",
                     isActive
                       ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
                       : "text-zinc-300 hover:bg-[#141926] hover:text-white"
@@ -210,6 +211,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
 
   return (
     <div className="relative min-h-screen" style={shellStyle}>
+      <CommandPalette />
       <ToastContainer />
       <Sidebar active={active} collapsed={collapsed} onCollapse={() => setCollapsed((c) => !c)} isPro={isPro} />
       <MobileNav active={active} />
@@ -233,7 +235,9 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
           </span>
           <input
             aria-label="Search videos, workflows…"
-            className="w-full rounded-[9px] border border-white/[.07] bg-white/[.04] px-9 py-2 text-[12.5px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_4px_rgba(255,61,106,.08)]"
+            readOnly
+            onClick={openCommandPalette}
+            className="w-full cursor-pointer rounded-[9px] border border-white/[.07] bg-white/[.04] px-9 py-2 text-[12.5px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition hover:border-white/[.11]"
             placeholder="Search videos, workflows…"
           />
           <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[5px] border border-white/[.07] bg-[#141926] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-500">⌘K</kbd>
@@ -241,12 +245,6 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
 
         <div className="ml-auto flex items-center gap-1.5">
           <NotificationBell />
-          <button
-            aria-label="Help"
-            className="grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-white/[.08] text-zinc-400 transition hover:border-white/[.13] hover:bg-[#141926] hover:text-zinc-200"
-          >
-            <Icons.Help size={15} />
-          </button>
           <div className="relative">
             <div
               onClick={() => setAvatarOpen((v) => !v)}

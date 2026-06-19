@@ -553,160 +553,7 @@ const PLATFORM_DOT_COLOR: Record<string, string> = {
   linkedin: "bg-blue-400", facebook: "bg-indigo-400",
 };
 
-// --- Demo Lab: Sound Effects + Emoji Zoom ---
-
-type FloatingEmoji = { id: string; emoji: string; x: number; startY: number };
-
-function useEmojiOverlay() {
-  const [emojis, setEmojis] = useState<FloatingEmoji[]>([]);
-  const shoot = useCallback((emoji: string) => {
-    const id = `${Date.now()}-${Math.random()}`;
-    const x = 10 + Math.random() * 80;
-    const startY = 80 + Math.random() * 10;
-    setEmojis((prev) => [...prev, { id, emoji, x, startY }]);
-    setTimeout(() => setEmojis((prev) => prev.filter((e) => e.id !== id)), 1800);
-  }, []);
-  return { emojis, shoot };
-}
-
-function EmojiOverlay({ emojis }: { emojis: FloatingEmoji[] }) {
-  return (
-    <div className="pointer-events-none fixed inset-0 z-[999] overflow-hidden">
-      {emojis.map((e) => (
-        <div
-          key={e.id}
-          className="absolute text-4xl"
-          style={{
-            left: `${e.x}%`,
-            top: `${e.startY}%`,
-            animation: "emojiZoom 1.8s cubic-bezier(.22,.8,.4,1) forwards",
-          }}
-        >
-          {e.emoji}
-        </div>
-      ))}
-      <style>{`
-        @keyframes emojiZoom {
-          0%   { transform: scale(0.2) translateY(0); opacity: 1; }
-          30%  { transform: scale(1.4) translateY(-60px); opacity: 1; }
-          100% { transform: scale(0.6) translateY(-260px); opacity: 0; }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-function playSoundEffect(type: string) {
-  const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-
-  if (type === "quack") {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(900, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.18);
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
-    osc.start(); osc.stop(ctx.currentTime + 0.22);
-
-  } else if (type === "applause") {
-    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.9, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      const env = i < ctx.sampleRate * 0.3 ? i / (ctx.sampleRate * 0.3) : 1 - (i - ctx.sampleRate * 0.3) / (ctx.sampleRate * 0.6);
-      data[i] = (Math.random() * 2 - 1) * env * 0.5;
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(ctx.destination);
-    src.start();
-
-  } else if (type === "ding") {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = "sine"; osc.frequency.value = 1047;
-    gain.gain.setValueAtTime(0.5, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9);
-    osc.start(); osc.stop(ctx.currentTime + 0.9);
-
-  } else if (type === "airhorn") {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = "square";
-    osc.frequency.setValueAtTime(220, ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(440, ctx.currentTime + 0.05);
-    gain.gain.setValueAtTime(0.35, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    osc.start(); osc.stop(ctx.currentTime + 0.5);
-
-  } else if (type === "womp") {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(400, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.6);
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.65);
-    osc.start(); osc.stop(ctx.currentTime + 0.65);
-
-  } else if (type === "tada") {
-    const freqs = [523, 659, 784, 1047];
-    freqs.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = "sine"; osc.frequency.value = freq;
-      const t = ctx.currentTime + i * 0.1;
-      gain.gain.setValueAtTime(0.35, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-      osc.start(t); osc.stop(t + 0.4);
-    });
-  }
-}
-
-const DEMO_EFFECTS = [
-  { key: "quack",    emoji: "🦆", label: "Quack",    sound: "quack" },
-  { key: "applause", emoji: "👏", label: "Applause", sound: "applause" },
-  { key: "ding",     emoji: "🔔", label: "Ding",     sound: "ding" },
-  { key: "airhorn",  emoji: "📯", label: "Airhorn",  sound: "airhorn" },
-  { key: "womp",     emoji: "😬", label: "Womp",     sound: "womp" },
-  { key: "tada",     emoji: "🎉", label: "Tada",     sound: "tada" },
-  { key: "fire",     emoji: "🔥", label: "Fire",     sound: "ding" },
-  { key: "rocket",   emoji: "🚀", label: "Rocket",   sound: "airhorn" },
-  { key: "love",     emoji: "❤️", label: "Love",     sound: "tada" },
-  { key: "poop",     emoji: "💩", label: "Poop",     sound: "womp" },
-];
-
-function DemoLab({ shoot }: { shoot: (emoji: string) => void }) {
-  return (
-    <section className="rounded-[12px] border border-amber-500/20 bg-amber-500/[.04] p-3">
-      <div className="mb-2.5 flex items-center gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[.13em] text-amber-500/80">Demo Lab</p>
-        <span className="rounded-full bg-amber-500/20 px-1.5 py-px text-[9px] font-bold text-amber-400">Test</span>
-      </div>
-      <div className="grid grid-cols-5 gap-1.5">
-        {DEMO_EFFECTS.map(({ key, emoji, label, sound }) => (
-          <button
-            key={key}
-            onClick={() => { playSoundEffect(sound); for (let i = 0; i < 3; i++) setTimeout(() => shoot(emoji), i * 120); }}
-            title={label}
-            className="flex flex-col items-center gap-1 rounded-[9px] border border-white/[.06] bg-white/[.025] px-1 py-2 text-xl transition hover:bg-white/[.05] hover:scale-110 active:scale-95 cursor-pointer"
-          >
-            <span>{emoji}</span>
-            <span className="text-[8px] font-semibold text-zinc-600">{label}</span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function ClipsPage() {
-  const { emojis, shoot } = useEmojiOverlay();
   const [clips, setClips] = useState<ClipApiResponse[]>([]);
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -731,9 +578,6 @@ export function ClipsPage() {
   const [page, setPage] = useState(1);
   const [totalClips, setTotalClips] = useState(0);
   const perPage = 24;
-  const [mergeSelectMode, setMergeSelectMode] = useState(false);
-  const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
-  const [mergeLoading, setMergeLoading] = useState(false);
   const [editClip, setEditClip] = useState<ClipApiResponse | null>(null);
   const [failedPostBanner, setFailedPostBanner] = useState<string | null>(null);
   async function handleSaveAiSuggestions(clip: ClipApiResponse, suggestions: TagSuggestResponse) {
@@ -773,40 +617,7 @@ export function ClipsPage() {
     }
   }
 
-  async function handleMergeAi() {
-    if (mergeSelected.size < 2) return;
-    setMergeLoading(true);
-    try {
-      const result = await videoApi.mergeAiClips(Array.from(mergeSelected));
-      setMergeSelectMode(false);
-      setMergeSelected(new Set());
-      addToast({
-        id: (result as { task_id?: string }).task_id ?? `merge-${Date.now()}`,
-        type: "merge_ai",
-        title: "MergeAI queued",
-        body: (result as { message?: string }).message ?? "Merged clip will appear in your library when ready.",
-        is_read: false,
-        action_url: "/clips",
-        metadata: result as Record<string, unknown>,
-        created_at: new Date().toISOString(),
-        read_at: null,
-      });
-    } catch (e: unknown) {
-      addToast({
-        id: `merge-err-${Date.now()}`,
-        type: "error",
-        title: "MergeAI failed",
-        body: e instanceof Error ? e.message : "Merge failed. Try again.",
-        is_read: false,
-        action_url: null,
-        metadata: null,
-        created_at: new Date().toISOString(),
-        read_at: null,
-      });
-    } finally {
-      setMergeLoading(false);
-    }
-  }
+
 
   // Highlight clip + show banner when navigated from failed post notification
   useEffect(() => {
@@ -997,18 +808,7 @@ export function ClipsPage() {
             <option value="score_asc">Lowest score</option>
             <option value="duration_desc">Longest first</option>
           </select>
-          <button
-            onClick={() => { setMergeSelectMode((v) => !v); setMergeSelected(new Set()); }}
-            className={cn(
-              "flex h-10 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer",
-              mergeSelectMode
-                ? "border-[#ff3d6a]/50 bg-[#ff3d6a]/10 text-[#ff3d6a]"
-                : "border-white/[.07] bg-white/[.04] text-zinc-400 hover:text-zinc-200"
-            )}
-          >
-            MergeAI
-            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-400">Beta</span>
-          </button>
+
           <Button size="sm" className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
           </div>
           {activeFilterCount > 0 && !showFilters && (
@@ -1019,22 +819,7 @@ export function ClipsPage() {
           )}
         </div>
 
-        {/* MergeAI selection bar */}
-        {mergeSelectMode && (
-          <div className="flex items-center gap-3 border-b border-white/[.06] bg-[#090e16]/90 px-5 py-3">
-            <span className="text-xs text-zinc-400">
-              {mergeSelected.size === 0 ? "Select 2–10 clips to merge" : `${mergeSelected.size} clip${mergeSelected.size !== 1 ? "s" : ""} selected`}
-            </span>
-            <button
-              disabled={mergeSelected.size < 2 || mergeLoading}
-              onClick={handleMergeAi}
-              className="rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40 cursor-pointer"
-            >
-              {mergeLoading ? "Merging…" : "Merge with AI"}
-            </button>
-            <button onClick={() => { setMergeSelectMode(false); setMergeSelected(new Set()); }} className="text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer">Cancel</button>
-          </div>
-        )}
+
 
         {/* Failed post banner */}
         {failedPostBanner && (
@@ -1091,26 +876,13 @@ export function ClipsPage() {
                     <UniversalClipCard
                       clip={clip}
                       active={clip.id === selectedId}
-                      onClick={mergeSelectMode
-                        ? () => setMergeSelected((s) => { const n = new Set(s); n.has(clip.id) ? n.delete(clip.id) : n.add(clip.id); return n; })
-                        : () => setSelectedId(clip.id)}
+                      onClick={() => setSelectedId(clip.id)}
                       delay={(i % 12) * 35}
                       isPosted={postedClipIds.has(clip.id)}
                       isScheduled={scheduledClipIds.has(clip.id)}
                       posts={postsByClipId.get(clip.id) ?? []}
                     />
-                    {mergeSelectMode && (
-                      <div className={cn(
-                        "pointer-events-none absolute inset-0 rounded-[16px] border-2 transition-colors",
-                        mergeSelected.has(clip.id)
-                          ? "border-[#ff3d6a] bg-[#ff3d6a]/10"
-                          : "border-transparent"
-                      )}>
-                        {mergeSelected.has(clip.id) && (
-                          <div className="absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-[#ff3d6a] text-[10px] font-black text-white shadow">✓</div>
-                        )}
-                      </div>
-                    )}
+
                   </div>
                 )}
               />
@@ -1385,7 +1157,7 @@ export function ClipsPage() {
                     </div>
                   </section>
 
-                  <DemoLab shoot={shoot} />
+
 
                   <div className="sticky bottom-0 space-y-2 bg-[#0b101a]/95 pt-1 backdrop-blur">
                     <Button className="w-full h-9 bg-[#ff3d6a] hover:bg-[#e8304f] text-white text-[13px] font-semibold" onClick={() => setPublishOpen(true)}>
@@ -1418,7 +1190,6 @@ export function ClipsPage() {
           onPost={() => { setSelectedId(editClip.id); setPublishOpen(true); setEditClip(null); }}
         />
       )}
-      <EmojiOverlay emojis={emojis} />
     </>
   );
 }

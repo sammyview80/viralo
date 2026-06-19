@@ -13,6 +13,8 @@ class TenantResponse(BaseModel):
     timezone: str
     niche: str | None
     goal: str | None
+    brand_kit: dict | None = None
+    notification_prefs: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -24,3 +26,5 @@ class TenantUpdate(BaseModel):
     goal: str | None = None
     llm_provider: str | None = None
     llm_model: str | None = None
+    brand_kit: dict | None = None
+    notification_prefs: dict | None = None
