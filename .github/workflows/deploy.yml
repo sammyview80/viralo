@@ -24,22 +24,7 @@ jobs:
             git pull origin dev
 
             echo "==> Rebuilding and restarting services"
-            docker compose up -d --force-recreate --build \
-              frontend \
-              core-service \
-              video-service \
-              agent-service \
-              platform-service \
-              workflow-service \
-              celery-video-pipeline \
-              celery-video-ai \
-              celery-video-upload \
-              celery-video-generate \
-              celery-video-post \
-              celery-agent \
-              celery-notification \
-              celery-workflow \
-              celery-beat
+            docker compose up -d --force-recreate --build 
 
             echo "==> Reloading nginx"
             docker compose exec -T nginx nginx -s reload 2>/dev/null || true
