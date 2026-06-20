@@ -4,8 +4,8 @@ import { EXAMPLE_TOPICS } from "./constants";
 
 export function EmptyState({ onPickExample }: { onPickExample: (topic: string) => void }) {
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-10">
-      <div className="rounded-[24px] border border-white/[.07] bg-gradient-to-br from-white/[.055] to-white/[.015] p-6 shadow-2xl shadow-black/20">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-2 py-1 sm:p-6">
+      <div className="rounded-[24px] border border-white/[.07] bg-gradient-to-br from-white/[.055] to-white/[.015] p-1 shadow-2xl shadow-black/20">
         <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 px-3 py-1 text-[11px] font-bold text-rose-200">
           ✦ AI content strategy room
         </div>
