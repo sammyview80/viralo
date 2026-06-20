@@ -109,6 +109,19 @@ services:
       postgres:
         condition: service_healthy
 
+  seed:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+    command: python scripts/seed_dev_user.py
+    restart: "no"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
   core-service:
     <<: *service-defaults
     build:

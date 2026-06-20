@@ -8,6 +8,7 @@ COPY workers/ ./workers/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./alembic.ini
 COPY services/core/ ./services/core/
+COPY scripts/ ./scripts/
 RUN uv pip install --system -e ./shared -e ./services/core
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8001"]
@@ -18,6 +19,7 @@ COPY workers/ ./workers/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./alembic.ini
 COPY services/core/ ./services/core/
+COPY scripts/ ./scripts/
 RUN uv pip install --system -e ./shared -e ./services/core
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
