@@ -7,8 +7,67 @@ const VIDEO_SSE_BASE = API_BASES.video;
 
 type View = "list" | "create";
 type InputType = "url" | "upload";
-type Theme = "classic" | "neon" | "minimal";
+type TemplateId = "viral" | "classic" | "neon" | "minimal";
 type Order = "countdown" | "ascending";
+
+interface TemplateConfig {
+  bgColor: string;
+  titleColor: string;
+  accentColor: string;
+  numberColors: string[]; // index 0 = rank-1 color
+  font: string;
+}
+
+const TEMPLATES: { id: TemplateId; name: string; desc: string; config: TemplateConfig }[] = [
+  {
+    id: "viral",
+    name: "Viral",
+    desc: "Bold numbers, pure black",
+    config: {
+      bgColor: "#000000",
+      titleColor: "#ffffff",
+      accentColor: "#e53e3e",
+      numberColors: ["#ffd700", "#9ca3af", "#f97316", "#ffffff", "#ffffff"],
+      font: "Impact, Arial Black, sans-serif",
+    },
+  },
+  {
+    id: "classic",
+    name: "Classic",
+    desc: "Brand pink on dark",
+    config: {
+      bgColor: "#0a0d14",
+      titleColor: "#ff3d6a",
+      accentColor: "#ff3d6a",
+      numberColors: ["#ff3d6a", "#ff3d6a", "#ff3d6a", "#ff3d6a", "#ff3d6a"],
+      font: "Inter, sans-serif",
+    },
+  },
+  {
+    id: "neon",
+    name: "Neon",
+    desc: "Glowing cyan on dark",
+    config: {
+      bgColor: "#050d1a",
+      titleColor: "#22d3ee",
+      accentColor: "#a78bfa",
+      numberColors: ["#22d3ee", "#a78bfa", "#22d3ee", "#a78bfa", "#22d3ee"],
+      font: "Inter, sans-serif",
+    },
+  },
+  {
+    id: "minimal",
+    name: "Minimal",
+    desc: "Clean white on black",
+    config: {
+      bgColor: "#000000",
+      titleColor: "#ffffff",
+      accentColor: "#d4d4d4",
+      numberColors: ["#ffffff", "#d4d4d4", "#a3a3a3", "#737373", "#525252"],
+      font: "Inter, sans-serif",
+    },
+  },
+];
 
 interface RankingJob {
   jobId: string;
@@ -33,12 +92,6 @@ interface Segment {
   previewUrl: string;
   duration: number;
 }
-
-const THEME_COLOR: Record<Theme, string> = {
-  classic: "#ff3d6a",
-  neon: "#22d3ee",
-  minimal: "#e5e5e5",
-};
 
 const newSegment = (): Segment => ({
   id: Math.random().toString(36).slice(2),
@@ -459,7 +512,7 @@ interface CreateViewProps {
 function CreateView({ onBack, onJobCreated }: CreateViewProps) {
   const [segments, setSegments] = useState<Segment[]>(() => [newSegment(), newSegment()]);
   const [title, setTitle] = useState("");
-  const [theme, setTheme] = useState<Theme>("classic");
+  const [theme, setTheme] = useState<TemplateId>("classic");
   const [order, setOrder] = useState<Order>("countdown");
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -611,7 +664,8 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs.map((j) => j.jobId).join(",")]);
 
-  const accent = THEME_COLOR[theme];
+  const templateConfig = TEMPLATES.find((t) => t.id === theme)?.config;
+  const accent = templateConfig?.accentColor ?? "#ff3d6a";
 
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6">
@@ -816,7 +870,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
 
             <span className="mt-5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Theme</span>
             <div className="mt-2 grid grid-cols-3 gap-2">
-              {(["classic", "neon", "minimal"] as Theme[]).map((t) => (
+              {(["classic", "neon", "minimal"] as TemplateId[]).map((t) => (
                 <button key={t} onClick={() => setTheme(t)}
                   className={cn("rounded-[10px] border py-2 text-xs font-bold capitalize transition",
                     theme === t ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-white" : "border-white/[.08] text-zinc-400 hover:text-zinc-200")}>
