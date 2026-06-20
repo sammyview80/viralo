@@ -45,11 +45,17 @@ class InstagramPublisher(BasePublisher):
             # Step 2: Poll until container is ready (FINISHED)
             for _ in range(20):
                 time.sleep(5)
-                s = requests.get(
+                poll = requests.get(
                     f"{GRAPH_URL}/{container_id}",
                     params={"fields": "status_code", "access_token": access_token},
                     timeout=15,
-                ).json()
+                )
+                if poll.status_code == 429:
+                    retry = int(poll.headers.get("Retry-After", 900))
+                    return PublishResult(success=False, error="Rate limited during poll", retry_after_seconds=retry)
+                if not poll.ok:
+                    return PublishResult(success=False, error=f"Poll failed: {poll.status_code} {poll.text[:200]}")
+                s = poll.json()
                 if s.get("status_code") == "FINISHED":
                     break
                 if s.get("status_code") == "ERROR":

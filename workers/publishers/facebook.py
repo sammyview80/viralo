@@ -48,16 +48,13 @@ class FacebookPublisher(BasePublisher):
                     end_offset = start_offset + len(chunk)
                     cr = requests.post(
                         f"{RUPLOAD_URL}/{page_id}/videos",
-                        headers={
-                            "Authorization": f"OAuth {access_token}",
-                            "Content-Type": "multipart/form-data",
-                        },
+                        headers={"Authorization": f"OAuth {access_token}"},
                         data={
                             "upload_phase": "transfer",
                             "upload_session_id": upload_session_id,
                             "start_offset": start_offset,
-                            "video_file_chunk": chunk,
                         },
+                        files={"video_file_chunk": chunk},
                         timeout=120,
                     )
                     cr.raise_for_status()

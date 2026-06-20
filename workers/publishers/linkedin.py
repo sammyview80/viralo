@@ -47,7 +47,8 @@ class LinkedInPublisher(BasePublisher):
             upload_instructions = upload_data.get("uploadInstructions", [])
             upload_token = upload_data.get("uploadToken", "")
 
-            # Step 2: Upload chunks
+            # Step 2: Upload chunks — collect ETags for finalization
+            etags = []
             with open(video_path, "rb") as f:
                 for instr in upload_instructions:
                     chunk_start = instr.get("firstByte", 0)
@@ -62,15 +63,16 @@ class LinkedInPublisher(BasePublisher):
                         timeout=120,
                     )
                     etag_resp.raise_for_status()
+                    etags.append(etag_resp.headers.get("ETag", "").strip('"'))
 
-            # Step 3: Finalize upload
+            # Step 3: Finalize upload — uploadedPartIds must be ETags, not uploadUrls
             requests.post(
                 f"{LI_API}/videos?action=finalizeUpload",
                 headers=headers,
                 json={"finalizeUploadRequest": {
                     "video": video_urn,
                     "uploadToken": upload_token,
-                    "uploadedPartIds": [i.get("uploadUrl", "") for i in upload_instructions],
+                    "uploadedPartIds": etags,
                 }},
                 timeout=30,
             ).raise_for_status()

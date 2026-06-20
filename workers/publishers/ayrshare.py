@@ -101,13 +101,16 @@ class AyrsharePublisher(BasePublisher):
                 retry = int(resp.headers.get("Retry-After", 900))
                 return PublishResult(success=False, error="Ayrshare rate limited", retry_after_seconds=retry)
 
-            data = resp.json()
-
             if not resp.ok:
-                err = data.get("message") or data.get("error") or resp.text[:300]
+                try:
+                    err_data = resp.json()
+                    err = err_data.get("message") or err_data.get("error") or resp.text[:300]
+                except Exception:
+                    err = resp.text[:300]
                 log.warning("Ayrshare post failed: %s", err)
                 return PublishResult(success=False, error=f"Ayrshare: {err}")
 
+            data = resp.json()
             # Extract platform-specific post ID from response
             platform_results = data.get("postIds", []) or data.get("posts", [])
             post_id = None

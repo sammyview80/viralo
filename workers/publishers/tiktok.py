@@ -77,6 +77,8 @@ class TikTokPublisher(BasePublisher):
             data = r.json().get("data", {})
             publish_id = data.get("publish_id")
             upload_url = data.get("upload_url")
+            if not publish_id or not upload_url:
+                return PublishResult(success=False, error=f"TikTok init missing publish_id/upload_url: {r.text[:300]}")
 
             # Step 2: Upload chunks
             with open(video_path, "rb") as f:
