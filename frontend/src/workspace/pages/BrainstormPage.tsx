@@ -112,47 +112,27 @@ export function BrainstormPage() {
     <>
       <div className="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,61,106,.08),transparent_34%),#06080d]">
         {/* Page header */}
-        <div className="border-b border-white/[.07] px-5 py-5 sm:px-6">
+        <div className="border-b border-white/[.07] px-5 py-4 sm:px-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
             Brainstorm Room
           </div>
-          <h1 className="mt-2 font-display text-[26px] font-black tracking-tight text-white sm:text-[30px]">Build your next viral angle</h1>
-          <p className="mt-1 max-w-2xl text-[13px] leading-6 text-zinc-500">
-            Give the agents a niche. Get a verdict, research path, and ranked video ideas without leaving this room.
-          </p>
+          <h1 className="mt-1.5 font-display text-[22px] font-black tracking-tight text-white sm:text-[26px]">Build your next viral angle</h1>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
-          {/* Sidebar */}
-          <div className="flex shrink-0 flex-col gap-4 overflow-y-auto border-b border-white/[.07] p-4 lg:w-80 lg:border-b-0 lg:border-r">
-            {/* New session input */}
-            <div className="rounded-[20px] border border-white/[.07] bg-white/[.025] p-3 shadow-xl shadow-black/10">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <p className="text-[12px] font-bold text-white">New brainstorm</p>
-                  <p className="text-[10px] text-zinc-600">Focused topics work best</p>
-                </div>
-                <span className="rounded-full bg-[#ff3d6a]/10 px-2 py-1 text-[10px] font-bold text-rose-300">7 agents</span>
-              </div>
+        {/* Top input row */}
+        <div className="border-b border-white/[.07] px-5 py-4 sm:px-6">
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
               <textarea
                 value={topic}
                 onChange={e => setTopic(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreate(); } }}
-                placeholder="Enter a niche or topic..."
-                rows={4}
-                className="w-full resize-none rounded-[14px] border border-white/[.08] bg-[#0d1320] px-3 py-3 text-[12px] leading-5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/40"
+                placeholder="Enter a niche or topic…"
+                rows={2}
+                className="w-full resize-none rounded-[14px] border border-white/[.08] bg-[#0d1320] px-3.5 py-3 text-[13px] leading-5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/40"
               />
-              {error && <p className="mt-2 text-[10px] text-red-400">{error}</p>}
-              <button
-                onClick={handleCreate}
-                disabled={creating || !topic.trim()}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#ff3d6a] px-3 py-3 text-[12px] font-black text-white transition hover:bg-[#ff5580] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {creating ? (
-                  <><span className="inline-block h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" /> Starting...</>
-                ) : "✦ Run Brainstorm"}
-              </button>
-              <div className="mt-3 flex flex-wrap gap-1.5">
+              {error && <p className="mt-1.5 text-[10px] text-red-400">{error}</p>}
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {EXAMPLE_TOPICS.slice(0, 3).map(example => (
                   <button key={example} onClick={() => setTopic(example)} className="rounded-full bg-white/[.04] px-2 py-1 text-[10px] text-zinc-500 transition hover:text-zinc-200">
                     {example}
@@ -160,30 +140,44 @@ export function BrainstormPage() {
                 ))}
               </div>
             </div>
-
-            {/* Sessions list */}
-            <div className="min-h-0 flex-1">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">Sessions</p>
-                <span className="text-[10px] text-zinc-700">{sessions.length}</span>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse rounded-[14px] bg-white/[.03]" />)}
-                </div>
-              ) : sessions.length === 0 ? (
-                <div className="rounded-[16px] border border-dashed border-white/[.08] bg-white/[.015] p-4 text-center">
-                  <p className="text-[11px] font-semibold text-zinc-500">No sessions yet</p>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-700">Run your first brainstorm to save it here.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {sessions.map(s => (
-                    <SessionRow key={s.id} session={s} active={selected?.id === s.id} onSelect={() => handleSelectSession(s)} />
-                  ))}
-                </div>
-              )}
+            <div className="flex flex-col items-end gap-1.5 pt-0.5">
+              <button
+                onClick={handleCreate}
+                disabled={creating || !topic.trim()}
+                className="flex items-center gap-2 rounded-[14px] bg-[#ff3d6a] px-5 py-3 text-[12px] font-black text-white transition hover:bg-[#ff5580] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap"
+              >
+                {creating ? (
+                  <><span className="inline-block h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" /> Starting...</>
+                ) : "✦ Run Brainstorm"}
+              </button>
+              <span className="rounded-full bg-[#ff3d6a]/10 px-2 py-1 text-[10px] font-bold text-rose-300">7 agents</span>
             </div>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Left sidebar: history */}
+          <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-r border-white/[.07] p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">History</p>
+              <span className="text-[10px] text-zinc-700">{sessions.length}</span>
+            </div>
+            {loading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse rounded-[14px] bg-white/[.03]" />)}
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="rounded-[16px] border border-dashed border-white/[.08] bg-white/[.015] p-4 text-center">
+                <p className="text-[11px] font-semibold text-zinc-500">No sessions yet</p>
+                <p className="mt-1 text-[10px] leading-4 text-zinc-700">Run your first brainstorm to save it here.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map(s => (
+                  <SessionRow key={s.id} session={s} active={selected?.id === s.id} onSelect={() => handleSelectSession(s)} />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Main panel */}
@@ -191,7 +185,7 @@ export function BrainstormPage() {
             {!selected ? (
               <EmptyState onPickExample={setTopic} />
             ) : (
-              <div className="mx-auto flex w-full max-w-5xl flex-col gap-0 p-5 sm:p-6">
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-0 p-2 sm:p-6">
                 {/* Lean session header */}
                 <div className="mb-5 flex flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">

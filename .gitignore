@@ -37,6 +37,7 @@ dist/
 frontend/tsconfig.tsbuildinfo
 frontend/dist/
 frontend/uploads/
+.codex-plugins/
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log

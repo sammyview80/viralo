@@ -2500,9 +2500,59 @@ function ResultsView({
 }
 
 /* ─── Main UploadPage ─── */
+/* ─── Upload wizard stepper ─── */
+const UPLOAD_STEPS = [
+  { label: "Source",       sub: "Upload file or YouTube" },
+  { label: "Destinations", sub: "Platforms & format" },
+  { label: "Clips",        sub: "Length, count, score" },
+  { label: "Style",        sub: "AI, captions, quality" },
+  { label: "Review",       sub: "Confirm & start" },
+] as const;
+
+function UploadStepper({ step, onStep }: { step: number; onStep: (n: number) => void }) {
+  return (
+    <div className="flex w-48 flex-none flex-col gap-0 py-1">
+      {UPLOAD_STEPS.map((s, i) => {
+        const n = i + 1;
+        const active = n === step;
+        const done = n < step;
+        return (
+          <div key={n} className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => done ? onStep(n) : undefined}
+              className={cn("flex items-center gap-3 rounded-[11px] px-3 py-2.5 text-left transition", active ? "bg-white/[.06]" : done ? "hover:bg-white/[.03] cursor-pointer" : "cursor-default")}
+            >
+              <div className={cn(
+                "grid h-8 w-8 flex-none place-items-center rounded-full border text-[13px] font-bold transition",
+                active ? "border-[#ff3d6a] bg-[#ff3d6a] text-white shadow-[0_0_14px_rgba(255,61,106,.4)]"
+                : done  ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/15 text-[#ff7a9a]"
+                :         "border-white/[.12] bg-white/[.04] text-zinc-500"
+              )}>
+                {done ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><polyline points="20 6 9 17 4 12"/></svg>
+                ) : n}
+              </div>
+              <div className="min-w-0">
+                <div className={cn("text-[13px] font-semibold leading-tight", active ? "text-white" : done ? "text-zinc-300" : "text-zinc-500")}>{s.label}</div>
+                <div className={cn("mt-0.5 text-[11px] leading-tight", active ? "text-zinc-400" : "text-zinc-600")}>{s.sub}</div>
+              </div>
+            </button>
+            {i < UPLOAD_STEPS.length - 1 && (
+              <div className={cn("ml-7 h-5 w-[2px] rounded-full", done ? "bg-[#ff3d6a]/30" : "bg-white/[.07]")} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function UploadPage() {
   const [source, setSource] = useState<Source>("file");
   const [view, setView] = useState<View>("upload");
+  const [uploadStep, setUploadStep] = useState(1);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [activeVideo, setActiveVideo] = useState<VideoResponse | null>(null);
   const [clips, setClips] = useState<ClipApiResponse[]>([]);
   const [drag, setDrag] = useState(false);
@@ -2595,40 +2645,43 @@ export function UploadPage() {
     return () => clearTimeout(t);
   }, [urlVal]);
 
-  const handleFile = useCallback(async (files: FileList | null) => {
+  const handleFile = useCallback((files: FileList | null) => {
     if (!files?.length) return;
-    const file = files[0];
+    setPendingFile(files[0]);
+    setUploadError("");
+    setUploadStep(2);
+  }, []);
+
+  const handleUrlReady = useCallback(() => {
+    if (!urlReady) return;
+    setUploadError("");
+    setUploadStep(2);
+  }, [urlReady]);
+
+  const handleConfirm = useCallback(async () => {
     setUploading(true);
     setUploadError("");
     try {
-      const video = await videoApi.upload(file, file.name.replace(/\.[^.]+$/, ""), clipConfig);
-      setHistory((h) => [video, ...h]);
-      setActiveVideo(video);
-      setView("processing");
+      if (source === "file" && pendingFile) {
+        const video = await videoApi.upload(pendingFile, pendingFile.name.replace(/\.[^.]+$/, ""), clipConfig);
+        setHistory((h) => [video, ...h]);
+        setActiveVideo(video);
+        setView("processing");
+      } else if (source === "yt" && urlVal.trim()) {
+        const video = await videoApi.youtube(urlVal.trim(), undefined, clipConfig);
+        setHistory((h) => [video, ...h]);
+        setActiveVideo(video);
+        setUrlVal("");
+        setUrlReady(false);
+        setView("processing");
+      }
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
+      setUploadStep(5);
     } finally {
       setUploading(false);
     }
-  }, [clipConfig]);
-
-  const handleUrlFetch = useCallback(async () => {
-    if (!urlVal.trim()) return;
-    setUploading(true);
-    setUploadError("");
-    try {
-      const video = await videoApi.youtube(urlVal.trim(), undefined, clipConfig);
-      setHistory((h) => [video, ...h]);
-      setActiveVideo(video);
-      setUrlVal("");
-      setUrlReady(false);
-      setView("processing");
-    } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : "Import failed");
-    } finally {
-      setUploading(false);
-    }
-  }, [urlVal, clipConfig]);
+  }, [source, pendingFile, urlVal, clipConfig]);
 
   const handleDone = useCallback(async (updated: VideoResponse) => {
     setHistory((h) => h.map((v) => v.id === updated.id ? updated : v));
@@ -2743,7 +2796,7 @@ export function UploadPage() {
             )}
             {view !== "upload" && (
               <button
-                onClick={() => { setView("upload"); setActiveVideo(null); setClips([]); setUploadError(""); }}
+                onClick={() => { setView("upload"); setActiveVideo(null); setClips([]); setUploadError(""); setUploadStep(1); setPendingFile(null); }}
                 className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_8px_24px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f]"
               >
                 + New upload
@@ -2753,113 +2806,200 @@ export function UploadPage() {
         </div>
 
         <div className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-5 sm:py-5">
-          {/* Upload view — two-column layout */}
+          {/* Upload view — stepper wizard */}
           {view === "upload" && (
-            <div className="mx-auto flex h-full w-full max-w-2xl flex-col gap-5 overflow-y-auto">
+            <div className="flex h-full gap-6 overflow-hidden">
+              {/* Left: vertical stepper */}
+              <div className="hidden flex-none overflow-y-auto pt-1 md:flex">
+                <UploadStepper step={uploadStep} onStep={setUploadStep} />
+              </div>
 
-              {/* Import section */}
-              <div className="flex flex-col gap-4">
-                {/* Source tabs */}
-                <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-white/[.07] bg-white/[.02] p-1">
-                  {(["file", "yt"] as Source[]).map((s) => (
-                    <button key={s} onClick={() => { setSource(s); setUploadError(""); }}
-                      className={cn(
-                        "flex flex-1 items-center justify-center gap-2 rounded-[9px] py-2.5 text-[13px] font-semibold transition",
-                        source === s ? "bg-white/[.08] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
-                      )}>
-                      {s === "file" ? (
-                        <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Upload file</>
-                      ) : (
-                        <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>YouTube URL</>
-                      )}
-                    </button>
-                  ))}
-                </div>
+              {/* Divider */}
+              <div className="hidden w-px flex-none bg-white/[.06] md:block" />
 
-                {/* File drop zone */}
-                {source === "file" && (
-                  <div
-                    onClick={() => !uploading && fileInputRef.current?.click()}
-                    onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                    onDragLeave={() => setDrag(false)}
-                    onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
-                    className={cn(
-                      "flex flex-1 cursor-pointer flex-col items-center justify-center gap-4 rounded-[18px] border-2 border-dashed p-12 text-center transition",
-                      uploading ? "cursor-default border-[#ff3d6a]/40 bg-[#ff3d6a]/[.03]"
-                      : drag ? "border-[#ff3d6a]/60 bg-[#ff3d6a]/[.06] scale-[1.01]"
-                      : "border-white/[.09] bg-white/[.015] hover:border-white/20 hover:bg-white/[.03]"
-                    )}
-                  >
-                    <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
-                    {uploading ? (
-                      <>
-                        <span className="block h-12 w-12 rounded-full border-[3px] border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
-                        <div>
-                          <p className="font-display text-xl font-bold text-white">Uploading…</p>
-                          <p className="mt-1 text-[13px] text-zinc-500">Transferring your video to Viralo</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="grid h-16 w-16 place-items-center rounded-[20px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08]">
-                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        </div>
-                        <div>
-                          <p className="font-display text-2xl font-bold text-white">{drag ? "Drop to upload" : "Drop video here"}</p>
-                          <p className="mt-1.5 text-[13px] text-zinc-500">MP4, MOV, WebM, MKV, AVI · up to 4 GB</p>
-                        </div>
-                        <button className="rounded-[11px] border border-white/[.1] bg-white/[.06] px-6 py-2.5 text-[13px] font-bold text-zinc-200 transition hover:bg-white/[.10] hover:text-white">
-                          Browse files
+              {/* Right: step content */}
+              <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+
+                {/* Step 1: Source */}
+                {uploadStep === 1 && (
+                  <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-white/[.07] bg-white/[.02] p-1">
+                      {(["file", "yt"] as Source[]).map((s) => (
+                        <button key={s} onClick={() => { setSource(s); setUploadError(""); setPendingFile(null); }}
+                          className={cn(
+                            "flex flex-1 items-center justify-center gap-2 rounded-[9px] py-2.5 text-[13px] font-semibold transition",
+                            source === s ? "bg-white/[.08] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                          )}>
+                          {s === "file" ? (
+                            <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Upload file</>
+                          ) : (
+                            <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>YouTube URL</>
+                          )}
                         </button>
-                      </>
-                    )}
-                  </div>
-                )}
+                      ))}
+                    </div>
 
-                {/* YouTube input */}
-                {source === "yt" && (
-                  <div className="flex flex-1 flex-col justify-center rounded-[18px] border border-white/[.08] bg-white/[.02] p-8">
-                    <div className="mb-6 grid h-16 w-16 place-items-center rounded-[20px] border border-red-400/20 bg-red-400/[.08]">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
-                    </div>
-                    <h3 className="font-display text-xl font-bold text-white">Import from YouTube</h3>
-                    <p className="mt-1 text-[13px] text-zinc-500">Paste a public YouTube URL to generate clips from it.</p>
-                    <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-                      <input
-                        value={urlVal}
-                        onChange={(e) => setUrlVal(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && urlReady && !uploading && handleUrlFetch()}
-                        placeholder="https://youtube.com/watch?v=…"
-                        className="min-w-0 flex-1 rounded-[11px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
-                      />
-                      <button
-                        disabled={!urlReady || uploading}
-                        onClick={handleUrlFetch}
-                        className="rounded-[11px] bg-[#ff3d6a] px-6 py-3 text-[13px] font-bold text-white transition hover:bg-[#e8304f] disabled:cursor-not-allowed disabled:opacity-40"
+                    {source === "file" && (
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+                        onDragLeave={() => setDrag(false)}
+                        onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
+                        className={cn(
+                          "flex flex-1 cursor-pointer flex-col items-center justify-center gap-4 rounded-[18px] border-2 border-dashed p-12 text-center transition",
+                          drag ? "border-[#ff3d6a]/60 bg-[#ff3d6a]/[.06] scale-[1.01]"
+                          : pendingFile ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.04]"
+                          : "border-white/[.09] bg-white/[.015] hover:border-white/20 hover:bg-white/[.03]"
+                        )}
                       >
-                        {uploading ? <span className="block h-4 w-4 rounded-full border-2 border-white/70 border-t-transparent animate-spin" /> : "Import"}
-                      </button>
-                    </div>
-                    {urlReady && !uploading && (
-                      <div className="mt-4 flex items-center gap-2.5 rounded-[11px] border border-emerald-300/15 bg-emerald-400/[.08] px-4 py-3 text-[12.5px] font-semibold text-emerald-300">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                        YouTube video detected — ready to import
+                        <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
+                        {pendingFile ? (
+                          <>
+                            <div className="grid h-16 w-16 place-items-center rounded-[20px] border border-[#ff3d6a]/30 bg-[#ff3d6a]/[.10]">
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            </div>
+                            <div>
+                              <p className="font-display text-[16px] font-bold text-white">{pendingFile.name}</p>
+                              <p className="mt-1 text-[12px] text-zinc-500">{(pendingFile.size / 1024 / 1024).toFixed(1)} MB · click to change</p>
+                            </div>
+                            <button onClick={(e) => { e.stopPropagation(); setUploadStep(2); }}
+                              className="rounded-[11px] bg-[#ff3d6a] px-6 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_16px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f]">
+                              Continue →
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="grid h-16 w-16 place-items-center rounded-[20px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08]">
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            </div>
+                            <div>
+                              <p className="font-display text-2xl font-bold text-white">{drag ? "Drop to upload" : "Drop video here"}</p>
+                              <p className="mt-1.5 text-[13px] text-zinc-500">MP4, MOV, WebM, MKV, AVI · up to 4 GB</p>
+                            </div>
+                            <button className="rounded-[11px] border border-white/[.1] bg-white/[.06] px-6 py-2.5 text-[13px] font-bold text-zinc-200 transition hover:bg-white/[.10] hover:text-white">
+                              Browse files
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {source === "yt" && (
+                      <div className="flex flex-1 flex-col justify-center rounded-[18px] border border-white/[.08] bg-white/[.02] p-8">
+                        <div className="mb-6 grid h-16 w-16 place-items-center rounded-[20px] border border-red-400/20 bg-red-400/[.08]">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
+                        </div>
+                        <h3 className="font-display text-xl font-bold text-white">Import from YouTube</h3>
+                        <p className="mt-1 text-[13px] text-zinc-500">Paste a public YouTube URL to generate clips from it.</p>
+                        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+                          <input
+                            value={urlVal}
+                            onChange={(e) => setUrlVal(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && urlReady && handleUrlReady()}
+                            placeholder="https://youtube.com/watch?v=…"
+                            className="min-w-0 flex-1 rounded-[11px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
+                          />
+                          <button
+                            disabled={!urlReady}
+                            onClick={handleUrlReady}
+                            className="rounded-[11px] bg-[#ff3d6a] px-6 py-3 text-[13px] font-bold text-white transition hover:bg-[#e8304f] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Continue →
+                          </button>
+                        </div>
+                        {urlReady && (
+                          <div className="mt-4 flex items-center gap-2.5 rounded-[11px] border border-emerald-300/15 bg-emerald-400/[.08] px-4 py-3 text-[12.5px] font-semibold text-emerald-300">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            YouTube video detected — ready to continue
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {uploadError && (
+                      <div className="flex items-center gap-2.5 rounded-[11px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        {uploadError}
                       </div>
                     )}
                   </div>
                 )}
 
-                {uploadError && (
-                  <div className="flex items-center gap-2.5 rounded-[11px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    {uploadError}
+                {/* Steps 2–4: ClipConfigPanel scoped to that step */}
+                {(uploadStep === 2 || uploadStep === 3 || uploadStep === 4) && (
+                  <div className="flex flex-col gap-6">
+                    <ClipConfigPanel
+                      config={clipConfig}
+                      onChange={setClipConfig}
+                      step={uploadStep === 2 ? 1 : uploadStep === 3 ? 2 : 3}
+                    />
+                    <div className="flex items-center justify-between border-t border-white/[.06] pt-4">
+                      <button onClick={() => setUploadStep((s) => s - 1)}
+                        className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-400 transition hover:text-white">
+                        ← Back
+                      </button>
+                      <button onClick={() => setUploadStep((s) => s + 1)}
+                        className="rounded-[10px] bg-[#ff3d6a] px-5 py-2 text-[13px] font-bold text-white shadow-[0_4px_16px_rgba(255,61,106,.2)] transition hover:bg-[#e8304f]">
+                        Continue →
+                      </button>
+                    </div>
                   </div>
                 )}
-              </div>
 
-              {/* Clip settings */}
-              <div>
-                <ClipConfigPanel config={clipConfig} onChange={setClipConfig} />
+                {/* Step 5: Review */}
+                {uploadStep === 5 && (
+                  <div className="flex flex-col gap-5">
+                    <div className="rounded-[14px] border border-white/[.08] bg-white/[.025] p-5">
+                      <h3 className="mb-4 font-display text-[15px] font-bold text-white">Review & start</h3>
+                      <div className="space-y-3 text-[13px]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500">Source</span>
+                          <span className="font-semibold text-zinc-200">
+                            {source === "file" ? (pendingFile?.name ?? "No file selected") : (urlVal || "No URL entered")}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500">Platforms</span>
+                          <span className="font-semibold text-zinc-200">{(clipConfig.platforms ?? []).join(", ") || "None"}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500">Clip length</span>
+                          <span className="font-semibold text-zinc-200">{clipConfig.duration_min}–{clipConfig.duration_max}s</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500">Max clips</span>
+                          <span className="font-semibold text-zinc-200">{clipConfig.max_clips}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500">Captions</span>
+                          <span className="font-semibold text-zinc-200">{clipConfig.add_captions ? `On · ${clipConfig.caption_style}` : "Off"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {uploadError && (
+                      <div className="flex items-center gap-2.5 rounded-[11px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        {uploadError}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between">
+                      <button onClick={() => setUploadStep(4)}
+                        className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-400 transition hover:text-white">
+                        ← Back
+                      </button>
+                      <button
+                        disabled={uploading || (source === "file" ? !pendingFile : !urlReady)}
+                        onClick={handleConfirm}
+                        className="flex items-center gap-2 rounded-[10px] bg-[#ff3d6a] px-6 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_20px_rgba(255,61,106,.3)] transition hover:bg-[#e8304f] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {uploading ? <span className="block h-4 w-4 rounded-full border-2 border-white/70 border-t-transparent animate-spin" /> : null}
+                        {uploading ? "Starting…" : "Confirm & start"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
