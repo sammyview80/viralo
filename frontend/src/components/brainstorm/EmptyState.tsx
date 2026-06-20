@@ -1,6 +1,6 @@
 "use client";
 
-const EXAMPLE_TOPICS = ["AI fitness coach", "Street food Nepal", "Solo travel tips", "Budget skincare"];
+import { EXAMPLE_TOPICS } from "./constants";
 
 export function EmptyState({ onPickExample }: { onPickExample: (topic: string) => void }) {
   return (

@@ -1,13 +1,4 @@
-const AGENTS = ["viral_search_agent", "trend_agent", "competitor_agent", "monetization_agent", "audience_agent", "content_agent", "synthesizer"] as const;
-const AGENT_LABELS: Record<string, string> = {
-  viral_search_agent: "Viral Search",
-  trend_agent: "Trend",
-  competitor_agent: "Competitor",
-  monetization_agent: "Monetize",
-  audience_agent: "Audience",
-  content_agent: "Content",
-  synthesizer: "Synthesizer",
-};
+import { AGENTS, AGENT_LABELS } from "./constants";
 
 export function AgentStepper({ current, completed }: { current: string | null; completed: string[] | null }) {
   return (

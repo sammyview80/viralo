@@ -5,8 +5,7 @@ import { EmptyState } from "@/components/brainstorm/EmptyState";
 import { OverviewTab } from "@/components/brainstorm/OverviewTab";
 import { IdeasTab } from "@/components/brainstorm/IdeasTab";
 import { AnalysisTab } from "@/components/brainstorm/AnalysisTab";
-
-const EXAMPLE_TOPICS = ["AI fitness coach", "Street food Nepal", "Solo travel tips", "Budget skincare"];
+import { EXAMPLE_TOPICS } from "@/components/brainstorm/constants";
 
 function sessionProgress(session: BrainstormSession | null) {
   if (!session) return 0;
