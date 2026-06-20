@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { platformApi, type SocialAccount, type ScheduledPost, type CalendarDay } from "@/lib/api";
 import { Pagination } from "../components/Pagination";
+import { useSearchParams } from "@/lib/router";
 
 /* ─── Constants ─── */
 const PLATFORM_COLORS: Record<string, string> = {
@@ -1076,18 +1077,37 @@ function PostsListView({
 /* ─── Main Page ─── */
 export function SchedulerPage() {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth()); // 0-indexed
+
+  // URL-backed view state
+  const [params, setParam] = useSearchParams();
+
+  const activeTab = (params.get("tab") === "posts" ? "posts" : "calendar") as "calendar" | "posts";
+  const setActiveTab = (t: "calendar" | "posts") => setParam("tab", t);
+
+  const monthParam = params.get("month");
+  const parsedMonth = monthParam && /^\d{4}-\d{2}$/.test(monthParam)
+    ? { year: parseInt(monthParam.slice(0, 4)), month: parseInt(monthParam.slice(5, 7)) - 1 }
+    : { year: now.getFullYear(), month: now.getMonth() };
+  const year = parsedMonth.year;
+  const month = parsedMonth.month;
+  const setYearMonth = (y: number, m: number) => setParam("month", `${y}-${pad(m + 1)}`);
+
+  const platformFilter = params.get("platform") ?? "all";
+  const setPlatformFilter = (v: string) => setParam("platform", v);
+
+  const statusFilter = params.get("status") ?? "all";
+  const setStatusFilter = (v: string) => setParam("status", v);
+
+  // Posts tab uses same ?status param; default "active" when not set
+  const postsListFilter = params.get("status") ?? "active";
+  const setPostsListFilter = (v: string) => setParam("status", v);
+
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [platformFilter, setPlatformFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<"calendar" | "posts">("calendar");
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
-  const [postsListFilter, setPostsListFilter] = useState<string>("active");
 
   const monthKey = `${year}-${pad(month + 1)}`;
 
@@ -1113,20 +1133,21 @@ export function SchedulerPage() {
   }, [monthKey]);
 
   function prevMonth() {
-    if (month === 0) { setYear((y) => y - 1); setMonth(11); }
-    else setMonth((m) => m - 1);
+    if (month === 0) setYearMonth(year - 1, 11);
+    else setYearMonth(year, month - 1);
   }
 
   function nextMonth() {
-    if (month === 11) { setYear((y) => y + 1); setMonth(0); }
-    else setMonth((m) => m + 1);
+    if (month === 11) setYearMonth(year + 1, 0);
+    else setYearMonth(year, month + 1);
   }
 
-  /* Build 35-cell grid */
+  /* Build dynamic cell grid (5 or 6 rows) */
   const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
   const cells: Array<{ day: number | null; ymd: string | null }> = [];
-  for (let i = 0; i < 35; i++) {
+  for (let i = 0; i < totalCells; i++) {
     const dayNum = i - firstDay + 1;
     if (dayNum < 1 || dayNum > daysInMonth) {
       cells.push({ day: null, ymd: null });
@@ -1198,13 +1219,11 @@ export function SchedulerPage() {
               </button>
             ))}
           </div>
-          {activeTab === "calendar" && (
-            <div className="flex items-center justify-between gap-2 sm:justify-start">
-              <button onClick={prevMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">‹</button>
-              <span className="min-w-0 flex-1 text-center text-sm font-semibold text-zinc-200 sm:min-w-[150px] sm:flex-none">{monthName} {year}</span>
-              <button onClick={nextMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">›</button>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-2 sm:justify-start">
+            <button onClick={prevMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">‹</button>
+            <span className="min-w-0 flex-1 text-center text-sm font-semibold text-zinc-200 sm:min-w-[150px] sm:flex-none">{monthName} {year}</span>
+            <button onClick={nextMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">›</button>
+          </div>
           <Button size="sm" className="bg-[#ff3d6a] text-white hover:bg-[#e8304f] lg:ml-auto" onClick={() => setShowModal(true)}>
             + Schedule Post
           </Button>
@@ -1313,7 +1332,7 @@ export function SchedulerPage() {
 
             {loading ? (
               <div className="grid grid-cols-7 gap-1">
-                {Array.from({ length: 35 }).map((_, i) => (
+                {Array.from({ length: totalCells }).map((_, i) => (
                   <div key={i} className="h-28 animate-pulse rounded-[10px] bg-white/[.025]" />
                 ))}
               </div>
