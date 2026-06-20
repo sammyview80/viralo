@@ -74,24 +74,41 @@ async def seed():
                     VALUES (:id, :subdomain, :name, :plan_id, 'active')
                 """), {"id": str(tenant_id), "subdomain": subdomain, "name": NAME, "plan_id": str(plan_id)})
 
-            # 4. Create user
-            user_id = uuid.uuid4()
-            hashed = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt()).decode()
-            await db.execute(text("""
-                INSERT INTO users (id, tenant_id, email, hashed_password, full_name,
-                    is_active, is_verified, onboarding_step)
-                VALUES (:id, :tenant_id, :email, :pw, :name, true, true, 99)
-                ON CONFLICT (email) DO NOTHING
-            """), {
-                "id": str(user_id),
-                "tenant_id": str(tenant_id),
-                "email": EMAIL,
-                "pw": hashed,
-                "name": NAME,
-            })
-
-            await db.commit()
-            print(f"Created user: {EMAIL} / {PASSWORD} (id={user_id}, tenant={tenant_id})")
+            # 4. Create user — tenant_id unique, so check if tenant already has owner
+            existing_owner = await db.execute(
+                text("SELECT id FROM users WHERE tenant_id = :tid"), {"tid": str(tenant_id)}
+            )
+            owner_row = existing_owner.fetchone()
+            if owner_row:
+                user_id = owner_row[0]
+                # Update email + password so we can log in with seed creds
+                hashed = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt()).decode()
+                await db.execute(text("""
+                    UPDATE users SET email = :email, hashed_password = :pw,
+                        is_active = true, is_verified = true, onboarding_step = 99
+                    WHERE id = :id
+                """), {"email": EMAIL, "pw": hashed, "id": str(user_id)})
+                await db.commit()
+                print(f"Updated existing tenant owner → {EMAIL} (id={user_id})")
+            else:
+                user_id = uuid.uuid4()
+                hashed = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt()).decode()
+                await db.execute(text("""
+                    INSERT INTO users (id, tenant_id, email, hashed_password, full_name,
+                        is_active, is_verified, onboarding_step)
+                    VALUES (:id, :tenant_id, :email, :pw, :name, true, true, 99)
+                    ON CONFLICT (email) DO UPDATE SET
+                        hashed_password = EXCLUDED.hashed_password,
+                        is_active = true, is_verified = true, onboarding_step = 99
+                """), {
+                    "id": str(user_id),
+                    "tenant_id": str(tenant_id),
+                    "email": EMAIL,
+                    "pw": hashed,
+                    "name": NAME,
+                })
+                await db.commit()
+                print(f"Created user: {EMAIL} / {PASSWORD} (id={user_id}, tenant={tenant_id})")
 
         # 5. Upsert pro subscription
         result = await db.execute(text(
