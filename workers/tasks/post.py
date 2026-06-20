@@ -89,10 +89,14 @@ def _try_insert_notification(
     post_id: str,
     notification_type: str = "post",
     action_url: str | None = None,
+    live_url: str | None = None,
 ) -> None:
     """Best-effort notification via full pipeline (DB + Redis SSE + email + push)."""
     try:
         from workers.tasks.notification import send_notification
+        metadata: dict = {"post_id": post_id}
+        if live_url:
+            metadata["live_url"] = live_url
         send_notification.delay(
             tenant_id,
             user_id=None,
@@ -100,7 +104,7 @@ def _try_insert_notification(
             title=title,
             body=body,
             action_url=action_url or f"/workspace/scheduler?post={post_id}",
-            metadata={"post_id": post_id},
+            metadata=metadata,
         )
     except Exception:
         logger.exception("failed to enqueue notification for post %s", post_id)
@@ -335,6 +339,7 @@ def publish_post(self, tenant_id: str, post_id: str):
 
         # ── 6. Handle result ──────────────────────────────────────────────────
         if result.success:
+            live_url = _platform_live_url(platform, result.platform_post_id)
             with _get_session(tenant_id) as session:
                 session.execute(
                     text("""
@@ -347,14 +352,17 @@ def publish_post(self, tenant_id: str, post_id: str):
                     """),
                     {"ppid": result.platform_post_id, "pid": post_id},
                 )
-            live_url = _platform_live_url(platform, result.platform_post_id)
+            body_text = f"Your {platform} post is live!"
+            if live_url:
+                body_text += f" {live_url}"
             _try_insert_notification(
                 tenant_id,
                 title="Post is live!",
-                body=f"Your {platform} post is live! Click to view.",
+                body=body_text,
                 post_id=post_id,
                 notification_type="post_published",
                 action_url=live_url or f"/workspace/scheduler?post={post_id}",
+                live_url=live_url,
             )
 
 
