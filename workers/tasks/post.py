@@ -111,17 +111,39 @@ def _try_insert_notification(
 @celery_app.task(name="workers.tasks.post.process_due_posts")
 def process_due_posts():
     """Celery Beat task — find pending posts due for publishing and enqueue them."""
+    # Recover posts stuck in 'processing' for >10 min (worker crash / container restart)
+    with engine.connect() as conn:
+        recovered = conn.execute(
+            text("""
+                UPDATE scheduled_posts
+                SET status = 'scheduled',
+                    scheduled_at = NOW(),
+                    updated_at = NOW()
+                WHERE status = 'processing'
+                  AND updated_at < NOW() - interval '10 minutes'
+            """)
+        ).rowcount
+        conn.commit()
+    if recovered:
+        logger.info("process_due_posts: recovered %d stale processing posts", recovered)
+
     with engine.connect() as conn:
         rows = conn.execute(
             text("""
-                SELECT id, tenant_id
-                FROM scheduled_posts
-                WHERE status IN ('pending', 'scheduled')
-                  AND scheduled_at <= NOW()
-                ORDER BY scheduled_at ASC
-                LIMIT 500
+                UPDATE scheduled_posts
+                SET status = 'processing', updated_at = NOW()
+                WHERE id IN (
+                    SELECT id FROM scheduled_posts
+                    WHERE status IN ('pending', 'scheduled')
+                      AND scheduled_at <= NOW()
+                    ORDER BY scheduled_at ASC
+                    LIMIT 500
+                    FOR UPDATE SKIP LOCKED
+                )
+                RETURNING id, tenant_id
             """)
         ).fetchall()
+        conn.commit()
 
     if not rows:
         return
@@ -130,20 +152,6 @@ def process_due_posts():
     for row in rows:
         post_id = str(row[0])
         tenant_id = str(row[1])
-
-        # Mark as processing before enqueuing to prevent double-dispatch
-        with engine.connect() as conn:
-            conn.execute(
-                text("""
-                    UPDATE scheduled_posts
-                    SET status = 'processing', updated_at = NOW()
-                    WHERE id = CAST(:pid AS uuid)
-                      AND status IN ('pending', 'scheduled')
-                """),
-                {"pid": post_id},
-            )
-            conn.commit()
-
         publish_post.apply_async(
             args=[tenant_id, post_id],
             queue="viralo.post.publish",
@@ -185,10 +193,12 @@ def publish_post(self, tenant_id: str, post_id: str):
                         sa.token_expires_at,
                         sa.platform_user_id,
                         sa.scope,
-                        sp.clip_storage_url
+                        COALESCE(sp.clip_storage_url, c.storage_url) AS clip_storage_url
                     FROM scheduled_posts sp
                     JOIN social_accounts sa
                         ON sa.id = sp.social_account_id
+                    LEFT JOIN clips c
+                        ON c.id = sp.clip_id
                     WHERE sp.id = CAST(:pid AS uuid)
                 """),
                 {"pid": post_id},
@@ -265,6 +275,23 @@ def publish_post(self, tenant_id: str, post_id: str):
                     logger.warning("publish_post: token refresh failed for post %s: %s", post_id, e)
 
         # ── 4. Download clip video to temp file ───────────────────────────────
+        if not clip_storage_url:
+            # Clip upload still in progress — retry after 60s
+            logger.warning("publish_post: clip_storage_url not yet available for post %s, retrying", post_id)
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        UPDATE scheduled_posts
+                        SET status = 'pending',
+                            scheduled_at = NOW() + interval '60 seconds',
+                            updated_at = NOW()
+                        WHERE id = CAST(:pid AS uuid)
+                    """),
+                    {"pid": post_id},
+                )
+                conn.commit()
+            return
+
         from shared.storage.base import get_storage
 
         storage_provider = os.getenv("STORAGE_PROVIDER", "local")
