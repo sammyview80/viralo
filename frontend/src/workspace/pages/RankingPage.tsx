@@ -1031,15 +1031,33 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
           {/* Preview */}
           <div className="flex flex-col items-center gap-3 rounded-[18px] border border-white/[.08] bg-white/[.02] p-5">
             <span className="self-start text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Preview</span>
-            <div className="relative h-72 w-40 overflow-hidden rounded-[14px] bg-zinc-800">
-              <div className="absolute inset-0 grid place-items-center text-[11px] font-semibold text-zinc-500">Preview</div>
-              <div className="absolute left-0 right-0 top-0 px-3 py-3 text-center text-sm font-bold leading-tight"
-                style={{ color: accent, textShadow: "0 1px 6px rgba(0,0,0,.6)" }}>
+            <div
+              className="relative h-72 w-40 overflow-hidden rounded-[14px] flex flex-col"
+              style={{ background: templateConfig.bgColor, fontFamily: templateConfig.font }}
+            >
+              {/* Title */}
+              <p
+                className="px-3 pt-3 text-[11px] font-black leading-tight text-center"
+                style={{ color: templateConfig.titleColor }}
+              >
                 {title || "Your Title"}
-              </div>
-              <div className="absolute bottom-3 left-3 rounded-lg px-2.5 py-1 text-sm font-extrabold text-white"
-                style={{ background: accent }}>
-                #{order === "countdown" ? segments.length : 1}
+              </p>
+              {/* Numbered list */}
+              <div className="flex flex-col gap-2 px-3 pt-3 flex-1">
+                {segments.slice(0, 5).map((s, i) => {
+                  const rank = order === "countdown" ? segments.length - i : i + 1;
+                  const color = templateConfig.numberColors[i] ?? templateConfig.numberColors.at(-1)!;
+                  return (
+                    <div key={s.id} className="flex items-center gap-1.5">
+                      <span className="text-[15px] font-black leading-none" style={{ color }}>
+                        {rank}.
+                      </span>
+                      {s.segmentTitle && (
+                        <span className="text-[9px] text-white/70 truncate">{s.segmentTitle}</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
