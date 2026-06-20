@@ -262,7 +262,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
               <div className="grid h-7 w-7 flex-none place-items-center rounded-full bg-gradient-to-br from-[#ff4d78] to-[#ff8040] font-display text-[12px] font-bold text-white">{initials}</div>
               <div className="hidden sm:block">
                 <b className="block text-[12px] font-semibold leading-[1.2]">{user?.full_name ?? user?.email ?? "User"}</b>
-                <span className="block text-[10.5px] text-zinc-500">Pro plan</span>
+                <span className="block text-[10.5px] capitalize text-zinc-500">{user?.plan ?? "free"} plan</span>
               </div>
             </div>
             {avatarOpen && (

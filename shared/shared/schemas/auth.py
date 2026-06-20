@@ -33,5 +33,6 @@ class UserResponse(BaseModel):
     tenant_id: uuid.UUID | None
     is_verified: bool
     onboarding_step: int | None
+    plan: str | None = None
 
     model_config = {"from_attributes": True}

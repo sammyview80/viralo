@@ -118,7 +118,7 @@ export class ApiError extends Error {
 export interface RegisterPayload { email: string; password: string; full_name: string; subdomain: string }
 export interface LoginPayload    { email: string; password: string }
 export interface TokenResponse   { access_token: string; token_type: string }
-export interface UserResponse    { id: string; email: string; full_name: string | null; tenant_id: string; is_verified: boolean; onboarding_step: number | null }
+export interface UserResponse    { id: string; email: string; full_name: string | null; tenant_id: string; is_verified: boolean; onboarding_step: number | null; plan: string | null }
 
 /* ─── Auth endpoints ─── */
 export const auth = {
@@ -847,7 +847,12 @@ export interface ApiKeyCreated extends ApiKeyInfo {
   key: string; // shown once
 }
 
+export interface UpdateMePayload { full_name?: string; avatar_url?: string }
+
 export const settingsApi = {
+  getMe:                 ()                              => req<UserResponse>("GET",   "/auth/me"),
+  updateMe:              (body: UpdateMePayload)         => req<UserResponse>("PATCH", "/auth/me", body),
+
   getWorkspace:          ()                              => req<WorkspaceInfo>("GET",   "/tenants/me"),
   updateWorkspace:       (body: Partial<WorkspaceInfo>)  => req<WorkspaceInfo>("PATCH", "/tenants/me", body),
 

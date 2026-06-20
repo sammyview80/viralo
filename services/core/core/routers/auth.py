@@ -10,6 +10,7 @@ from shared.auth import (
     create_access_token, create_refresh_token, decode_token,
 )
 from shared.deps import get_current_user, get_db_no_rls, get_redis
+from pydantic import BaseModel
 from shared.schemas.auth import (
     LoginRequest, RegisterRequest, TokenResponse, TokenPayload, UserResponse,
 )
@@ -232,4 +233,37 @@ async def get_me(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    return {**user.__dict__, "plan": token.plan}
+
+
+class UpdateMeRequest(BaseModel):
+    full_name: str | None = None
+    avatar_url: str | None = None
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    body: UpdateMeRequest,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_no_rls),
+):
+    result = await db.execute(select(User).where(User.id == uuid.UUID(token.sub)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if body.full_name is not None:
+        user.full_name = body.full_name
+        tenant_result = await db.execute(
+            select(Tenant).where(Tenant.id == uuid.UUID(token.tenant_id))
+        )
+        tenant = tenant_result.scalar_one_or_none()
+        if tenant:
+            tenant.display_name = body.full_name
+
+    if body.avatar_url is not None:
+        user.avatar_url = body.avatar_url
+
+    await db.commit()
+    await db.refresh(user)
+    return {**user.__dict__, "plan": token.plan}
