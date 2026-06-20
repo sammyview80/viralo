@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { videoApi, token as authToken, API_BASES } from "@/lib/api";
 import type { VideoResponse, ClipApiResponse } from "@/lib/api";
+import { TrimBar } from "../components/editor/TrimBar";
 
 const VIDEO_SSE_BASE = API_BASES.video;
 
@@ -127,8 +128,6 @@ interface TrimPreviewProps {
 
 function VideoTrimPreview({ src, startSec, endSec, duration, onDurationLoaded, onStartChange, onEndChange }: TrimPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const max = duration || 100;
-  const seek = (t: number) => { if (videoRef.current) videoRef.current.currentTime = t; };
 
   return (
     <div className="mt-3 overflow-hidden rounded-[14px] border border-white/[.08] bg-black">
@@ -145,26 +144,16 @@ function VideoTrimPreview({ src, startSec, endSec, duration, onDurationLoaded, o
       />
       {duration > 0 && (
         <div className="px-4 pb-4 pt-3">
-          <div className="mb-2 flex justify-between text-[11px] font-semibold text-zinc-500">
-            <span>Trim clip</span>
-            <span>{endSec - startSec > 0 ? `${(endSec - startSec).toFixed(1)}s selected` : ""}</span>
-          </div>
-          <div className="relative h-8 rounded-[8px] bg-white/[.06] overflow-hidden">
-            <div
-              className="absolute top-0 h-full rounded-[6px] bg-[#ff3d6a]/30 border border-[#ff3d6a]/50"
-              style={{ left: `${(startSec / max) * 100}%`, width: `${((endSec - startSec) / max) * 100}%` }}
-            />
-            <input type="range" min={0} max={max} step={0.1} value={startSec}
-              onChange={(e) => { const v = Math.min(Number(e.target.value), endSec - 0.5); onStartChange(v); seek(v); }}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" style={{ zIndex: 2 }} />
-            <input type="range" min={0} max={max} step={0.1} value={endSec}
-              onChange={(e) => { const v = Math.max(Number(e.target.value), startSec + 0.5); onEndChange(v); seek(v); }}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" style={{ zIndex: 3 }} />
-          </div>
-          <div className="mt-1.5 flex justify-between text-[10px] text-zinc-600">
-            <span>{startSec.toFixed(1)}s</span>
-            <span>{endSec.toFixed(1)}s / {max.toFixed(1)}s</span>
-          </div>
+          <TrimBar
+            duration={duration}
+            startSec={startSec}
+            endSec={endSec}
+            onChange={(s, e) => {
+              onStartChange(s);
+              onEndChange(e);
+              if (videoRef.current) videoRef.current.currentTime = s;
+            }}
+          />
         </div>
       )}
     </div>
