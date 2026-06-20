@@ -1,28 +1,6 @@
 import type { BrainstormSession, VideoIdea } from "@/lib/api";
 import { AgentStepper } from "./AgentStepper";
-
-const AGENT_DESC: Record<string, string> = {
-  viral_search_agent: "Finding live YouTube, TikTok, and web trend signals",
-  trend_agent: "Researching trending formats & growth trajectory",
-  competitor_agent: "Mapping top creators & content gaps",
-  monetization_agent: "Analyzing revenue potential & brand fit",
-  audience_agent: "Profiling target demographics & motivations",
-  content_agent: "Generating viral video concepts",
-  synthesizer: "Synthesizing final verdict & strategy",
-};
-const AGENT_LABELS: Record<string, string> = {
-  viral_search_agent: "Viral Search",
-  trend_agent: "Trend",
-  competitor_agent: "Competitor",
-  monetization_agent: "Monetize",
-  audience_agent: "Audience",
-  content_agent: "Content",
-  synthesizer: "Synthesizer",
-};
-
-function scoreColor(s: number) {
-  return s >= 75 ? "#34d399" : s >= 50 ? "#fbbf24" : "#f87171";
-}
+import { AGENT_DESC, AGENT_LABELS } from "./constants";
 
 function scoreTone(score: number) {
   if (score >= 80) return { label: "Strong", copy: "Prioritize this angle", className: "text-emerald-300 bg-emerald-500/10 border-emerald-400/20" };
