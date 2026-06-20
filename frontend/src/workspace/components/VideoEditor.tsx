@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { type ClipApiResponse, videoApi } from "@/lib/api";
+import { type ClipApiResponse, type EditorData, videoApi } from "@/lib/api";
 import { VideoPlayer } from "./editor/VideoPlayer";
 import { Timeline, type EffectMarker } from "./editor/Timeline";
 import { TrimBar } from "./editor/TrimBar";
@@ -271,12 +271,65 @@ export function VideoEditor({
     setTimeout(() => recorder.stop(), 400);
   }
 
+  /* ─── Load persisted editor state on mount ─── */
+  useEffect(() => {
+    videoApi.getEditorData(clip.id).then((res) => {
+      const ed = res.editor;
+      if (ed.trim_start_sec !== undefined) setTrimStart(ed.trim_start_sec);
+      if (ed.trim_end_sec != null) setTrimEnd(ed.trim_end_sec);
+      if (ed.captions?.length) {
+        setCaptions(ed.captions.map((c) => ({
+          id: c.id,
+          text: c.text,
+          startSec: c.start_sec,
+          endSec: c.end_sec,
+          position: c.position,
+          color: c.color,
+          fontSize: c.font_size,
+        })));
+      }
+      if (ed.markers?.length) {
+        setMarkers(ed.markers.map((m) => ({
+          id: m.id,
+          timeMs: m.time_ms,
+          sound: m.sound,
+          emoji: m.emoji,
+          label: m.label,
+        })));
+      }
+    }).catch(() => { /* no saved state yet */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clip.id]);
+
   /* ─── Save ─── */
   async function handleSave() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!canvas) return;
     setSaving(true); setSaveStatus("idle");
+
+    // Persist editor state to backend
+    const editorData: EditorData = {
+      trim_start_sec: trimStart,
+      trim_end_sec: trimEnd || null,
+      captions: captions.map((c) => ({
+        id: c.id,
+        text: c.text,
+        start_sec: c.startSec,
+        end_sec: c.endSec,
+        position: c.position,
+        color: c.color,
+        font_size: c.fontSize,
+      })),
+      markers: markers.map((m) => ({
+        id: m.id,
+        time_ms: m.timeMs,
+        sound: m.sound,
+        emoji: m.emoji,
+        label: m.label,
+      })),
+    };
+    await videoApi.saveEditorData(clip.id, editorData).catch(() => {});
     if (video) ensureMediaSource();
     const ctx = getAudioCtx();
     if (ctx.state === "suspended") await ctx.resume();

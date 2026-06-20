@@ -248,6 +248,7 @@ export interface ClipApiResponse {
     aspect_ratio?: string;
     platform_copy?: Record<string, { description: string; tags: string[] }>;
     ranking?: boolean;
+    editor?: EditorData;
   } | null;
   upload_attempts: number | null;
   upload_error: string | null;
@@ -255,6 +256,37 @@ export interface ClipApiResponse {
 }
 
 export type ClipListResponse = PaginatedResponse<ClipApiResponse>;
+
+/* ─── Editor types ─── */
+export interface EditorCaption {
+  id: string;
+  text: string;
+  start_sec: number;
+  end_sec: number;
+  position: "top" | "center" | "bottom";
+  color: string;
+  font_size: number;
+}
+
+export interface EditorMarker {
+  id: string;
+  time_ms: number;
+  sound: string;
+  emoji: string;
+  label: string;
+}
+
+export interface EditorData {
+  trim_start_sec: number;
+  trim_end_sec: number | null;
+  captions: EditorCaption[];
+  markers: EditorMarker[];
+}
+
+export interface EditorDataResponse {
+  clip_id: string;
+  editor: EditorData;
+}
 
 function normalizePaginated<T>(data: PaginatedResponse<T> | T[] | null | undefined, page: number, per_page: number): PaginatedResponse<T> {
   if (Array.isArray(data)) {
@@ -323,6 +355,10 @@ export const videoApi = {
   },
   patchClip: (clipId: string, patch: { tags?: string[]; platform_copy?: Record<string, { description: string; tags: string[] }> }) =>
     videoReq<ClipApiResponse>("PATCH", `/clips/${clipId}`, patch),
+  saveEditorData: (clipId: string, data: EditorData) =>
+    videoReq<EditorDataResponse>("PATCH", `/clips/${clipId}/editor`, data),
+  getEditorData: (clipId: string) =>
+    videoReq<EditorDataResponse>("GET", `/clips/${clipId}/editor`),
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),
   cancel:  (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/cancel`),
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
