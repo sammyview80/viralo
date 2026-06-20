@@ -1195,7 +1195,9 @@ class RankingSegmentRequest(_BaseModel):
 
 class CreateRankingRequest(_BaseModel):
     title: str
-    theme: str = "classic"
+    theme: str = "classic"                   # kept for backward compat
+    template: str = "viral"
+    template_config: dict | None = None
     order: str = "countdown"  # "countdown" or "ascending"
     segments: list[RankingSegmentRequest]
 
@@ -1213,8 +1215,10 @@ async def create_ranking(
 ):
     if len(req.segments) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 segments")
-    if req.theme not in ("classic", "neon", "minimal"):
-        raise HTTPException(status_code=400, detail="invalid theme")
+    VALID_TEMPLATES = ("viral", "classic", "neon", "minimal")
+    effective_template = req.template if req.template in VALID_TEMPLATES else req.theme
+    if effective_template not in VALID_TEMPLATES:
+        raise HTTPException(status_code=400, detail="invalid template")
     if req.order not in ("countdown", "ascending"):
         raise HTTPException(status_code=400, detail="invalid order")
     for i, seg in enumerate(req.segments):
@@ -1241,7 +1245,14 @@ async def create_ranking(
         source_type="ranking",
         status="queued",
         celery_task_id=job_id,
-        video_metadata={"title": req.title, "theme": req.theme, "order": req.order},
+        video_metadata={
+            "title": req.title,
+            "theme": effective_template,
+            "template": effective_template,
+            "template_config": req.template_config,
+            "order": req.order,
+            "segment_count": len(req.segments),
+        },
     )
     db.add(video)
     await db.commit()
@@ -1261,7 +1272,8 @@ async def create_ranking(
     celery_app = _get_celery()
     celery_app.send_task(
         "workers.tasks.video.generate_video_ranking",
-        args=[str(tenant_id), str(video_id), segments, req.title, req.theme, req.order],
+        args=[str(tenant_id), str(video_id), segments, req.title, effective_template, req.order],
+        kwargs={"template_config": req.template_config},
         task_id=job_id,
     )
 
