@@ -1848,6 +1848,11 @@ RANKING_THEMES = {
 }
 
 
+def _hex_to_rgb(h: str) -> tuple:
+    h = h.lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+
 def _draw_ranking_overlay(
     img,
     rank_number: int,
@@ -1858,6 +1863,7 @@ def _draw_ranking_overlay(
     total: int = 1,
     all_labels: list = None,
     revealed_ranks: set = None,
+    template_config: dict | None = None,
 ):
     """
     Overlay matching reference style (Image #16):
@@ -1869,7 +1875,17 @@ def _draw_ranking_overlay(
     """
     from PIL import Image, ImageDraw
 
-    theme = RANKING_THEMES.get(theme_name, RANKING_THEMES["classic"])
+    theme = dict(RANKING_THEMES.get(theme_name, RANKING_THEMES["classic"]))
+    if template_config:
+        if tc := template_config.get("titleColor"):
+            theme["title_fill"] = _hex_to_rgb(tc)
+        if bc := template_config.get("bgColor"):
+            r, g, b = _hex_to_rgb(bc)
+            theme["bg_fill"] = (r, g, b, theme["bg_fill"][3] if len(theme["bg_fill"]) == 4 else 160)
+        if nc := template_config.get("numberColors"):
+            theme["number_colors"] = [_hex_to_rgb(c) for c in nc]
+        elif ac := template_config.get("accentColor"):
+            theme["num_fill"] = _hex_to_rgb(ac)
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -1878,7 +1894,7 @@ def _draw_ranking_overlay(
     sw = theme["stroke_width"]
     left_x = int(width * 0.04)
 
-    rank_colors = [
+    rank_colors = theme.get("number_colors") or [
         (255, 218, 0),    # 1 - yellow
         (255, 140, 0),    # 2 - orange
         (180, 220, 60),   # 3 - yellow-green
@@ -2000,6 +2016,7 @@ def _render_ranking_segment(
     total: int = 1,
     all_labels: list = None,
     revealed_ranks: set = None,
+    template_config: dict | None = None,
 ) -> None:
     """Two-pass: ffmpeg trim/crop/scale → h264 intermediate, then PyAV ranking overlay burn."""
     import av
@@ -2096,7 +2113,7 @@ def _render_ranking_segment(
                 if packet.stream is v_stream:
                     for frame in packet.decode():
                         img = frame.to_image()
-                        img = _draw_ranking_overlay(img, rank_number, title_text, theme_name, target_w, target_h, total=total, all_labels=all_labels, revealed_ranks=revealed_ranks)
+                        img = _draw_ranking_overlay(img, rank_number, title_text, theme_name, target_w, target_h, total=total, all_labels=all_labels, revealed_ranks=revealed_ranks, template_config=template_config)
                         img = img.convert("RGB")
                         new_frame = av.VideoFrame.from_image(img)
                         new_frame.pts = frame_idx
@@ -5159,7 +5176,8 @@ def _download_stored_video(video_id: str, tenant_id: str, out_path: str) -> None
     time_limit=2100,
 )
 def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
-                           title: str, theme: str, order: str) -> dict:
+                           title: str, theme: str, order: str,
+                           template_config: dict | None = None) -> dict:
     """Build a ranking compilation video from 2-5 segments with rank-number overlays.
 
     segments: list of {source_type, url?, video_id?, start_sec, end_sec}
@@ -5219,6 +5237,7 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
                 total=n,
                 all_labels=all_labels,
                 revealed_ranks=revealed,
+                template_config=template_config,
             )
             pct = 20 + int((idx + 1) / n * 50)
             _publish_progress(job_id, f"rendered_{idx+1}", pct, "processing", f"Rendered segment {idx+1}/{n}")
