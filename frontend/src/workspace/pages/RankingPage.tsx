@@ -566,6 +566,76 @@ function TemplatePicker({
   );
 }
 
+function ColorCustomizer({
+  config,
+  onChange,
+}: {
+  config: TemplateConfig;
+  onChange: (c: TemplateConfig) => void;
+}) {
+  const field = (label: string, key: keyof TemplateConfig, value: string) => (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[11px] text-zinc-500 min-w-0 flex-1">{label}</span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <div
+          className="h-5 w-5 rounded-[4px] border border-white/[.1] cursor-pointer"
+          style={{ background: value }}
+          onClick={() => {
+            const el = document.getElementById(`color-${key}`);
+            if (el) (el as HTMLInputElement).click();
+          }}
+        />
+        <input
+          id={`color-${key}`}
+          type="color"
+          value={value}
+          className="sr-only"
+          onChange={(e) => onChange({ ...config, [key]: e.target.value })}
+        />
+        <span className="font-mono text-[10px] text-zinc-500 w-14">{value}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="mt-4 flex flex-col gap-2.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Customize</span>
+      {field("Background", "bgColor", config.bgColor)}
+      {field("Title", "titleColor", config.titleColor)}
+      {field("Accent", "accentColor", config.accentColor)}
+      <div>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Number colors</span>
+        <div className="mt-1.5 flex gap-1.5 flex-wrap">
+          {config.numberColors.map((c, i) => (
+            <div key={i} className="flex flex-col items-center gap-0.5">
+              <div
+                className="h-5 w-5 rounded-full border border-white/[.1] cursor-pointer"
+                style={{ background: c }}
+                onClick={() => {
+                  const el = document.getElementById(`color-num-${i}`);
+                  if (el) (el as HTMLInputElement).click();
+                }}
+              />
+              <input
+                id={`color-num-${i}`}
+                type="color"
+                value={c}
+                className="sr-only"
+                onChange={(e) => {
+                  const next = [...config.numberColors];
+                  next[i] = e.target.value;
+                  onChange({ ...config, numberColors: next });
+                }}
+              />
+              <span className="text-[8px] text-zinc-600">#{i + 1}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Create view ── */
 interface CreateViewProps {
   onBack: () => void;
@@ -938,6 +1008,10 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
                 onSelect={(id, config) => { setTemplateId(id); setTemplateConfig(config); }}
               />
             </div>
+            <ColorCustomizer
+              config={templateConfig}
+              onChange={setTemplateConfig}
+            />
 
             <span className="mt-5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Order</span>
             <div className="mt-2 grid grid-cols-2 gap-2">
