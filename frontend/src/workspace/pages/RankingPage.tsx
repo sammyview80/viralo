@@ -717,6 +717,8 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
       const payload = {
         title: title || "Top Ranking",
         theme: templateId,
+        template: templateId,
+        template_config: templateConfig,
         order,
         segments: await Promise.all(
           segments.map(async (s) => {
