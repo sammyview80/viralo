@@ -512,7 +512,8 @@ interface CreateViewProps {
 function CreateView({ onBack, onJobCreated }: CreateViewProps) {
   const [segments, setSegments] = useState<Segment[]>(() => [newSegment(), newSegment()]);
   const [title, setTitle] = useState("");
-  const [theme, setTheme] = useState<TemplateId>("classic");
+  const [templateId, setTemplateId] = useState<TemplateId>("viral");
+  const [templateConfig, setTemplateConfig] = useState<TemplateConfig>(TEMPLATES[0].config);
   const [order, setOrder] = useState<Order>("countdown");
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -582,7 +583,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
     try {
       const payload = {
         title: title || "Top Ranking",
-        theme,
+        theme: templateId,
         order,
         segments: await Promise.all(
           segments.map(async (s) => {
@@ -664,8 +665,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs.map((j) => j.jobId).join(",")]);
 
-  const templateConfig = TEMPLATES.find((t) => t.id === theme)?.config;
-  const accent = templateConfig?.accentColor ?? "#ff3d6a";
+  const accent = templateConfig.accentColor;
 
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6">
@@ -871,9 +871,13 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
             <span className="mt-5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Theme</span>
             <div className="mt-2 grid grid-cols-3 gap-2">
               {(["classic", "neon", "minimal"] as TemplateId[]).map((t) => (
-                <button key={t} onClick={() => setTheme(t)}
+                <button key={t} onClick={() => {
+                  setTemplateId(t);
+                  const cfg = TEMPLATES.find((tmpl) => tmpl.id === t)?.config;
+                  if (cfg) setTemplateConfig(cfg);
+                }}
                   className={cn("rounded-[10px] border py-2 text-xs font-bold capitalize transition",
-                    theme === t ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-white" : "border-white/[.08] text-zinc-400 hover:text-zinc-200")}>
+                    templateId === t ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-white" : "border-white/[.08] text-zinc-400 hover:text-zinc-200")}>
                   {t}
                 </button>
               ))}
