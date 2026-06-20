@@ -175,6 +175,8 @@ def process_due_posts():
 def publish_post(self, tenant_id: str, post_id: str):
     """Publish a scheduled post to the target social platform."""
     tmp_path = None
+    clip_id = None   # guard: except block references this before tuple unpack
+    platform = "social"
     try:
         # ── 1. Load post + social account ─────────────────────────────────────
         with _get_session(tenant_id) as session:

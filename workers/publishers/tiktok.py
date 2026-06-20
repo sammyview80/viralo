@@ -45,7 +45,9 @@ class TikTokPublisher(BasePublisher):
             file_size = Path(video_path).stat().st_size
             chunk_size, chunk_count = _calculate_upload_plan(file_size)
 
-            title = caption[:150] + (" " + " ".join(f"#{h.lstrip('#')}" for h in hashtags[:5]))
+            tag_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags[:5] if h)
+            base = caption.strip()[:150] if caption else ""
+            title = (f"{base} {tag_str}".strip() or "New video")[:150]
 
             # Step 1: Init upload
             r = requests.post(
