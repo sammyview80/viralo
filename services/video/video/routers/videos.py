@@ -32,6 +32,8 @@ from video.schemas import (
     ClipMergeAiRequest,
     ClipPatchRequest,
     ClipResponse,
+    EditorDataRequest,
+    EditorDataResponse,
     GenerateClipsRequest,
     SearchClipHit,
     SearchResponse,
@@ -1128,6 +1130,55 @@ async def patch_clip(
     clip.clip_metadata = meta
     await db.commit()
     return ClipResponse.model_validate(clip)
+
+
+@router.patch("/clips/{clip_id}/editor", response_model=EditorDataResponse)
+async def save_editor_data(
+    clip_id: uuid.UUID,
+    body: EditorDataRequest,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Persist editor state (trim, captions, sound markers) into clip_metadata.editor."""
+    result = await db.execute(
+        select(Clip).where(
+            Clip.id == clip_id,
+            Clip.tenant_id == uuid.UUID(token.tenant_id),
+            Clip.status != "deleted",
+        )
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
+
+    meta = dict(clip.clip_metadata or {})
+    meta["editor"] = body.model_dump()
+    clip.clip_metadata = meta
+    await db.commit()
+    return EditorDataResponse(clip_id=clip.id, editor=body)
+
+
+@router.get("/clips/{clip_id}/editor", response_model=EditorDataResponse)
+async def get_editor_data(
+    clip_id: uuid.UUID,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Return previously saved editor state for a clip."""
+    result = await db.execute(
+        select(Clip).where(
+            Clip.id == clip_id,
+            Clip.tenant_id == uuid.UUID(token.tenant_id),
+            Clip.status != "deleted",
+        )
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found.")
+
+    editor_raw = (clip.clip_metadata or {}).get("editor", {})
+    editor = EditorDataRequest(**editor_raw) if editor_raw else EditorDataRequest()
+    return EditorDataResponse(clip_id=clip.id, editor=editor)
 
 
 @router.post("/clips/{clip_id}/retry-upload", response_model=ClipResponse, status_code=status.HTTP_202_ACCEPTED)

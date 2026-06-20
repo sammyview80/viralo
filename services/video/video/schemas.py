@@ -87,6 +87,36 @@ class ClipPatchRequest(BaseModel):
     platform_copy: dict[str, dict] | None = None
 
 
+class EditorCaption(BaseModel):
+    id: str
+    text: str
+    start_sec: float = Field(ge=0)
+    end_sec: float = Field(ge=0)
+    position: Literal["top", "center", "bottom"] = "bottom"
+    color: str = "#ffffff"
+    font_size: int = Field(default=24, ge=12, le=48)
+
+
+class EditorMarker(BaseModel):
+    id: str
+    time_ms: float = Field(ge=0)
+    sound: str
+    emoji: str
+    label: str
+
+
+class EditorDataRequest(BaseModel):
+    trim_start_sec: float = Field(default=0, ge=0)
+    trim_end_sec: float | None = Field(default=None, ge=0)
+    captions: list[EditorCaption] = Field(default_factory=list)
+    markers: list[EditorMarker] = Field(default_factory=list)
+
+
+class EditorDataResponse(BaseModel):
+    clip_id: uuid.UUID
+    editor: EditorDataRequest
+
+
 class VideoListResponse(BaseModel):
     items: list[VideoResponse]
     total: int
