@@ -474,9 +474,11 @@ services:
     build:
       context: .
       dockerfile: services/core/Dockerfile
-    command: celery -A workers.celery_app beat --loglevel=info
+    command: celery -A workers.celery_app beat --loglevel=info --schedule=/var/lib/celery/celerybeat-schedule
     mem_limit: 512m
     memswap_limit: 512m
+    volumes:
+      - celery-beat-data:/var/lib/celery
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -523,3 +525,4 @@ volumes:
   rabbitmq-data:
   video-temp:
   video-storage:
+  celery-beat-data:

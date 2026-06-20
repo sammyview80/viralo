@@ -178,7 +178,7 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
         # Fetch all active subscriptions for this channel
         subs = db.execute(
             text("""
-                SELECT id, tenant_id, auto_publish, auto_publish_config, name
+                SELECT id, tenant_id, auto_publish, auto_publish_config, channel_name
                 FROM channel_subscriptions
                 WHERE channel_id = :cid AND active = true
             """),
@@ -221,6 +221,19 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
             "source": "websub",
             "channel_id": channel_id,
         }
+        # Create video row before dispatch — clips.video_id has FK to videos.id
+        with Session(engine) as vdb:
+            vdb.execute(text("SET LOCAL app.current_tenant = :tid"), {"tid": str(tenant_id)})
+            vdb.execute(
+                text("""
+                    INSERT INTO videos (id, tenant_id, source_type, source_url, status, created_at, updated_at)
+                    VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), 'youtube_url', :url, 'queued', now(), now())
+                    ON CONFLICT (id) DO NOTHING
+                """),
+                {"id": job_id, "tid": str(tenant_id), "url": video_url},
+            )
+            vdb.commit()
+
         process_youtube_video.apply_async(
             args=[str(tenant_id), job_id, video_url, cfg],
             queue="viralo.video.generate",
