@@ -503,6 +503,69 @@ function ViewClipButton({ videoId }: { videoId: string }) {
   );
 }
 
+/* ── Template picker components ── */
+function MiniPreview({ config, title }: { config: TemplateConfig; title?: string }) {
+  const nums = [1, 2, 3, 4, 5];
+  return (
+    <div
+      className="relative h-24 w-14 overflow-hidden rounded-[8px] flex flex-col"
+      style={{ background: config.bgColor, fontFamily: config.font }}
+    >
+      {/* Title */}
+      <p
+        className="px-1.5 pt-1.5 text-[6px] font-black leading-tight line-clamp-2"
+        style={{ color: config.titleColor }}
+      >
+        {title || "Your Title"}
+      </p>
+      {/* Numbered list */}
+      <div className="flex flex-col gap-[2px] px-1.5 pt-1 flex-1">
+        {nums.map((n, i) => (
+          <div key={n} className="flex items-center gap-0.5">
+            <span
+              className="text-[7px] font-black leading-none"
+              style={{ color: config.numberColors[i] ?? config.numberColors.at(-1) }}
+            >
+              {n}.
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TemplatePicker({
+  selected,
+  onSelect,
+}: {
+  selected: TemplateId;
+  onSelect: (id: TemplateId, config: TemplateConfig) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {TEMPLATES.map((tpl) => (
+        <button
+          key={tpl.id}
+          onClick={() => onSelect(tpl.id, tpl.config)}
+          className={cn(
+            "flex flex-col items-center gap-1.5 rounded-[12px] border p-2.5 transition",
+            selected === tpl.id
+              ? "border-[#ff3d6a] bg-[#ff3d6a]/[.08]"
+              : "border-white/[.08] hover:border-white/20"
+          )}
+        >
+          <MiniPreview config={tpl.config} />
+          <div className="text-center">
+            <p className="text-[11px] font-bold text-zinc-200">{tpl.name}</p>
+            <p className="text-[9.5px] text-zinc-500">{tpl.desc}</p>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ── Create view ── */
 interface CreateViewProps {
   onBack: () => void;
@@ -868,19 +931,12 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
               </button>
             </div>
 
-            <span className="mt-5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Theme</span>
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              {(["classic", "neon", "minimal"] as TemplateId[]).map((t) => (
-                <button key={t} onClick={() => {
-                  setTemplateId(t);
-                  const cfg = TEMPLATES.find((tmpl) => tmpl.id === t)?.config;
-                  if (cfg) setTemplateConfig(cfg);
-                }}
-                  className={cn("rounded-[10px] border py-2 text-xs font-bold capitalize transition",
-                    templateId === t ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-white" : "border-white/[.08] text-zinc-400 hover:text-zinc-200")}>
-                  {t}
-                </button>
-              ))}
+            <span className="mt-5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Template</span>
+            <div className="mt-2">
+              <TemplatePicker
+                selected={templateId}
+                onSelect={(id, config) => { setTemplateId(id); setTemplateConfig(config); }}
+              />
             </div>
 
             <span className="mt-5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Order</span>
