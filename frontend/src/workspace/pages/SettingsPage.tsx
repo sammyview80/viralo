@@ -10,11 +10,13 @@ import {
   type NotificationPrefs,
   type ApiKeyInfo,
   type SubscriptionInfo,
+  type UserResponse,
 } from "@/lib/api";
 
 /* ─── Nav sections ──────────────────────────────────────────────────────── */
 
 const SECTIONS = [
+  { id: "profile",       label: "Profile",       icon: <IconProfile />,      desc: "Your name and avatar." },
   { id: "workspace",     label: "Workspace",    icon: <IconWorkspace />,    desc: "Name, URL, and timezone for your workspace." },
   { id: "brand",         label: "Brand kit",    icon: <IconBrand />,        desc: "Colors and font applied to exported clips." },
   { id: "billing",       label: "Billing",       icon: <IconBilling />,      desc: "Plan and usage." },
@@ -26,6 +28,9 @@ type SectionId = typeof SECTIONS[number]["id"];
 
 /* ─── Icons ─────────────────────────────────────────────────────────────── */
 
+function IconProfile() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><circle cx="8" cy="5.5" r="2.5"/><path d="M2.5 13.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg>;
+}
 function IconWorkspace() {
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>;
 }
@@ -159,6 +164,48 @@ function SaveBar({ onSave, saving }: { onSave: () => void; saving: boolean }) {
       <PrimaryBtn onClick={onSave} disabled={saving}>
         {saving ? "Saving…" : "Save changes"}
       </PrimaryBtn>
+    </div>
+  );
+}
+
+/* ─── Profile ────────────────────────────────────────────────────────────── */
+
+function ProfileSection() {
+  const [data, setData] = useState<UserResponse | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { settingsApi.getMe().then(setData).catch(() => {}); }, []);
+
+  const save = async () => {
+    if (!data) return;
+    setSaving(true);
+    try {
+      const updated = await settingsApi.updateMe({
+        full_name: data.full_name ?? undefined,
+        avatar_url: undefined,
+      });
+      setData(updated);
+    } finally { setSaving(false); }
+  };
+
+  if (!data) return <FieldSkeleton rows={2} />;
+
+  return (
+    <div className="space-y-3">
+      <Card>
+        <FieldRow label="Full name" hint="Shown across the workspace.">
+          <TextInput
+            value={data.full_name ?? ""}
+            onChange={v => setData(d => d && { ...d, full_name: v })}
+            placeholder="Your name"
+            className="w-48"
+          />
+        </FieldRow>
+        <FieldRow label="Email" hint="Login email — cannot be changed here." border={false}>
+          <span className="text-[13px] text-zinc-500">{data.email}</span>
+        </FieldRow>
+      </Card>
+      <SaveBar onSave={save} saving={saving} />
     </div>
   );
 }
@@ -463,6 +510,7 @@ function ApiKeysSection() {
 /* ─── Section content map ────────────────────────────────────────────────── */
 
 const CONTENT: Record<SectionId, React.ReactNode> = {
+  profile:       <ProfileSection />,
   workspace:     <WorkspaceSection />,
   brand:         <BrandSection />,
   billing:       <BillingSection />,
@@ -473,7 +521,7 @@ const CONTENT: Record<SectionId, React.ReactNode> = {
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 
 export function SettingsPage() {
-  const [active, setActive] = useState<SectionId>("workspace");
+  const [active, setActive] = useState<SectionId>("profile");
   const section = SECTIONS.find(s => s.id === active)!;
 
   return (
