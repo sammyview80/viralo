@@ -2,7 +2,7 @@
 Idempotent dev seed: creates a pro user + tenant + subscription.
 
 Reads from env (with defaults):
-  SEED_EMAIL     = dev@viralo.local
+  SEED_EMAIL     = dev@viralo.dev
   SEED_PASSWORD  = viralo123
   SEED_NAME      = Dev User
   DATABASE_URL   (required — set in .env)
@@ -17,7 +17,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-EMAIL = os.environ.get("SEED_EMAIL", "dev@viralo.local")
+EMAIL = os.environ.get("SEED_EMAIL", "dev@viralo.dev")
 PASSWORD = os.environ.get("SEED_PASSWORD", "viralo123")
 NAME = os.environ.get("SEED_NAME", "Dev User")
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -59,14 +59,20 @@ async def seed():
             user_id, tenant_id = user_row
             print(f"User already exists: {EMAIL} (id={user_id})")
         else:
-            # 3. Create tenant
-            tenant_id = uuid.uuid4()
+            # 3. Create tenant (or fetch existing by subdomain)
             subdomain = EMAIL.split("@")[0].replace(".", "-").lower()
-            await db.execute(text("""
-                INSERT INTO tenants (id, subdomain, display_name, plan_id, status)
-                VALUES (:id, :subdomain, :name, :plan_id, 'active')
-                ON CONFLICT (subdomain) DO NOTHING
-            """), {"id": str(tenant_id), "subdomain": subdomain, "name": NAME, "plan_id": str(plan_id)})
+            t_result = await db.execute(
+                text("SELECT id FROM tenants WHERE subdomain = :s"), {"s": subdomain}
+            )
+            t_row = t_result.fetchone()
+            if t_row:
+                tenant_id = t_row[0]
+            else:
+                tenant_id = uuid.uuid4()
+                await db.execute(text("""
+                    INSERT INTO tenants (id, subdomain, display_name, plan_id, status)
+                    VALUES (:id, :subdomain, :name, :plan_id, 'active')
+                """), {"id": str(tenant_id), "subdomain": subdomain, "name": NAME, "plan_id": str(plan_id)})
 
             # 4. Create user
             user_id = uuid.uuid4()
