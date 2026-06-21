@@ -5349,3 +5349,187 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
         raise
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+# ── Editor server-side render ─────────────────────────────────────────────────
+
+SOUNDS_DIR = Path(__file__).parent.parent / "assets" / "sounds"
+
+QUALITY_PRESETS = {
+    "draft":  ["-crf", "32", "-preset", "ultrafast"],
+    "720p":   ["-crf", "26", "-preset", "fast", "-vf", "scale=-2:720"],
+    "1080p":  ["-crf", "22", "-preset", "fast", "-vf", "scale=-2:1080"],
+}
+
+
+def _build_caption_filter(captions: list[dict]) -> str:
+    """Build ffmpeg drawtext filter chain for captions."""
+    parts = []
+    pos_map = {"top": "h*0.10", "center": "h*0.50", "bottom": "h*0.88"}
+    for cap in captions:
+        text = cap["text"].replace("'", "\\'").replace(":", "\\:")
+        y = pos_map.get(cap.get("position", "bottom"), "h*0.88")
+        color = cap.get("color", "#ffffff").lstrip("#")
+        size = cap.get("font_size", 24)
+        t0 = cap["start_sec"]
+        t1 = cap["end_sec"]
+        parts.append(
+            f"drawtext=text='{text}':fontsize={size}:fontcolor=0x{color}:"
+            f"x=(w-text_w)/2:y={y}:enable='between(t,{t0},{t1})'"
+        )
+    return ",".join(parts) if parts else ""
+
+
+def _mix_sound_markers(
+    source_path: str,
+    markers: list[dict],
+    output_path: str,
+    base_cmd_prefix: list[str],
+) -> list[str]:
+    """
+    Build ffmpeg command that mixes source video with sound WAV files.
+    Returns full ffmpeg argv list.
+    """
+    valid = [m for m in markers if (SOUNDS_DIR / f"{m['sound']}.wav").exists()]
+    if not valid:
+        return []
+
+    inputs = ["-i", source_path]
+    for m in valid:
+        inputs += ["-i", str(SOUNDS_DIR / f"{m['sound']}.wav")]
+
+    n_audio = len(valid)
+    # Build adelay filter for each sound input (stream index 1..n)
+    filter_parts = []
+    for i, m in enumerate(valid):
+        delay_ms = int(m["time_ms"])
+        filter_parts.append(f"[{i+1}:a]adelay={delay_ms}|{delay_ms}[sfx{i}]")
+
+    sfx_labels = "".join(f"[sfx{i}]" for i in range(n_audio))
+    filter_parts.append(f"[0:a]{sfx_labels}amix=inputs={n_audio+1}:normalize=0[aout]")
+    filter_str = ";".join(filter_parts)
+
+    return inputs + [
+        "-filter_complex", filter_str,
+        "-map", "0:v", "-map", "[aout]",
+    ] + base_cmd_prefix + [output_path]
+
+
+@celery_app.task(bind=True, name="workers.tasks.video.render_clip_with_edits", max_retries=2)
+def render_clip_with_edits(
+    self,
+    tenant_id: str,
+    clip_id: str,
+    render_id: str,
+    storage_url: str,
+    trim_start_sec: float,
+    trim_end_sec: float | None,
+    captions: list[dict],
+    markers: list[dict],
+    quality: str,
+):
+    import json as _json
+    import tempfile
+
+    import psycopg2
+
+    _db_url = os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
+    _storage_root = os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage")
+
+    def _update_meta(conn, status: str, progress: int, download_url: str | None = None, error: str | None = None):
+        patch = _json.dumps([{
+            "render_id": render_id,
+            "status": status,
+            "progress_pct": progress,
+            "download_url": download_url,
+            "error_message": error,
+        }])
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE clips
+                SET metadata = jsonb_set(
+                    coalesce(metadata, '{}'),
+                    '{renders}',
+                    coalesce(metadata->'renders', '[]') || %s::jsonb
+                )
+                WHERE id = %s::uuid
+                """,
+                (patch, clip_id),
+            )
+        conn.commit()
+
+    conn = psycopg2.connect(_db_url)
+    try:
+        _update_meta(conn, "processing", 5)
+
+        # Resolve local path from storage_url (/storage/<relative>)
+        if storage_url.startswith("/storage/"):
+            rel = storage_url[len("/storage/"):]
+        else:
+            raise ValueError(f"Cannot resolve storage path from: {storage_url}")
+
+        source_path = os.path.join(_storage_root, rel)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trimmed = os.path.join(tmp, "trimmed.mp4")
+            final = os.path.join(tmp, f"render_{render_id}.mp4")
+
+            # ── Step 1: Trim ──────────────────────────────────────────
+            trim_cmd = ["ffmpeg", "-y", "-threads", "2"]
+            trim_cmd += ["-ss", str(trim_start_sec)]
+            if trim_end_sec:
+                trim_cmd += ["-to", str(trim_end_sec)]
+            trim_cmd += ["-i", source_path, "-c", "copy", trimmed]
+            r = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=300)
+            if r.returncode != 0:
+                raise RuntimeError(f"Trim failed: {r.stderr[-300:]}")
+
+            _update_meta(conn, "processing", 30)
+
+            # ── Step 2: Caption filter ────────────────────────────────
+            caption_filter = _build_caption_filter(captions)
+            quality_flags = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["1080p"])
+
+            # ── Step 3: Build + run encode command ────────────────────
+            sound_cmd = _mix_sound_markers(trimmed, markers, final, quality_flags)
+
+            if sound_cmd:
+                # Has sound markers — build combined command
+                cmd = ["ffmpeg", "-y", "-threads", "2"] + sound_cmd
+                if caption_filter:
+                    # Insert -vf before output path
+                    cmd.insert(-1, "-vf")
+                    cmd.insert(-1, caption_filter)
+            else:
+                # No sound markers
+                cmd = ["ffmpeg", "-y", "-threads", "2", "-i", trimmed]
+                if caption_filter:
+                    cmd += ["-vf", caption_filter]
+                cmd += quality_flags + [final]
+
+            _update_meta(conn, "processing", 50)
+            r2 = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if r2.returncode != 0:
+                raise RuntimeError(f"Render failed: {r2.stderr[-500:]}")
+
+            _update_meta(conn, "processing", 85)
+
+            # ── Step 4: Upload result ─────────────────────────────────
+            out_key = f"renders/{tenant_id}/{clip_id}/{render_id}.mp4"
+            out_path = os.path.join(_storage_root, out_key)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(final, "rb") as src_fh, open(out_path, "wb") as dst_fh:
+                dst_fh.write(src_fh.read())
+
+            download_url = f"/storage/{out_key}"
+            _update_meta(conn, "done", 100, download_url=download_url)
+
+    except Exception as exc:
+        logging.error("render_clip_with_edits failed: %s", exc)
+        try:
+            _update_meta(conn, "error", 0, error=str(exc)[:500])
+        except Exception:
+            pass
+        raise self.retry(exc=exc, countdown=30)
+    finally:
+        conn.close()
