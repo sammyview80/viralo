@@ -2145,6 +2145,25 @@ function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClos
   );
 }
 
+/* ─── Inline retry button for header ─── */
+function RetryVideoButton({ videoId, onRetried }: { videoId: string; onRetried: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={retrying}
+      onClick={async () => {
+        setRetrying(true);
+        try { await videoApi.retry(videoId); onRetried(); }
+        catch { setRetrying(false); }
+      }}
+      className="inline-flex items-center gap-1 rounded-full border border-red-400/30 bg-red-400/10 px-2.5 py-0.5 text-[11px] font-semibold text-red-300 hover:bg-red-400/20 disabled:opacity-50 transition cursor-pointer"
+    >
+      {retrying ? "Retrying…" : "↻ Retry"}
+    </button>
+  );
+}
+
 /* ─── Failed error card ─── */
 function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMessage: string; videoId: string; onRetried: () => void }) {
   const [retrying, setRetrying] = useState(false);
@@ -2358,7 +2377,8 @@ function ResultsView({
         </span>
         {(video.status === "done" || video.status === "ready")
           ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />Ready</span>
-          : <span className="inline-flex items-center gap-1 rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-0.5 text-[11px] font-semibold text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Failed</span>}
+          : <><span className="inline-flex items-center gap-1 rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-0.5 text-[11px] font-semibold text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Failed</span>
+            <RetryVideoButton videoId={video.id} onRetried={onBack} /></>}
         <div className="ml-auto flex shrink-0 gap-2">
           <button
             onClick={() => { selectAll(); setBulkModal(true); }}
@@ -2443,8 +2463,8 @@ function ResultsView({
               />
             )}
           />
-        : video.status === "failed" && video.error_message
-          ? <FailedErrorCard errorMessage={video.error_message} videoId={video.id} onRetried={() => onBack()} />
+        : video.status === "failed"
+          ? <FailedErrorCard errorMessage={video.error_message ?? "Processing failed. No additional details available."} videoId={video.id} onRetried={() => onBack()} />
           : <div className="py-16 text-center text-zinc-500">No clips generated yet.</div>}
 
       {bulkModal && (
