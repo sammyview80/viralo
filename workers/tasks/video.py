@@ -5366,7 +5366,7 @@ def _build_caption_filter(captions: list[dict]) -> str:
     parts = []
     pos_map = {"top": "h*0.10", "center": "h*0.50", "bottom": "h*0.88"}
     for cap in captions:
-        text = cap["text"].replace("'", "\\'").replace(":", "\\:")
+        text = cap["text"].replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
         y = pos_map.get(cap.get("position", "bottom"), "h*0.88")
         color = cap.get("color", "#ffffff").lstrip("#")
         size = cap.get("font_size", 24)
@@ -5456,6 +5456,10 @@ def render_clip_with_edits(
 
     conn = psycopg2.connect(_db_url)
     try:
+        import shutil as _shutil
+        if not _shutil.which("ffmpeg"):
+            raise RuntimeError("ffmpeg binary not found in worker PATH")
+
         _update_meta(conn, "processing", 5)
 
         # Resolve local path from storage_url (/storage/<relative>)
@@ -5465,6 +5469,8 @@ def render_clip_with_edits(
             raise ValueError(f"Cannot resolve storage path from: {storage_url}")
 
         source_path = os.path.join(_storage_root, rel)
+        if not os.path.realpath(source_path).startswith(os.path.realpath(_storage_root) + os.sep):
+            raise ValueError(f"storage_url escapes storage root: {storage_url!r}")
 
         with tempfile.TemporaryDirectory() as tmp:
             trimmed = os.path.join(tmp, "trimmed.mp4")
@@ -5526,7 +5532,7 @@ def render_clip_with_edits(
             out_path = os.path.join(_storage_root, out_key)
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             with open(final, "rb") as src_fh, open(out_path, "wb") as dst_fh:
-                dst_fh.write(src_fh.read())
+                _shutil.copyfileobj(src_fh, dst_fh, length=1024 * 1024)
 
             download_url = f"/storage/{out_key}"
             _update_meta(conn, "done", 100, download_url=download_url)
@@ -5537,6 +5543,8 @@ def render_clip_with_edits(
             _update_meta(conn, "error", 0, error=str(exc)[:500])
         except Exception:
             pass
-        raise self.retry(exc=exc, countdown=30)
+        if isinstance(exc, (subprocess.TimeoutExpired, OSError)):
+            raise self.retry(exc=exc, countdown=30)
+        raise  # permanent failures (ValueError, RuntimeError from ffmpeg, etc.) don't retry
     finally:
         conn.close()
