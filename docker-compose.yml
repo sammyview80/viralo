@@ -61,6 +61,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-viralo}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-viralo}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit consumer_timeout 10800000"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
