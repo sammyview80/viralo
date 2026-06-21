@@ -5436,25 +5436,22 @@ def render_clip_with_edits(
     _storage_root = os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage")
 
     def _update_meta(conn, status: str, progress: int, download_url: str | None = None, error: str | None = None):
-        patch = _json.dumps([{
-            "render_id": render_id,
-            "status": status,
-            "progress_pct": progress,
-            "download_url": download_url,
-            "error_message": error,
-        }])
         with conn.cursor() as cur:
+            cur.execute("SELECT metadata FROM clips WHERE id = %s::uuid", (clip_id,))
+            row = cur.fetchone()
+            meta = dict(row[0] or {}) if row else {}
+            renders = [r for r in meta.get("renders", []) if r.get("render_id") != render_id]
+            renders.append({
+                "render_id": render_id,
+                "status": status,
+                "progress_pct": progress,
+                "download_url": download_url,
+                "error_message": error,
+            })
+            meta["renders"] = renders
             cur.execute(
-                """
-                UPDATE clips
-                SET metadata = jsonb_set(
-                    coalesce(metadata, '{}'),
-                    '{renders}',
-                    coalesce(metadata->'renders', '[]') || %s::jsonb
-                )
-                WHERE id = %s::uuid
-                """,
-                (patch, clip_id),
+                "UPDATE clips SET metadata = %s::jsonb WHERE id = %s::uuid",
+                (_json.dumps(meta), clip_id),
             )
         conn.commit()
 
