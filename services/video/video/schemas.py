@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ClipConfig(BaseModel):
@@ -98,11 +98,19 @@ class EditorCaption(BaseModel):
     color: str = "#ffffff"
     font_size: int = Field(default=24, ge=12, le=48)
 
+    @field_validator("color")
+    @classmethod
+    def validate_hex_color(cls, v: str) -> str:
+        import re
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+            raise ValueError("color must be a 6-digit hex color like #ffffff")
+        return v
+
 
 class EditorMarker(BaseModel):
     id: str
     time_ms: float = Field(ge=0)
-    sound: str
+    sound: Literal["ding", "quack", "applause", "airhorn", "womp", "tada"]
     emoji: str
     label: str
 
