@@ -979,6 +979,7 @@ function ProcessingView({
   const [liveMsg, setLiveMsg] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>(video.error_message ?? "");
   const [now, setNow] = useState(Date.now());
+  const [retrying, setRetrying] = useState(false);
 
   const sanitize = (s: string) => {
     if (!s) return s;
@@ -1203,7 +1204,28 @@ function ProcessingView({
       )}
       {(current.status === "failed" || errorMsg) && errorMsg && (
         <div className="rounded-[8px] border border-red-500/20 bg-red-500/[.07] px-3 py-2 text-[11.5px] text-red-400 font-mono leading-snug break-all">
-          {errorMsg}
+          <div className="flex items-start justify-between gap-3">
+            <span>{errorMsg}</span>
+            <button
+              type="button"
+              disabled={retrying}
+              onClick={async () => {
+                setRetrying(true);
+                try {
+                  const updated = await videoApi.retry(current.id);
+                  setErrorMsg("");
+                  setCurrent(updated);
+                } catch {
+                  // keep error visible
+                } finally {
+                  setRetrying(false);
+                }
+              }}
+              className="shrink-0 rounded-[7px] border border-red-400/30 bg-red-400/10 px-2.5 py-1 text-[10.5px] font-semibold text-red-300 hover:bg-red-400/20 disabled:opacity-50 transition cursor-pointer"
+            >
+              {retrying ? "Retrying…" : "Retry"}
+            </button>
+          </div>
         </div>
       )}
 
