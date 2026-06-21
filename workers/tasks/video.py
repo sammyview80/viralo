@@ -5437,10 +5437,10 @@ def render_clip_with_edits(
 
     def _update_meta(conn, status: str, progress: int, download_url: str | None = None, error: str | None = None):
         with conn.cursor() as cur:
-            cur.execute("SELECT metadata FROM clips WHERE id = %s::uuid", (clip_id,))
+            cur.execute("SELECT metadata->'renders' FROM clips WHERE id = %s::uuid", (clip_id,))
             row = cur.fetchone()
-            meta = dict(row[0] or {}) if row else {}
-            renders = [r for r in meta.get("renders", []) if r.get("render_id") != render_id]
+            existing_renders = list(row[0] or []) if row else []
+            renders = [r for r in existing_renders if r.get("render_id") != render_id]
             renders.append({
                 "render_id": render_id,
                 "status": status,
@@ -5448,10 +5448,9 @@ def render_clip_with_edits(
                 "download_url": download_url,
                 "error_message": error,
             })
-            meta["renders"] = renders
             cur.execute(
-                "UPDATE clips SET metadata = %s::jsonb WHERE id = %s::uuid",
-                (_json.dumps(meta), clip_id),
+                "UPDATE clips SET metadata = jsonb_set(coalesce(metadata,'{}'), '{renders}', %s::jsonb) WHERE id = %s::uuid",
+                (_json.dumps(renders), clip_id),
             )
         conn.commit()
 
@@ -5488,21 +5487,32 @@ def render_clip_with_edits(
             quality_flags = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["1080p"])
 
             # ── Step 3: Build + run encode command ────────────────────
-            sound_cmd = _mix_sound_markers(trimmed, markers, final, quality_flags)
+            # Compose vf filters: merge scale (from quality preset) with caption drawtext
+            vf_filters = []
+            qf = list(quality_flags)
+            if "-vf" in qf:
+                vf_idx = qf.index("-vf")
+                vf_filters.append(qf[vf_idx + 1])
+                qf = qf[:vf_idx] + qf[vf_idx + 2:]  # remove -vf + value from quality flags
+            if caption_filter:
+                vf_filters.append(caption_filter)
+            combined_vf = ",".join(vf_filters) if vf_filters else None
+
+            sound_cmd = _mix_sound_markers(trimmed, markers, final, qf)
 
             if sound_cmd:
                 # Has sound markers — build combined command
                 cmd = ["ffmpeg", "-y", "-threads", "2"] + sound_cmd
-                if caption_filter:
+                if combined_vf:
                     # Insert -vf before output path
                     cmd.insert(-1, "-vf")
-                    cmd.insert(-1, caption_filter)
+                    cmd.insert(-1, combined_vf)
             else:
                 # No sound markers
                 cmd = ["ffmpeg", "-y", "-threads", "2", "-i", trimmed]
-                if caption_filter:
-                    cmd += ["-vf", caption_filter]
-                cmd += quality_flags + [final]
+                if combined_vf:
+                    cmd += ["-vf", combined_vf]
+                cmd += qf + [final]
 
             _update_meta(conn, "processing", 50)
             r2 = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
