@@ -40,6 +40,8 @@ celery_app.conf.update(
     task_time_limit=3600,        # 60 min: hard SIGKILL if soft ignored
     worker_prefetch_multiplier=1,  # each worker takes 1 task at a time — prevents one worker hoarding queue
     task_acks_late=True,           # ack only after task completes — safe redelivery on worker crash
+    broker_heartbeat=120,          # send heartbeat every 120s so RabbitMQ knows worker is alive during long ffmpeg encodes
+    broker_heartbeat_checkrate=2,  # check heartbeat twice per interval
     task_routes={
         "workers.tasks.video.generate_viral_clips": {"queue": "viralo.video.ai"},
         "workers.tasks.video.process_uploaded_video": {"queue": "viralo.video.pipeline"},

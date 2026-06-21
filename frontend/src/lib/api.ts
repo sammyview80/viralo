@@ -403,6 +403,34 @@ export const videoApi = {
     videoReq<{ title: string; highlight_words: string[] }>("POST", "/ranking/suggest-title", { topic, segment_count }),
 };
 
+export interface RenderStatus {
+  render_id: string;
+  clip_id: string;
+  status: "queued" | "processing" | "done" | "error";
+  progress_pct: number;
+  download_url: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface RenderPayload {
+  trim_start_sec: number;
+  trim_end_sec: number | null;
+  captions: EditorCaption[];
+  markers: EditorMarker[];
+  quality: "draft" | "720p" | "1080p";
+}
+
+export const renderApi = {
+  async startRender(clipId: string, payload: RenderPayload): Promise<{ render_id: string }> {
+    return videoReq<{ render_id: string }>("POST", `/clips/${clipId}/render`, payload);
+  },
+
+  async getStatus(clipId: string, renderId: string): Promise<RenderStatus> {
+    return videoReq<RenderStatus>("GET", `/clips/${clipId}/render/${renderId}`);
+  },
+};
+
 /* ─── Platform service (port 8006) ─── */
 const platformReq = createServiceClient(() => API_BASES.platform);
 

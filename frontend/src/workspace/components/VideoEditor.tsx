@@ -6,6 +6,7 @@ import { Timeline, type EffectMarker } from "./editor/Timeline";
 import { TrimBar } from "./editor/TrimBar";
 import { CaptionEditor, type Caption } from "./editor/CaptionEditor";
 import { SoundEffectPalette, PALETTE, type PaletteItem, type SoundType } from "./editor/SoundEffectPalette";
+import { RenderPanel } from "./editor/RenderPanel";
 
 /* ─── Audio synthesis ─── */
 function synthSound(dest: AudioNode, type: SoundType) {
@@ -59,7 +60,7 @@ function fmt(s: number) {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-type EditorTab = "trim" | "captions" | "effects";
+type EditorTab = "trim" | "captions" | "effects" | "export";
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
 type Speed = typeof SPEEDS[number];
@@ -107,6 +108,12 @@ const IconLoop = () => (
     <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
   </svg>
 );
+const IconExport = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+);
 
 export function VideoEditor({
   clip,
@@ -139,8 +146,6 @@ export function VideoEditor({
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(clip.duration_ms ? clip.duration_ms / 1000 : 0);
   const [activeTab, setActiveTab] = useState<EditorTab>("trim");
-  const [exporting, setExporting] = useState(false);
-  const [exportStatus, setExportStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "ok" | "err">("idle");
   const [noVideo] = useState(!clip.storage_url);
@@ -278,49 +283,6 @@ export function VideoEditor({
   }
   function removeMarker(id: string) { setMarkers((prev) => prev.filter((m) => m.id !== id)); }
 
-  /* ─── Export ─── */
-  async function handleExport() {
-    const video = videoRef.current; const canvas = canvasRef.current;
-    if (!canvas) return;
-    setExporting(true); setExportStatus("Preparing…");
-    if (video) ensureMediaSource();
-    const ctx = getAudioCtx();
-    if (ctx.state === "suspended") await ctx.resume();
-    const canvasStream = canvas.captureStream(30);
-    const audioTracks = mediaDestRef.current?.stream.getAudioTracks() ?? [];
-    const combined = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
-    const recorder = new MediaRecorder(combined, { mimeType });
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: "video/webm" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = `${clip.id ?? "clip"}-edited.webm`;
-      a.click(); URL.revokeObjectURL(url);
-      setExporting(false); setExportStatus("");
-    };
-    triggeredRef.current.clear();
-    if (video) {
-      video.currentTime = trimStart;
-      await new Promise<void>((r) => {
-        const fn = () => { video.removeEventListener("seeked", fn); r(); };
-        video.addEventListener("seeked", fn); setTimeout(r, 600);
-      });
-    }
-    setExportStatus("Recording…");
-    recorder.start(100);
-    if (video) { video.play(); setPlaying(true); }
-    const exportDuration = (trimEnd || duration) - trimStart;
-    await new Promise<void>((r) => {
-      if (!video) { setTimeout(r, (exportDuration + 2) * 1000); return; }
-      const fn = () => { video.removeEventListener("ended", fn); r(); };
-      video.addEventListener("ended", fn);
-      setTimeout(r, (exportDuration + 2) * 1000);
-    });
-    setPlaying(false); setTimeout(() => recorder.stop(), 400);
-  }
-
   /* ─── Load saved state ─── */
   useEffect(() => {
     videoApi.getEditorData(clip.id).then((res) => {
@@ -339,55 +301,25 @@ export function VideoEditor({
 
   /* ─── Save ─── */
   async function handleSave() {
-    const video = videoRef.current; const canvas = canvasRef.current;
-    if (!canvas) return;
     setSaving(true); setSaveStatus("idle");
     const editorData: EditorData = {
       trim_start_sec: trimStart, trim_end_sec: trimEnd || null,
       captions: captions.map((c) => ({ id: c.id, text: c.text, start_sec: c.startSec, end_sec: c.endSec, position: c.position, color: c.color, font_size: c.fontSize })),
       markers: markers.map((m) => ({ id: m.id, time_ms: m.timeMs, sound: m.sound, emoji: m.emoji, label: m.label })),
     };
-    await videoApi.saveEditorData(clip.id, editorData).catch(() => {});
-    if (video) ensureMediaSource();
-    const ctx = getAudioCtx();
-    if (ctx.state === "suspended") await ctx.resume();
-    const canvasStream = canvas.captureStream(30);
-    const audioTracks = mediaDestRef.current?.stream.getAudioTracks() ?? [];
-    const combined = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
-    const recorder = new MediaRecorder(combined, { mimeType });
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = async () => {
-      try {
-        await videoApi.patchClip(clip.id, {});
-        setSaveStatus("ok"); setTimeout(() => setSaveStatus("idle"), 3000);
-      } catch { setSaveStatus("err"); setTimeout(() => setSaveStatus("idle"), 3000); }
-      finally { setSaving(false); }
-    };
-    triggeredRef.current.clear();
-    if (video) {
-      video.currentTime = 0;
-      await new Promise<void>((r) => {
-        const fn = () => { video.removeEventListener("seeked", fn); r(); };
-        video.addEventListener("seeked", fn); setTimeout(r, 600);
-      });
-    }
-    recorder.start(100);
-    if (video) { video.play(); setPlaying(true); }
-    const vidDuration = video?.duration ?? duration;
-    await new Promise<void>((r) => {
-      if (!video) { setTimeout(r, (duration || 5) * 1000); return; }
-      const fn = () => { video.removeEventListener("ended", fn); r(); };
-      video.addEventListener("ended", fn); setTimeout(r, (vidDuration + 2) * 1000);
-    });
-    setPlaying(false); setTimeout(() => recorder.stop(), 400);
+    try {
+      await videoApi.saveEditorData(clip.id, editorData);
+      setSaveStatus("ok"); setTimeout(() => setSaveStatus("idle"), 3000);
+    } catch {
+      setSaveStatus("err"); setTimeout(() => setSaveStatus("idle"), 3000);
+    } finally { setSaving(false); }
   }
 
   const TABS: { id: EditorTab; label: string; icon: React.ReactNode }[] = [
     { id: "trim",     label: "Trim",     icon: <IconCut /> },
     { id: "captions", label: "Captions", icon: <IconText /> },
     { id: "effects",  label: "Effects",  icon: <IconEffects /> },
+    { id: "export",   label: "Export",   icon: <IconExport /> },
   ];
 
   const progress = duration > 0 ? currentTime / duration : 0;
@@ -469,7 +401,7 @@ export function VideoEditor({
         <div className="flex items-center gap-2">
           <button
             onClick={handleSave}
-            disabled={saving || exporting}
+            disabled={saving}
             className={cn(
               "flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-[12px] font-semibold transition cursor-pointer disabled:opacity-50",
               saveStatus === "ok" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
@@ -487,23 +419,13 @@ export function VideoEditor({
           {onPost && (
             <button
               onClick={() => { onClose(); onPost(); }}
-              disabled={saving || exporting}
+              disabled={saving}
               className="flex items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3.5 py-1.5 text-[12px] font-semibold text-violet-300 hover:bg-violet-500/20 disabled:opacity-50 transition cursor-pointer"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               Post
             </button>
           )}
-
-          <button
-            onClick={handleExport}
-            disabled={exporting || saving}
-            className="flex items-center gap-1.5 rounded-lg bg-[#ff3d6a] px-4 py-1.5 text-[12px] font-bold text-white hover:bg-[#e8304f] disabled:opacity-50 transition cursor-pointer"
-          >
-            {exporting
-              ? <><span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />{exportStatus}</>
-              : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</>}
-          </button>
         </div>
       </div>
 
@@ -784,6 +706,22 @@ export function VideoEditor({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === "export" && (
+              <div className="max-w-lg">
+                <h3 className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 mb-4">Server Render</h3>
+                <p className="text-[11px] text-zinc-600 mb-4">
+                  Renders on server with FFmpeg — full quality MP4 with burned captions and sound effects.
+                </p>
+                <RenderPanel
+                  clipId={String(clip.id)}
+                  trimStart={trimStart}
+                  trimEnd={trimEnd || duration}
+                  captions={captions}
+                  markers={markers}
+                />
               </div>
             )}
           </div>
