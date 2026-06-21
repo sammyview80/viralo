@@ -398,27 +398,79 @@ async def import_youtube(
     tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
     clip_config = body.config
 
+    use_proxy = bool(os.environ.get("YTDLP_PROXY", "").strip())
+
     video = Video(
         id=video_id,
         tenant_id=tenant_id,
         title=body.title,
         source_type="youtube_url",
         source_url=body.url,
-        status="queued",
+        status="queued" if use_proxy else "needs_browser_capture",
         clip_config=clip_config.model_dump(),
     )
     db.add(video)
     await db.commit()
 
+    if use_proxy:
+        celery_app = _get_celery()
+        task = celery_app.send_task(
+            "workers.tasks.video.process_youtube_video",
+            args=[str(tenant_id), str(video_id), body.url, clip_config.model_dump()],
+        )
+        await db.execute(update(Video).where(Video.id == video_id).values(celery_task_id=task.id))
+        await db.commit()
+
+    await db.refresh(video)
+    resp = VideoResponse.model_validate(video)
+    resp.needs_browser_capture = not use_proxy
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Browser capture upload — called after frontend records YouTube via MediaRecorder
+@router.post("/videos/{video_id}/browser-upload", response_model=VideoResponse)
+async def browser_upload(
+    video_id: uuid.UUID,
+    file: UploadFile,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
+    result = await db.execute(
+        select(Video).where(Video.id == video_id, Video.tenant_id == tenant_id)
+    )
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    if video.status != "needs_browser_capture":
+        raise HTTPException(status_code=400, detail="Video not awaiting browser capture")
+
+    import tempfile, shutil as _shutil
+    suffix = Path(file.filename or "capture.webm").suffix or ".webm"
+    tmp_dir = Path(os.getenv("VIDEO_TEMP_DIR", "/tmp/viralo_video")) / str(video_id)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = str(tmp_dir / f"browser_capture{suffix}")
+    with open(tmp_path, "wb") as f:
+        _shutil.copyfileobj(file.file, f)
+
+    await db.execute(
+        update(Video).where(Video.id == video_id).values(
+            status="queued",
+            source_type="uploaded",
+        )
+    )
+    await db.commit()
+
+    cfg = video.clip_config or {}
     celery_app = _get_celery()
     task = celery_app.send_task(
-        "workers.tasks.video.process_youtube_video",
-        args=[str(tenant_id), str(video_id), body.url, clip_config.model_dump()],
+        "workers.tasks.video.process_uploaded_video",
+        args=[str(tenant_id), str(video_id), tmp_path, cfg],
     )
     await db.execute(update(Video).where(Video.id == video_id).values(celery_task_id=task.id))
     await db.commit()
     await db.refresh(video)
-
     return VideoResponse.model_validate(video)
 
 
