@@ -326,6 +326,119 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
 }
 
 /* ─── Delete confirm modal ─── */
+function BrowserCaptureModal({
+  video,
+  onDone,
+  onCancel,
+}: {
+  video: VideoResponse;
+  onDone: (updated: VideoResponse) => void;
+  onCancel: () => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const [chunks, setChunks] = useState<Blob[]>([]);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const ytId = video.source_url
+    ? (video.source_url.match(/(?:v=|youtu\.be\/)([A-Za-z9_-]{11})/)?.[1] ?? "")
+    : "";
+
+  const startRecording = async () => {
+    setError("");
+    setChunks([]);
+    try {
+      const stream = await (navigator.mediaDevices as MediaDevices & {
+        getDisplayMedia: (opts: MediaStreamConstraints) => Promise<MediaStream>;
+      }).getDisplayMedia({ video: true, audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: "video/webm; codecs=vp9,opus" });
+      const localChunks: Blob[] = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) localChunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setChunks(localChunks);
+      };
+      recorder.start(1000);
+      recorderRef.current = recorder;
+      setRecording(true);
+    } catch (e) {
+      setError("Could not start recording. Allow screen capture permission.");
+    }
+  };
+
+  const stopRecording = () => {
+    recorderRef.current?.stop();
+    setRecording(false);
+  };
+
+  const uploadCapture = async () => {
+    if (!chunks.length) return;
+    setUploading(true);
+    setError("");
+    try {
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const updated = await videoApi.browserUpload(video.id, blob);
+      onDone(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+      <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0e1420] p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-display text-lg font-bold text-white">Record YouTube Video</h2>
+          <button onClick={onCancel} className="text-zinc-500 hover:text-white">✕</button>
+        </div>
+        <p className="mb-4 text-[13px] text-zinc-400">
+          Play the video below, then click <strong className="text-white">Start Recording</strong> and select this tab/window. Stop when done, then upload.
+        </p>
+        {ytId && (
+          <div className="mb-4 aspect-video w-full overflow-hidden rounded-xl bg-black">
+            <iframe
+              ref={iframeRef}
+              src={`https://www.youtube.com/embed/${ytId}?autoplay=1`}
+              allow="autoplay; fullscreen"
+              className="h-full w-full"
+            />
+          </div>
+        )}
+        {error && <p className="mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-[13px] text-red-400">{error}</p>}
+        <div className="flex gap-3">
+          {!recording && !chunks.length && (
+            <button onClick={startRecording}
+              className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500">
+              Start Recording
+            </button>
+          )}
+          {recording && (
+            <button onClick={stopRecording}
+              className="flex-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-600">
+              ⏹ Stop Recording
+            </button>
+          )}
+          {chunks.length > 0 && !recording && (
+            <button onClick={uploadCapture} disabled={uploading}
+              className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
+              {uploading ? "Uploading…" : "Upload & Process"}
+            </button>
+          )}
+          {chunks.length > 0 && !recording && (
+            <button onClick={() => setChunks([])}
+              className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-400 hover:text-white">
+              Re-record
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DeleteModal({
   video,
   onConfirm,
@@ -2607,6 +2720,7 @@ export function UploadPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VideoResponse | null>(null);
   const [clipConfig, setClipConfig] = useState<ClipConfig>(DEFAULT_CONFIG);
+  const [captureVideo, setCaptureVideo] = useState<VideoResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isTerminalStatus = (v: VideoResponse) =>
@@ -2715,7 +2829,11 @@ export function UploadPage() {
         setActiveVideo(video);
         setUrlVal("");
         setUrlReady(false);
-        setView("processing");
+        if (video.needs_browser_capture) {
+          setCaptureVideo(video);
+        } else {
+          setView("processing");
+        }
       }
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
@@ -2796,6 +2914,19 @@ export function UploadPage() {
           video={deleteTarget}
           onConfirm={confirmDelete}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {captureVideo && (
+        <BrowserCaptureModal
+          video={captureVideo}
+          onDone={(updated) => {
+            setCaptureVideo(null);
+            setActiveVideo(updated);
+            setHistory((h) => h.map((v) => v.id === updated.id ? updated : v));
+            setView("processing");
+          }}
+          onCancel={() => setCaptureVideo(null)}
         />
       )}
 
