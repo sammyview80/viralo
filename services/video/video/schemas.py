@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -115,6 +117,24 @@ class EditorDataRequest(BaseModel):
 class EditorDataResponse(BaseModel):
     clip_id: uuid.UUID
     editor: EditorDataRequest
+
+
+class RenderRequest(BaseModel):
+    trim_start_sec: float = Field(default=0, ge=0)
+    trim_end_sec: float | None = Field(default=None, ge=0)
+    captions: list[EditorCaption] = Field(default_factory=list)
+    markers: list[EditorMarker] = Field(default_factory=list)
+    quality: Literal["draft", "720p", "1080p"] = "1080p"
+
+
+class RenderStatusResponse(BaseModel):
+    render_id: str
+    clip_id: uuid.UUID
+    status: Literal["queued", "processing", "done", "error"]
+    progress_pct: int = 0
+    download_url: str | None = None
+    error_message: str | None = None
+    created_at: str
 
 
 class VideoListResponse(BaseModel):
