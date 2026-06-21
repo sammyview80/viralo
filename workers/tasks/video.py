@@ -3630,27 +3630,23 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                   "-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
         ]
 
-    # Strategy order: no-proxy with cookies first, then rotate through proxies on 429
-    # Tagged as (cmd, proxy_label)
-    ytdlp_strategies: list[tuple[list[str], str]] = [
-        (cmd, "direct") for cmd in _client_args(None)
-    ]
-    proxy_idx = 0
+    import threading
 
-    for attempt, (cmd, label) in enumerate(ytdlp_strategies):
+    def _run_strategy(cmd: list[str], label: str, attempt: int) -> tuple[bool, str]:
+        """Run one yt-dlp command. Returns (success, stderr)."""
+        state = {"last_pct": 0}
         try:
-            # Stream stdout/stderr to parse yt-dlp progress lines in real time
             proc = subprocess.Popen(
-                cmd + ["--newline"],  # --newline: one progress line per line (no \r)
+                cmd + ["--newline"],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True,
             )
             stderr_lines: list[str] = []
-            last_pct = 0
-            import threading
+
             def _drain_stdout():
                 for _ in proc.stdout:
                     pass
+
             def _drain_stderr():
                 for line in proc.stderr:
                     line = line.rstrip()
@@ -3660,38 +3656,62 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         m = _re.search(r'(\d+\.?\d*)%', line)
                         if m:
                             pct = min(int(float(m.group(1))), 99)
-                            nonlocal last_pct
-                            if pct > last_pct:
-                                last_pct = pct
+                            if pct > state["last_pct"]:
+                                state["last_pct"] = pct
                                 progress_cb(pct)
+
             t_out = threading.Thread(target=_drain_stdout, daemon=True)
             t_err = threading.Thread(target=_drain_stderr, daemon=True)
-            t_out.start()
-            t_err.start()
-            t_out.join(timeout=310)
-            t_err.join(timeout=310)
+            t_out.start(); t_err.start()
+            t_out.join(timeout=310); t_err.join(timeout=310)
             proc.wait(timeout=300)
             if proc.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
-                return
-            stderr = "\n".join(stderr_lines[-20:])
-            errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
-            if (_is_429(stderr) or _is_bot_blocked(stderr)) and proxies:
-                # Switch to next proxy, append proxy-based strategies after current position
-                proxy = proxies[proxy_idx % len(proxies)]
-                proxy_idx += 1
-                logging.warning("YouTube 429 on strategy %d (%s), rotating to proxy %s",
-                                attempt + 1, label, proxy)
-                # Insert remaining proxy strategies right after current point
-                remaining = [(c, proxy) for c in _client_args(proxy)]
-                ytdlp_strategies[attempt + 1:attempt + 1] = remaining
+                return True, ""
+            return False, "\n".join(stderr_lines[-20:])
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
             except Exception:
                 pass
-            errors.append(f"yt-dlp strategy {attempt+1} ({label}): timeout")
+            return False, "timeout"
         except Exception as e:
-            errors.append(f"yt-dlp strategy {attempt+1} ({label}): {e}")
+            return False, str(e)
+
+    # Phase 1: try all cookie-based strategies (direct, no proxy)
+    cookie_strategies = [(cmd, "direct") for cmd in _client_args(None)]
+    rate_limited = False
+
+    for attempt, (cmd, label) in enumerate(cookie_strategies):
+        ok, stderr = _run_strategy(cmd, label, attempt)
+        if ok:
+            return
+        errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
+        if _is_429(stderr) or _is_bot_blocked(stderr):
+            logging.warning("YouTube 429/bot-block on cookie strategy %d (%s), switching to proxies", attempt + 1, label)
+            rate_limited = True
+            break
+
+    if not rate_limited:
+        # Cookie strategies failed for non-429 reasons — no point using proxies
+        # fall through to pytubefix
+        pass
+    elif proxies:
+        # Phase 2: rotate through proxies, one full strategy set per proxy
+        proxy_offset = len(errors)
+        for proxy_idx, proxy in enumerate(proxies[:10]):  # cap at 10 proxies
+            proxy_strategies = _client_args(proxy)
+            for attempt, cmd in enumerate(proxy_strategies):
+                label = f"proxy[{proxy_idx}]"
+                ok, stderr = _run_strategy(cmd, label, proxy_offset + attempt)
+                if ok:
+                    return
+                errors.append(f"yt-dlp {label} strategy {attempt+1}: {stderr[:200]}")
+                if not (_is_429(stderr) or _is_bot_blocked(stderr)):
+                    # Non-rate-limit error — try next strategy on same proxy
+                    continue
+                # Still rate-limited on this proxy — skip to next proxy
+                logging.warning("YouTube 429 on proxy %s, trying next", proxy)
+                break
 
     # pytubefix as final fallback (different HTTP stack, avoids some rate-limits)
     try:
