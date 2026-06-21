@@ -16,7 +16,7 @@ import subprocess
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from datetime import datetime
 from fractions import Fraction
 from pathlib import Path
@@ -2385,6 +2385,9 @@ def _render_clip_streamcopy(
 ) -> None:
     """Fast path: ffmpeg stream-copy + optional crop/scale. Zero re-encode quality loss."""
     src_w, src_h = meta.width, meta.height
+    # Hard cap: never encode more than 120s regardless of caller settings
+    if clip.end - clip.start > 120:
+        clip = dataclass_replace(clip, end=clip.start + 120)
     duration = clip.end - clip.start
 
     # Build vf (video filter) for crop + scale if needed
@@ -2456,7 +2459,8 @@ def _render_clip_streamcopy(
         output_path,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    encode_timeout = max(180, int(duration * 3))
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=encode_timeout)
     out_ok = Path(output_path).exists() and Path(output_path).stat().st_size >= 1000
     if result.returncode != 0 or not out_ok:
         err = result.stderr
@@ -2486,6 +2490,9 @@ def _render_clip_ffmpeg_captions(
     import tempfile
 
     src_w, src_h = meta.width, meta.height
+    # Hard cap: never encode more than 120s regardless of caller settings
+    if clip.end - clip.start > 120:
+        clip = dataclass_replace(clip, end=clip.start + 120)
     duration = clip.end - clip.start
 
     # Pass 1: transcode VP9/AV1 clip segment → h264 intermediate (no captions yet)
@@ -2601,7 +2608,8 @@ def _render_clip_ffmpeg_captions(
     ]
 
     try:
-        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=180)
+        encode_timeout = max(180, int(duration * 3))
+        r1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=encode_timeout)
         if r1.returncode != 0 or not Path(tmp_h264).exists() or Path(tmp_h264).stat().st_size < 1000:
             err = r1.stderr
             excerpt = (err[:400] + "\n...\n" + err[-400:]) if len(err) > 800 else err
@@ -4100,10 +4108,11 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             clip_total=len(clips),
         )
 
-    # Hard-cap clip durations before export — prevents LLM/heuristic overruns from timing out ffmpeg
+    # Hard-cap clip durations before export — cfg max_dur can be large; absolute ceiling is 120s
+    _export_cap = min(max_dur, 120)
     for clip in clips:
-        if clip.end - clip.start > max_dur:
-            clip.end = clip.start + max_dur
+        if clip.end - clip.start > _export_cap:
+            clip.end = clip.start + _export_cap
 
     max_workers = min(len(clips), 3)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
