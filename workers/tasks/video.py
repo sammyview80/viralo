@@ -3570,12 +3570,15 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> lis
         if use_cookies:
             cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
             if cookies_file and Path(cookies_file).exists():
-                # Copy to writable temp path — source file is mounted read-only
+                import shutil as _shutil
                 writable_cookies = "/tmp/yt-cookies-rw.txt"
-                if not Path(writable_cookies).exists():
-                    import shutil as _shutil
-                    _shutil.copy2(cookies_file, writable_cookies)
+                # Always refresh writable copy so stale cached version doesn't persist
+                _shutil.copy2(cookies_file, writable_cookies)
                 flags += ["--cookies", writable_cookies]
+                logging.info("yt-dlp: using cookies from %s", cookies_file)
+            else:
+                logging.warning("yt-dlp: no cookies file (YTDLP_COOKIES_FILE=%r, exists=%s) — direct may 429",
+                                cookies_file, Path(cookies_file).exists() if cookies_file else False)
     return flags
 
 
