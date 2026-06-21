@@ -3523,31 +3523,58 @@ _PROXY_CACHE_TTL = 300  # 5 min
 def _fetch_fresh_proxies() -> list[str]:
     import urllib.request as _req
     try:
+        # anonymous=true filters for anonymous/elite proxies only — higher YouTube success rate
         url = (
             "https://api.proxyscrape.com/v3/free-proxy-list/get"
             "?request=displayproxies&protocol=socks5&timeout=5000"
-            "&proxy_format=protocolipport&format=text"
+            "&proxy_format=protocolipport&format=text&anonymity=elite,anonymous"
         )
         with _req.urlopen(url, timeout=10) as resp:
             text = resp.read().decode()
         proxies = [l.strip() for l in text.splitlines() if l.strip()]
-        logging.info("Fetched %d fresh proxies from ProxyScrape", len(proxies))
-        return proxies[:20]
+        logging.info("Fetched %d anonymous proxies from ProxyScrape", len(proxies))
+        return proxies
     except Exception as e:
         logging.warning("Failed to fetch fresh proxies: %s", e)
         return []
 
 
+def _test_proxy(proxy: str, timeout: int = 5) -> bool:
+    """Quick TCP connect test — filters dead proxies before handing to yt-dlp."""
+    import socket
+    try:
+        # proxy format: socks5://host:port
+        host_port = proxy.split("://")[-1]
+        host, port = host_port.rsplit(":", 1)
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 def _ytdlp_proxies() -> list[str]:
-    """Always fetch fresh proxies; TTL 5 min. Env vars ignored — free proxies rotate too fast."""
+    """Fetch fresh proxies, TCP-test in parallel, return live ones. TTL 5 min."""
     import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     global _proxy_cache, _proxy_cache_ts
     now = time.time()
     if not _proxy_cache or (now - _proxy_cache_ts) > _PROXY_CACHE_TTL:
-        fresh = _fetch_fresh_proxies()
-        if fresh:
-            _proxy_cache = fresh
-            _proxy_cache_ts = now
+        raw = _fetch_fresh_proxies()
+        if raw:
+            # Test up to 50 proxies in parallel, keep first 20 that respond
+            candidates = raw[:50]
+            live: list[str] = []
+            with ThreadPoolExecutor(max_workers=20) as ex:
+                future_to_proxy = {ex.submit(_test_proxy, p): p for p in candidates}
+                for fut in as_completed(future_to_proxy):
+                    if fut.result():
+                        live.append(future_to_proxy[fut])
+                    if len(live) >= 20:
+                        break
+            logging.info("Proxy test: %d/%d live", len(live), len(candidates))
+            if live:
+                _proxy_cache = live
+                _proxy_cache_ts = now
     return _proxy_cache
 
 
@@ -3699,22 +3726,72 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         # fall through to pytubefix
         pass
     elif proxies:
-        # Phase 2: rotate through proxies, one full strategy set per proxy
-        proxy_offset = len(errors)
-        for proxy_idx, proxy in enumerate(proxies[:10]):  # cap at 10 proxies
-            proxy_strategies = _client_args(proxy)
-            for attempt, cmd in enumerate(proxy_strategies):
-                label = f"proxy[{proxy_idx}]"
-                ok, stderr = _run_strategy(cmd, label, proxy_offset + attempt)
-                if ok:
+        # Phase 2: race 10 proxies in parallel — first success wins, rest get killed
+        import concurrent.futures, threading as _threading
+        race_proxies = proxies[:10]
+        logging.info("Racing %d proxies in parallel", len(race_proxies))
+        won = _threading.Event()
+        proxy_errors: list[str] = []
+        proxy_errors_lock = _threading.Lock()
+
+        move_lock = _threading.Lock()
+        moved = _threading.Event()
+
+        def _try_proxy(proxy: str, idx: int) -> bool:
+            if moved.is_set():
+                return False
+            tmp_path = out_path + f".proxy{idx}.tmp"
+            # Build strategy cmd pointing to tmp_path
+            base = _ytdlp_base_flags(proxy)
+            cmd = (["yt-dlp"] + base +
+                   ["--extractor-args", "youtube:player_client=tv_embedded",
+                    "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
+            label = f"proxy-race[{idx}]"
+            try:
+                proc = subprocess.Popen(cmd + ["--newline"],
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stderr_lines: list[str] = []
+
+                def _drain():
+                    for line in proc.stderr:
+                        stderr_lines.append(line.rstrip())
+                        if moved.is_set():
+                            proc.kill()
+                            return
+
+                import threading as _t
+                _t.Thread(target=lambda: [_ for _ in proc.stdout], daemon=True).start()
+                _t.Thread(target=_drain, daemon=True).start()
+                proc.wait(timeout=120)
+                if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
+                    with move_lock:
+                        if not moved.is_set():
+                            import shutil as _sh
+                            _sh.move(tmp_path, out_path)
+                            moved.set()
+                            logging.info("Proxy race won by %s", proxy)
+                            return True
+                stderr = "\n".join(stderr_lines[-10:])
+                with proxy_errors_lock:
+                    proxy_errors.append(f"proxy[{idx}]: {stderr[:150]}")
+            except Exception as e:
+                with proxy_errors_lock:
+                    proxy_errors.append(f"proxy[{idx}]: {e}")
+            finally:
+                try:
+                    Path(tmp_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            return False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futures = {ex.submit(_try_proxy, p, i): p for i, p in enumerate(race_proxies)}
+            for fut in concurrent.futures.as_completed(futures):
+                if moved.is_set():
                     return
-                errors.append(f"yt-dlp {label} strategy {attempt+1}: {stderr[:200]}")
-                if not (_is_429(stderr) or _is_bot_blocked(stderr)):
-                    # Non-rate-limit error — try next strategy on same proxy
-                    continue
-                # Still rate-limited on this proxy — skip to next proxy
-                logging.warning("YouTube 429 on proxy %s, trying next", proxy)
-                break
+        if moved.is_set():
+            return
+        errors.extend(proxy_errors)
 
     # pytubefix as final fallback (different HTTP stack, avoids some rate-limits)
     try:
