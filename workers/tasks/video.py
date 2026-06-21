@@ -3557,20 +3557,25 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
 
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> list[str]:
     """Return common yt-dlp flags. Cookies are omitted when proxy is set (IP mismatch invalidates session)."""
-    flags = ["--no-check-certificate", "--retries", "3",
-             "--sleep-interval", "2", "--max-sleep-interval", "5",
-             "--js-runtimes", "node:/usr/bin/node"]
-    if use_cookies and not proxy:
-        cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
-        if cookies_file and Path(cookies_file).exists():
-            # Copy to writable temp path — source file is mounted read-only
-            writable_cookies = "/tmp/yt-cookies-rw.txt"
-            if not Path(writable_cookies).exists():
-                import shutil as _shutil
-                _shutil.copy2(cookies_file, writable_cookies)
-            flags += ["--cookies", writable_cookies]
     if proxy:
+        # No sleep delays for proxy strategies — flaky proxies compound wait time; socket-timeout handles hangs
+        flags = ["--no-check-certificate", "--retries", "1",
+                 "--socket-timeout", "15",
+                 "--js-runtimes", "node:/usr/bin/node"]
         flags += ["--proxy", proxy]
+    else:
+        flags = ["--no-check-certificate", "--retries", "3",
+                 "--sleep-interval", "2", "--max-sleep-interval", "5",
+                 "--js-runtimes", "node:/usr/bin/node"]
+        if use_cookies:
+            cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
+            if cookies_file and Path(cookies_file).exists():
+                # Copy to writable temp path — source file is mounted read-only
+                writable_cookies = "/tmp/yt-cookies-rw.txt"
+                if not Path(writable_cookies).exists():
+                    import shutil as _shutil
+                    _shutil.copy2(cookies_file, writable_cookies)
+                flags += ["--cookies", writable_cookies]
     return flags
 
 
