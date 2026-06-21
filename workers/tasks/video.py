@@ -3784,13 +3784,23 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     pass
             return False
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-            futures = {ex.submit(_try_proxy, p, i): p for i, p in enumerate(race_proxies)}
-            for fut in concurrent.futures.as_completed(futures):
-                if moved.is_set():
-                    return
-        if moved.is_set():
-            return
+        # Race in batches of 10 — next batch fires immediately after all in current batch fail
+        BATCH = 10
+        for batch_start in range(0, len(proxies), BATCH):
+            batch = proxies[batch_start:batch_start + BATCH]
+            logging.info("Proxy batch %d-%d: racing %d proxies",
+                         batch_start, batch_start + len(batch) - 1, len(batch))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH) as ex:
+                futures = {ex.submit(_try_proxy, p, batch_start + i): p
+                           for i, p in enumerate(batch)}
+                for fut in concurrent.futures.as_completed(futures):
+                    if moved.is_set():
+                        return
+            if moved.is_set():
+                return
+            logging.info("Proxy batch %d-%d all failed, trying next batch",
+                         batch_start, batch_start + len(batch) - 1)
+
         errors.extend(proxy_errors)
 
     # pytubefix as final fallback (different HTTP stack, avoids some rate-limits)
