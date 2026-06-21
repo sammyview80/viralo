@@ -469,7 +469,7 @@ function PlatformCopyCard({ platform, content, pcfg }: {
               <div>
                 <p className="mb-1 text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Tags</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {content.tags.map((tag) => <span key={tag} className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: `${pcfg.color}35`, background: `${pcfg.color}12`, color: pcfg.color }}>#{tag}</span>)}
+                  {content.tags.map((tag) => <span key={tag} className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: `${pcfg.color}35`, background: `${pcfg.color}12`, color: pcfg.color }}>#{tag.replace(/^#+/, "")}</span>)}
                 </div>
               </div>
             )}
