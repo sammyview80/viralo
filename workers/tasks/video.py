@@ -3771,10 +3771,13 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                             moved.set()
                             logging.info("Proxy race won by %s", proxy)
                             return True
-                stderr = "\n".join(stderr_lines[-10:])
+                stderr = "\n".join(stderr_lines[-5:])
+                reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
+                logging.warning("Proxy[%d] %s → %s | %s", idx, proxy, reason, stderr[:120])
                 with proxy_errors_lock:
-                    proxy_errors.append(f"proxy[{idx}]: {stderr[:150]}")
+                    proxy_errors.append(f"proxy[{idx}] {proxy}: {reason}: {stderr[:150]}")
             except Exception as e:
+                logging.warning("Proxy[%d] %s → exception: %s", idx, proxy, e)
                 with proxy_errors_lock:
                     proxy_errors.append(f"proxy[{idx}]: {e}")
             finally:
