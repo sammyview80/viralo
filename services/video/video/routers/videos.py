@@ -834,10 +834,10 @@ async def retry_video(
     video = result.scalar_one_or_none()
     if not video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found.")
-    if video.status not in ("failed", "cancelled"):
+    if video.status not in ("failed", "cancelled", "error"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot retry a video with status '{video.status}'. Only failed/cancelled videos can be retried.",
+            detail=f"Cannot retry a video with status '{video.status}'. Only failed/error/cancelled videos can be retried.",
         )
 
     tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
