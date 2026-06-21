@@ -649,22 +649,6 @@ export function VideoEditor({
               </div>
             )}
 
-            {activeTab === "export" && (
-              <div className="max-w-lg">
-                <h3 className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 mb-4">Server Render</h3>
-                <p className="text-[11px] text-zinc-600 mb-4">
-                  Renders on server with FFmpeg — full quality MP4 with burned captions and sound effects.
-                </p>
-                <RenderPanel
-                  clipId={String(clip.id)}
-                  trimStart={trimStart}
-                  trimEnd={trimEnd || duration}
-                  captions={captions}
-                  markers={markers}
-                />
-              </div>
-            )}
-
             {activeTab === "effects" && (
               <div className="max-w-lg">
                 <div className="mb-4">
@@ -722,6 +706,22 @@ export function VideoEditor({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === "export" && (
+              <div className="max-w-lg">
+                <h3 className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 mb-4">Server Render</h3>
+                <p className="text-[11px] text-zinc-600 mb-4">
+                  Renders on server with FFmpeg — full quality MP4 with burned captions and sound effects.
+                </p>
+                <RenderPanel
+                  clipId={String(clip.id)}
+                  trimStart={trimStart}
+                  trimEnd={trimEnd || duration}
+                  captions={captions}
+                  markers={markers}
+                />
               </div>
             )}
           </div>
