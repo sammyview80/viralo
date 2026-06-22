@@ -3549,12 +3549,10 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> li
     if proxy:
         flags = ["--no-check-certificate", "--retries", "1",
                  "--socket-timeout", "15",
-                 "--js-runtimes", "node:/usr/bin/node",
                  "--proxy", proxy]
     else:
         flags = ["--no-check-certificate", "--retries", "2",
-                 "--socket-timeout", "20",
-                 "--js-runtimes", "node:/usr/bin/node"]
+                 "--socket-timeout", "20"]
     return flags
 
 
