@@ -3544,8 +3544,20 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
     return _ytdlp_proxies()
 
 
+_COOKIES_PATH = "/app/yt-cookies.txt"
+
+def _cookies_flags() -> list[str]:
+    """Return --cookies flag if cookies file exists and is non-empty."""
+    try:
+        p = Path(_COOKIES_PATH)
+        if p.exists() and p.stat().st_size > 100:
+            return ["--cookies", str(p)]
+    except Exception:
+        pass
+    return []
+
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> list[str]:
-    """Return common yt-dlp flags. Cookies disabled — proxies handle auth."""
+    """Return common yt-dlp flags."""
     if proxy:
         flags = ["--no-check-certificate", "--retries", "1",
                  "--socket-timeout", "15",
@@ -3553,6 +3565,8 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> li
     else:
         flags = ["--no-check-certificate", "--retries", "2",
                  "--socket-timeout", "20"]
+    if use_cookies:
+        flags += _cookies_flags()
     return flags
 
 
@@ -3595,29 +3609,32 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     def _client_args(proxy: str | None) -> list[list[str]]:
         """Return ordered strategy list — best quality first, fallbacks after."""
         base = _ytdlp_base_flags(proxy)
-        base_no_cookies = _ytdlp_base_flags(proxy, use_cookies=False)
+        base_cookies = _ytdlp_base_flags(proxy, use_cookies=True)
         return [
-            # android_vr (Oculus Quest): no PO token, no cookies needed — primary
-            ["yt-dlp"] + base_no_cookies + ["--extractor-args", "youtube:player_client=android_vr",
+            # android_vr (Oculus Quest): no PO token needed — primary
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # tv_embedded: no JS required, bypasses bot detection
-            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=tv_embedded",
+            # web + cookies: handles sign-in-required / age-gated videos
+            ["yt-dlp"] + base_cookies + ["--extractor-args", "youtube:player_client=web",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # ios: no JS required, different quota bucket
+            # tv_embedded: bypasses some bot detection
+            ["yt-dlp"] + base_cookies + ["--extractor-args", "youtube:player_client=tv_embedded",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # ios: different quota bucket
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=ios",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # android_testsuite: bypasses bot detection, unlocks 4K AV1/VP9 streams
+            # android_testsuite: unlocks 4K AV1/VP9 streams
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_testsuite",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Default client with best format
-            ["yt-dlp"] + base + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # Default client + cookies
+            ["yt-dlp"] + base_cookies + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
             # android client — different quota bucket
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # mp4-only fallback (H.264 only — caps at 1080p on most videos)
-            ["yt-dlp"] + base + ["-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Last resort: mweb client
-            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=mweb",
+            # mp4-only fallback
+            ["yt-dlp"] + base_cookies + ["-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
+            # Last resort: mweb + cookies
+            ["yt-dlp"] + base_cookies + ["--extractor-args", "youtube:player_client=mweb",
                                   "-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
         ]
 
@@ -3683,13 +3700,14 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return False
             import threading as _t
 
-            # Try multiple player clients per proxy — android_vr first, then tv_embedded, ios
-            _proxy_clients = ["android_vr", "tv_embedded", "ios"]
+            # Try multiple player clients per proxy — android_vr first, then web+cookies, tv_embedded, ios
+            _proxy_clients = ["android_vr", "web", "tv_embedded", "ios"]
             for client in _proxy_clients:
                 if moved.is_set():
                     return False
                 tmp_path = out_path + f".proxy{idx}.tmp"
-                base = _ytdlp_base_flags(proxy)
+                use_cookies = client in ("web", "tv_embedded")
+                base = _ytdlp_base_flags(proxy, use_cookies=use_cookies)
                 cmd = (["yt-dlp"] + base + ["--verbose"] +
                        ["--extractor-args", f"youtube:player_client={client}",
                         "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
