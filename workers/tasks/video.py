@@ -3672,37 +3672,13 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         except Exception as e:
             return False, str(e)
 
-    # Phase 1: try all cookie-based strategies (direct, no proxy)
-    cookie_strategies = [(cmd, "direct") for cmd in _client_args(None)]
-    rate_limited = False
-
-    for attempt, (cmd, label) in enumerate(cookie_strategies):
-        ok, stderr = _run_strategy(cmd, label, attempt)
-        if ok:
-            return
-        errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
-        if _is_bad_cookies(stderr):
-            logging.warning("YouTube invalid/expired cookies on strategy %d (%s), skipping remaining cookie strategies", attempt + 1, label)
-            rate_limited = True
-            break
-        if _is_429(stderr) or _is_bot_blocked(stderr):
-            logging.warning("YouTube 429/bot-block on cookie strategy %d (%s), switching to proxies", attempt + 1, label)
-            rate_limited = True
-            break
-
-    if not rate_limited:
-        # Cookie strategies failed for non-429 reasons — no point using proxies
-        # fall through to pytubefix
-        pass
-    elif proxies:
-        # Phase 2: race 10 proxies in parallel — first success wins, rest get killed
+    # Phase 1: race env proxies in parallel — android_vr client, first win takes it
+    if proxies:
         import concurrent.futures, threading as _threading
         race_proxies = proxies[:10]
-        logging.info("Racing %d proxies in parallel", len(race_proxies))
-        won = _threading.Event()
+        logging.info("Phase 1: racing %d env proxies in parallel", len(race_proxies))
         proxy_errors: list[str] = []
         proxy_errors_lock = _threading.Lock()
-
         move_lock = _threading.Lock()
         moved = _threading.Event()
 
@@ -3710,12 +3686,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             if moved.is_set():
                 return False
             tmp_path = out_path + f".proxy{idx}.tmp"
-            # Build strategy cmd pointing to tmp_path
             base = _ytdlp_base_flags(proxy)
             cmd = (["yt-dlp"] + base +
                    ["--extractor-args", "youtube:player_client=android_vr",
                     "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
-            label = f"proxy-race[{idx}]"
             try:
                 proc = subprocess.Popen(cmd + ["--newline"],
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -3764,6 +3738,21 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         if moved.is_set():
             return
         errors.extend(proxy_errors)
+
+    # Phase 2: direct strategies (android_vr no-cookies, then cookie-based clients)
+    logging.info("Phase 2: trying direct strategies (no proxy)")
+    cookie_strategies = [(cmd, "direct") for cmd in _client_args(None)]
+    for attempt, (cmd, label) in enumerate(cookie_strategies):
+        ok, stderr = _run_strategy(cmd, label, attempt)
+        if ok:
+            return
+        errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
+        if _is_bad_cookies(stderr):
+            logging.warning("YouTube invalid/expired cookies on strategy %d (%s), skipping remaining", attempt + 1, label)
+            break
+        if _is_429(stderr) or _is_bot_blocked(stderr):
+            logging.warning("YouTube 429/bot-block on direct strategy %d (%s)", attempt + 1, label)
+            break
 
     # pytubefix as final fallback (different HTTP stack, avoids some rate-limits)
     try:
