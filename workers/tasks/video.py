@@ -3710,8 +3710,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             # web + PO + cookies: SABR-limited, last real attempt
             ["yt-dlp"] + bc + _pot_args("web") + ["--extractor-args", "youtube:player_client=web",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Last resort: best of anything via default client
-            ["yt-dlp"] + bc + _pot_args("web") + ["-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
+            # Last resort: most permissive selector via default client, ignores quality cap
+            ["yt-dlp"] + bc + _pot_args("web") + ["-f", "bv*+ba/b/best/bv*/b*", "--merge-output-format", "mp4", "-o", out_path, url],
         ]
 
     import threading
@@ -3841,22 +3841,29 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     if _is_429(stderr) or _is_bot_blocked(stderr):
                         break  # same proxy, different clients won't help if IP is blocked
                     if is_fmt_unavailable:
-                        # Retry same client with simpler format — some videos only have progressive streams
+                        # Requested selector matched nothing — retry the SAME client with the
+                        # most permissive selector, ignoring any quality cap. Fixes the case
+                        # where the only streams are above the requested cap, or only a
+                        # progressive `best` exists. If THIS still finds nothing, the video
+                        # genuinely has no a/v formats for this client (e.g. dead cookies → SABR).
                         tmp_path2 = out_path + f".proxy{idx}.best.tmp"
                         base2 = _ytdlp_base_flags(proxy, use_cookies=True)
                         cmd2 = (["yt-dlp"] + base2 + _pot_args(client) +
                                 ["--extractor-args", f"youtube:player_client={client}",
-                                 "-f", "best", "--merge-output-format", "mp4", "-o", tmp_path2, url])
+                                 "-f", "bv*+ba/b/best/bv*/b*",
+                                 "--merge-output-format", "mp4", "-o", tmp_path2, url])
                         try:
-                            r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=45)
+                            r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
                             if r2.returncode == 0 and Path(tmp_path2).exists() and Path(tmp_path2).stat().st_size > 0:
                                 with move_lock:
                                     if not moved.is_set():
                                         import shutil as _sh
                                         _sh.move(tmp_path2, out_path)
                                         moved.set()
-                                        logging.info("Proxy race won by %s client=%s fmt=best", proxy, client)
+                                        logging.info("Proxy race won by %s client=%s fmt=permissive", proxy, client)
                                         return True
+                            logging.warning("Proxy[%d] %s client=%s fmt-fallback found no a/v formats either",
+                                            idx, proxy, client)
                         except Exception:
                             pass
                         finally:
