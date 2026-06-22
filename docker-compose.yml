@@ -160,6 +160,7 @@ services:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -275,6 +276,7 @@ services:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -309,6 +311,7 @@ services:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -343,6 +346,7 @@ services:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -378,6 +382,7 @@ services:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -547,3 +552,4 @@ volumes:
   video-temp:
   video-storage:
   celery-beat-data:
+  yt-cookies-live:  # writable live YouTube cookie store; refreshed by keep-warm task

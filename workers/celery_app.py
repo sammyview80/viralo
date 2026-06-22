@@ -49,6 +49,7 @@ celery_app.conf.update(
         "workers.tasks.video.upload_clip_to_storage": {"queue": "viralo.video.upload"},
         "workers.tasks.video.concat_top_clips": {"queue": "viralo.video.generate"},
         "workers.tasks.video.merge_ai_clips": {"queue": "viralo.video.generate"},
+        "workers.tasks.video.refresh_youtube_cookies": {"queue": "viralo.video.pipeline"},
         "workers.tasks.video.*": {"queue": "viralo.video.generate"},
         "workers.tasks.agent.*": {"queue": "viralo.agent.run"},
         "workers.tasks.workflow.*": {"queue": "viralo.workflow.execute"},
@@ -66,5 +67,10 @@ celery_app.conf.beat_schedule = {
     "renew-websub-subscriptions": {
         "task": "workers.tasks.websub.renew_websub_subscriptions",
         "schedule": crontab(hour=2, minute=0, day_of_month="*/3"),  # every 3rd day of month at 02:00 UTC
+    },
+    "refresh-youtube-cookies": {
+        # Keep the YouTube session warm so cookies don't rotate out from under us.
+        "task": "workers.tasks.video.refresh_youtube_cookies",
+        "schedule": crontab(minute="*/25"),  # every 25 min — under YouTube's rotation cadence
     },
 }

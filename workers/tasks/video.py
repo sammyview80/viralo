@@ -3544,21 +3544,56 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
     return _ytdlp_proxies()
 
 
-_COOKIES_PATH = "/app/yt-cookies.txt"
+# Bundled cookies: read-only, baked into the image / mounted from the repo.
+_COOKIES_BUNDLED = "/app/yt-cookies.txt"
+# Live cookies: writable named-volume copy that the keep-warm task refreshes in
+# place (yt-dlp writes rotated cookies back here, keeping the session alive).
+# Downloads read from here; falls back to the bundled file if the volume is empty.
+_COOKIES_LIVE = os.getenv("YT_COOKIES_LIVE", "/var/lib/yt/cookies.txt")
+_MIN_COOKIE_BYTES = 100
+
+
+def _seed_live_cookies() -> None:
+    """Seed the live cookie store from the bundled file if missing/empty. Idempotent."""
+    try:
+        live = Path(_COOKIES_LIVE)
+        if live.exists() and live.stat().st_size >= _MIN_COOKIE_BYTES:
+            return
+        bundled = Path(_COOKIES_BUNDLED)
+        if bundled.exists() and bundled.stat().st_size >= _MIN_COOKIE_BYTES:
+            live.parent.mkdir(parents=True, exist_ok=True)
+            live.write_bytes(bundled.read_bytes())
+            logging.info("Seeded live cookie store %s from bundled file", _COOKIES_LIVE)
+    except Exception as e:
+        logging.warning("_seed_live_cookies: %s", e)
+
+
+def _active_cookies_path() -> str | None:
+    """Path to the freshest usable cookie file: live store if present, else bundled."""
+    _seed_live_cookies()
+    for p in (_COOKIES_LIVE, _COOKIES_BUNDLED):
+        try:
+            if Path(p).exists() and Path(p).stat().st_size >= _MIN_COOKIE_BYTES:
+                return p
+        except Exception:
+            continue
+    return None
+
 
 def _cookies_flags(unique: bool = False) -> list[str]:
-    """Return --cookies flag pointing to a writable copy of the cookies file.
+    """Return --cookies flag pointing to a per-call writable copy of the active file.
 
-    yt-dlp writes back updated cookies after each request. When unique=True,
-    make a per-call copy so parallel workers don't corrupt each other's file.
+    Per-call copy so parallel download workers don't corrupt each other's file
+    via yt-dlp's cookie writeback. Cookie REFRESH is owned by the keep-warm task
+    (refresh_youtube_cookies), which writes directly to the live store.
     """
     try:
-        src = Path(_COOKIES_PATH)
-        if not src.exists() or src.stat().st_size < 100:
+        src_path = _active_cookies_path()
+        if not src_path:
             return []
         import tempfile as _tf
         tmp = _tf.NamedTemporaryFile(suffix=".txt", delete=False, dir="/tmp", prefix="yt-cookies-")
-        tmp.write(src.read_bytes())
+        tmp.write(Path(src_path).read_bytes())
         tmp.close()
         return ["--cookies", tmp.name]
     except Exception as e:
@@ -5725,3 +5760,90 @@ def render_clip_with_edits(
         raise  # permanent failures (ValueError, RuntimeError from ffmpeg, etc.) don't retry
     finally:
         conn.close()
+
+
+# ── Cookie keep-warm ──────────────────────────────────────────────────────────
+
+_COOKIE_WARM_URL = os.getenv("YT_COOKIE_WARM_URL", "https://www.youtube.com/watch?v=aqz-KE-bpKQ")
+
+
+def _alert_dead_cookies(detail: str) -> None:
+    """Loud, multi-channel alert when cookies are dead and need manual re-export."""
+    logging.error(
+        "YOUTUBE COOKIES DEAD — re-export yt-cookies.txt from a logged-in browser and "
+        "redeploy. tv_embedded/web downloads will fail until then. Detail: %s", detail[:300]
+    )
+    hook = os.getenv("COOKIE_ALERT_WEBHOOK", "")
+    if not hook:
+        return
+    try:
+        import json as _json
+        import urllib.request as _u
+        body = _json.dumps({"text": f":warning: Viralo YouTube cookies are dead — re-export needed. {detail[:200]}"}).encode()
+        req = _u.Request(hook, data=body, headers={"Content-Type": "application/json"})
+        _u.urlopen(req, timeout=10).read()
+    except Exception as e:
+        logging.warning("_alert_dead_cookies webhook failed: %s", e)
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.video.refresh_youtube_cookies",
+    queue="viralo.video.pipeline",
+    acks_late=True,
+    soft_time_limit=120,
+    time_limit=150,
+)
+def refresh_youtube_cookies(self) -> dict:
+    """Keep YouTube cookies alive. Runs a lightweight authenticated request directly
+    against the live cookie store so yt-dlp writes the rotated cookies back, extending
+    the session indefinitely. Alerts loudly if the cookies are truly dead.
+
+    Returns {"status": "ok"|"dead"|"skip"|"locked", ...}.
+    """
+    # Serialize: only one keep-warm at a time (writeback must not race itself).
+    lock = redis_client.set("yt:cookie-warm:lock", "1", nx=True, ex=140)
+    if not lock:
+        return {"status": "locked"}
+    try:
+        _seed_live_cookies()
+        path = _COOKIES_LIVE if (Path(_COOKIES_LIVE).exists() and
+                                 Path(_COOKIES_LIVE).stat().st_size >= _MIN_COOKIE_BYTES) else None
+        if not path:
+            logging.warning("refresh_youtube_cookies: no live cookie store to refresh")
+            return {"status": "skip", "reason": "no live cookies"}
+
+        # --simulate: no download, just a metadata request that refreshes the session.
+        # tv_embedded + PO token mirrors the real download path. Write back in place.
+        cmd = (["yt-dlp", "--simulate", "--no-warnings",
+                "--socket-timeout", "20", "--retries", "1",
+                "--cookies", path]
+               + _pot_args("tv_embedded")
+               + ["--extractor-args", "youtube:player_client=tv_embedded",
+                  "-f", "bestvideo+bestaudio/best", _COOKIE_WARM_URL])
+        proxy = (_ytdlp_proxies() or [None])[0]
+        if proxy:
+            cmd += ["--proxy", proxy]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        stderr = proc.stderr or ""
+        if proc.returncode == 0:
+            logging.info("refresh_youtube_cookies: session warm, cookies refreshed (%s)", path)
+            return {"status": "ok"}
+        if _is_bad_cookies(stderr):
+            _alert_dead_cookies(stderr.strip().splitlines()[-1] if stderr.strip() else "")
+            return {"status": "dead", "detail": stderr[-200:]}
+        # Non-cookie failure (bot block on this IP, dead proxy) — cookies may still be fine.
+        logging.warning("refresh_youtube_cookies: non-cookie failure rc=%s: %s",
+                        proc.returncode, stderr[-200:])
+        return {"status": "ok", "note": "warm request failed but cookies not flagged dead"}
+    except subprocess.TimeoutExpired:
+        logging.warning("refresh_youtube_cookies: warm request timed out")
+        return {"status": "ok", "note": "timeout"}
+    except Exception as e:
+        logging.warning("refresh_youtube_cookies: %s", e)
+        return {"status": "error", "detail": str(e)[:200]}
+    finally:
+        try:
+            redis_client.delete("yt:cookie-warm:lock")
+        except Exception:
+            pass
