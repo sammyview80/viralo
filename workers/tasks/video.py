@@ -3655,6 +3655,16 @@ def _is_429(stderr: str) -> bool:
 def _is_bot_blocked(stderr: str) -> bool:
     return "Sign in to confirm" in stderr or "bot" in stderr.lower() or "not a bot" in stderr
 
+def _is_bad_cookies(stderr: str) -> bool:
+    s = stderr.lower()
+    return (
+        "invalid" in s and "cookie" in s
+        or "cookiefile" in s
+        or "no such file" in s and "cookie" in s
+        or "http error 400" in s
+        or "please sign in" in s
+    )
+
 
 def _download_youtube(url: str, out_path: str, quality: str = "source", progress_cb=None) -> None:
     import time, random
@@ -3678,9 +3688,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     def _client_args(proxy: str | None) -> list[list[str]]:
         """Return ordered strategy list — best quality first, fallbacks after."""
         base = _ytdlp_base_flags(proxy)
+        base_no_cookies = _ytdlp_base_flags(proxy, use_cookies=False)
         return [
-            # android_vr (Oculus Quest): no PO token, no signature decipher, not blocked — primary
-            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
+            # android_vr (Oculus Quest): no PO token, no cookies needed — primary
+            ["yt-dlp"] + base_no_cookies + ["--extractor-args", "youtube:player_client=android_vr",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
             # tv_embedded: no JS required, bypasses bot detection
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=tv_embedded",
@@ -3759,6 +3770,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         if ok:
             return
         errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
+        if _is_bad_cookies(stderr):
+            logging.warning("YouTube invalid/expired cookies on strategy %d (%s), skipping remaining cookie strategies", attempt + 1, label)
+            rate_limited = True
+            break
         if _is_429(stderr) or _is_bot_blocked(stderr):
             logging.warning("YouTube 429/bot-block on cookie strategy %d (%s), switching to proxies", attempt + 1, label)
             rate_limited = True
@@ -3805,7 +3820,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 import threading as _t
                 _t.Thread(target=lambda: [_ for _ in proc.stdout], daemon=True).start()
                 _t.Thread(target=_drain, daemon=True).start()
-                proc.wait(timeout=60)
+                proc.wait(timeout=25)
                 if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
                     with move_lock:
                         if not moved.is_set():
