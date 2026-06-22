@@ -61,7 +61,6 @@ class VideoResponse(BaseModel):
     celery_task_id: str | None = None
     error_message: str | None = None
     created_at: Any
-    needs_browser_capture: bool = False
     model_config = {"from_attributes": True}
 
 

@@ -206,7 +206,6 @@ export interface VideoResponse {
   error_message: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
-  needs_browser_capture?: boolean;
   source_url?: string | null;
 }
 
@@ -361,11 +360,6 @@ export const videoApi = {
     videoReq<EditorDataResponse>("PATCH", `/clips/${clipId}/editor`, data),
   getEditorData: (clipId: string) =>
     videoReq<EditorDataResponse>("GET", `/clips/${clipId}/editor`),
-  browserUpload: (videoId: string, blob: Blob, filename = "capture.webm") => {
-    const fd = new FormData();
-    fd.append("file", blob, filename);
-    return videoReq<VideoResponse>("POST", `/videos/${videoId}/browser-upload`, fd);
-  },
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),
   cancel:  (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/cancel`),
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
