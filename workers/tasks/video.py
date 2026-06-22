@@ -3610,6 +3610,10 @@ def _is_bad_cookies(stderr: str) -> bool:
         or "no such file" in s and "cookie" in s
         or "http error 400" in s
         or "please sign in" in s
+        # yt-dlp message when the exported cookies were rotated/expired by the browser
+        or ("no longer valid" in s and "cookie" in s)
+        or "have likely been rotated" in s
+        or "account cookies are no longer valid" in s
     )
 
 
@@ -3757,7 +3761,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     t_stdout = _t.Thread(target=lambda p=proc: [_ for _ in p.stdout], daemon=True)
                     t_stderr = _t.Thread(target=_drain, daemon=True)
                     t_stdout.start(); t_stderr.start()
-                    proc.wait(timeout=30)
+                    # tv_embedded fetches a PO token + handshakes through the proxy
+                    # before download starts — 30s was too tight and killed live-but-slow
+                    # proxies mid-handshake. 60s gives them room; dead proxies still cut fast.
+                    proc.wait(timeout=60)
                     t_stderr.join(timeout=3)
                     if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
                         with move_lock:
@@ -3852,7 +3859,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             return
         errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
         if _is_bad_cookies(stderr):
-            logging.warning("YouTube invalid/expired cookies on strategy %d (%s), skipping remaining", attempt + 1, label)
+            logging.error(
+                "YouTube cookies are INVALID/EXPIRED/ROTATED — REFRESH yt-cookies.txt from a "
+                "logged-in browser. tv_embedded/web clients cannot authenticate until then. "
+                "(strategy %d, %s)", attempt + 1, label)
             break
         if _is_429(stderr) or _is_bot_blocked(stderr):
             logging.warning("YouTube 429/bot-block on direct strategy %d (%s)", attempt + 1, label)
