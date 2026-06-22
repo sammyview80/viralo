@@ -3580,17 +3580,26 @@ def _test_proxy(proxy: str, timeout: int = 5) -> bool:
 
 
 def _ytdlp_proxies() -> list[str]:
-    """Verified proxies first, then fetch+TCP-test fresh ones. TTL 5 min."""
+    """Priority: env YTDLP_PROXY_LIST → hardcoded verified → fresh-fetched. TTL 5 min."""
     import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
     global _proxy_cache, _proxy_cache_ts
     now = time.time()
     if not _proxy_cache or (now - _proxy_cache_ts) > _PROXY_CACHE_TTL:
+        # 1. Operator-managed env list (highest priority)
+        env_raw = os.getenv("YTDLP_PROXY_LIST", "")
+        env_proxies = [
+            p.strip() if p.strip().startswith(("socks", "http")) else f"socks5://{p.strip()}"
+            for p in env_raw.split(",") if p.strip()
+        ]
+        # 2. Fresh from sources
         raw = _fetch_fresh_proxies()
-        # Prepend verified proxies so they race first — deduplicate
-        seen = set(_VERIFIED_PROXIES)
+        seen: set = set(env_proxies) | set(_VERIFIED_PROXIES)
         fresh_deduped = [p for p in raw if p not in seen]
-        raw = _VERIFIED_PROXIES + fresh_deduped
+        # Order: env → hardcoded verified → fresh
+        raw = env_proxies + _VERIFIED_PROXIES + fresh_deduped
+        logging.info("Proxy pool: %d env + %d verified + %d fresh = %d total",
+                     len(env_proxies), len(_VERIFIED_PROXIES), len(fresh_deduped), len(raw))
         if raw:
             # Test up to 50 proxies in parallel, keep first 20 that respond
             candidates = raw[:50]
