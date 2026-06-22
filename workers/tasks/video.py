@@ -3519,24 +3519,51 @@ _proxy_cache: list[str] = []
 _proxy_cache_ts: float = 0.0
 _PROXY_CACHE_TTL = 300  # 5 min
 
+# Hardcoded proxies verified working against YouTube with android_vr client (tested 2026-06-22)
+_VERIFIED_PROXIES: list[str] = [
+    "socks5://45.194.33.12:30001",
+    "socks5://2.26.87.216:1080",
+    "socks5://212.58.132.5:1080",
+    "socks5://171.25.158.95:1080",
+    "socks5://193.25.215.182:22222",
+    "socks5://152.53.144.223:1080",
+    "socks5://103.75.118.84:1080",
+]
+
+# Proxy sources ordered by YouTube success rate (tested)
+_PROXY_SOURCES = [
+    # proxygenerator1 — verified against Google/YouTube
+    "https://raw.githubusercontent.com/proxygenerator1/ProxyGenerator/main/MostStable/socks5.txt",
+    "https://raw.githubusercontent.com/proxygenerator1/ProxyGenerator/main/Stable/socks5.txt",
+    # TheSpeedX — updated daily
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
+    # ProxyScrape — anonymous/elite only
+    (
+        "https://api.proxyscrape.com/v3/free-proxy-list/get"
+        "?request=displayproxies&protocol=socks5&timeout=5000"
+        "&proxy_format=protocolipport&format=text&anonymity=elite,anonymous"
+    ),
+]
+
 
 def _fetch_fresh_proxies() -> list[str]:
     import urllib.request as _req
-    try:
-        # anonymous=true filters for anonymous/elite proxies only — higher YouTube success rate
-        url = (
-            "https://api.proxyscrape.com/v3/free-proxy-list/get"
-            "?request=displayproxies&protocol=socks5&timeout=5000"
-            "&proxy_format=protocolipport&format=text&anonymity=elite,anonymous"
-        )
-        with _req.urlopen(url, timeout=10) as resp:
-            text = resp.read().decode()
-        proxies = [l.strip() for l in text.splitlines() if l.strip()]
-        logging.info("Fetched %d anonymous proxies from ProxyScrape", len(proxies))
-        return proxies
-    except Exception as e:
-        logging.warning("Failed to fetch fresh proxies: %s", e)
-        return []
+    all_proxies: list[str] = []
+    for url in _PROXY_SOURCES:
+        try:
+            with _req.urlopen(url, timeout=10) as resp:
+                text = resp.read().decode()
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            # Normalise: some sources return host:port, others socks5://host:port
+            normalised = [
+                l if l.startswith("socks5://") else f"socks5://{l}"
+                for l in lines if ":" in l
+            ]
+            all_proxies.extend(normalised[:150])
+            logging.info("Fetched %d proxies from %s", len(normalised[:150]), url[:60])
+        except Exception as e:
+            logging.warning("Proxy source failed %s: %s", url[:60], e)
+    return all_proxies
 
 
 def _test_proxy(proxy: str, timeout: int = 5) -> bool:
@@ -3553,13 +3580,17 @@ def _test_proxy(proxy: str, timeout: int = 5) -> bool:
 
 
 def _ytdlp_proxies() -> list[str]:
-    """Fetch fresh proxies, TCP-test in parallel, return live ones. TTL 5 min."""
+    """Verified proxies first, then fetch+TCP-test fresh ones. TTL 5 min."""
     import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
     global _proxy_cache, _proxy_cache_ts
     now = time.time()
     if not _proxy_cache or (now - _proxy_cache_ts) > _PROXY_CACHE_TTL:
         raw = _fetch_fresh_proxies()
+        # Prepend verified proxies so they race first — deduplicate
+        seen = set(_VERIFIED_PROXIES)
+        fresh_deduped = [p for p in raw if p not in seen]
+        raw = _VERIFIED_PROXIES + fresh_deduped
         if raw:
             # Test up to 50 proxies in parallel, keep first 20 that respond
             candidates = raw[:50]
