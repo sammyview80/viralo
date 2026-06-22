@@ -3545,27 +3545,22 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
 
 
 _COOKIES_PATH = "/app/yt-cookies.txt"
-_COOKIES_TMP: str | None = None
 
-def _cookies_flags() -> list[str]:
+def _cookies_flags(unique: bool = False) -> list[str]:
     """Return --cookies flag pointing to a writable copy of the cookies file.
 
-    yt-dlp tries to write-update the cookies file after auth — if the source
-    path is read-only (e.g. mounted file in container) it crashes. Copy once
-    to /tmp on first call so yt-dlp can write freely.
+    yt-dlp writes back updated cookies after each request. When unique=True,
+    make a per-call copy so parallel workers don't corrupt each other's file.
     """
-    global _COOKIES_TMP
     try:
         src = Path(_COOKIES_PATH)
         if not src.exists() or src.stat().st_size < 100:
             return []
-        if _COOKIES_TMP is None:
-            import tempfile as _tf
-            tmp = _tf.NamedTemporaryFile(suffix=".txt", delete=False, dir="/tmp", prefix="yt-cookies-")
-            tmp.write(src.read_bytes())
-            tmp.close()
-            _COOKIES_TMP = tmp.name
-        return ["--cookies", _COOKIES_TMP]
+        import tempfile as _tf
+        tmp = _tf.NamedTemporaryFile(suffix=".txt", delete=False, dir="/tmp", prefix="yt-cookies-")
+        tmp.write(src.read_bytes())
+        tmp.close()
+        return ["--cookies", tmp.name]
     except Exception as e:
         logging.warning("_cookies_flags: %s", e)
         return []
@@ -3750,9 +3745,12 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                 moved.set()
                                 logging.info("Proxy race won by %s client=%s", proxy, client)
                                 return True
-                    stderr = "\n".join(stderr_lines[-10:])
+                    # Find the actual ERROR line (last non-empty, non-traceback line)
+                    error_lines = [l for l in stderr_lines if l.strip() and not l.startswith("  ")]
+                    actual_error = error_lines[-1] if error_lines else (stderr_lines[-1] if stderr_lines else "")
+                    stderr = "\n".join(stderr_lines[-5:])
                     reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
-                    logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | %s", idx, proxy, client, reason, proc.returncode, stderr[:300])
+                    logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | ERROR: %s", idx, proxy, client, reason, proc.returncode, actual_error[:300])
                     with proxy_errors_lock:
                         proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: {reason}: {stderr[:150]}")
                     if _is_429(stderr) or _is_bot_blocked(stderr):
