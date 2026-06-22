@@ -3545,16 +3545,30 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
 
 
 _COOKIES_PATH = "/app/yt-cookies.txt"
+_COOKIES_TMP: str | None = None
 
 def _cookies_flags() -> list[str]:
-    """Return --cookies flag if cookies file exists and is non-empty."""
+    """Return --cookies flag pointing to a writable copy of the cookies file.
+
+    yt-dlp tries to write-update the cookies file after auth — if the source
+    path is read-only (e.g. mounted file in container) it crashes. Copy once
+    to /tmp on first call so yt-dlp can write freely.
+    """
+    global _COOKIES_TMP
     try:
-        p = Path(_COOKIES_PATH)
-        if p.exists() and p.stat().st_size > 100:
-            return ["--cookies", str(p)]
-    except Exception:
-        pass
-    return []
+        src = Path(_COOKIES_PATH)
+        if not src.exists() or src.stat().st_size < 100:
+            return []
+        if _COOKIES_TMP is None:
+            import tempfile as _tf
+            tmp = _tf.NamedTemporaryFile(suffix=".txt", delete=False, dir="/tmp", prefix="yt-cookies-")
+            tmp.write(src.read_bytes())
+            tmp.close()
+            _COOKIES_TMP = tmp.name
+        return ["--cookies", _COOKIES_TMP]
+    except Exception as e:
+        logging.warning("_cookies_flags: %s", e)
+        return []
 
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> list[str]:
     """Return common yt-dlp flags."""
