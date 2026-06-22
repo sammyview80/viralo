@@ -3639,7 +3639,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         """Return ordered strategy list — best quality first, fallbacks after."""
         base = _ytdlp_base_flags(proxy)
         return [
-            # tv_embedded: no JS required, bypasses bot detection — best server-side client
+            # android_vr (Oculus Quest): no PO token, no signature decipher, not blocked — primary
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # tv_embedded: no JS required, bypasses bot detection
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=tv_embedded",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
             # ios: no JS required, different quota bucket
@@ -3744,7 +3747,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             # Build strategy cmd pointing to tmp_path
             base = _ytdlp_base_flags(proxy)
             cmd = (["yt-dlp"] + base +
-                   ["--extractor-args", "youtube:player_client=tv_embedded",
+                   ["--extractor-args", "youtube:player_client=android_vr",
                     "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
             label = f"proxy-race[{idx}]"
             try:
@@ -3762,7 +3765,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 import threading as _t
                 _t.Thread(target=lambda: [_ for _ in proc.stdout], daemon=True).start()
                 _t.Thread(target=_drain, daemon=True).start()
-                proc.wait(timeout=120)
+                proc.wait(timeout=60)
                 if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
                     with move_lock:
                         if not moved.is_set():
