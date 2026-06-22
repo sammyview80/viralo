@@ -5,7 +5,8 @@ RUN pip install uv
 FROM base AS deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg nodejs npm \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/nodejs /usr/local/bin/node
 RUN pip install yt-dlp curl_cffi
 
 FROM deps AS development

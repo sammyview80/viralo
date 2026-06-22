@@ -3750,11 +3750,36 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     actual_error = error_lines[-1] if error_lines else (stderr_lines[-1] if stderr_lines else "")
                     stderr = "\n".join(stderr_lines[-5:])
                     reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
+                    is_fmt_unavailable = "not available" in actual_error and "format" in actual_error.lower()
                     logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | ERROR: %s", idx, proxy, client, reason, proc.returncode, actual_error[:300])
                     with proxy_errors_lock:
-                        proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: {reason}: {stderr[:150]}")
+                        proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: {reason}: {actual_error[:150]}")
                     if _is_429(stderr) or _is_bot_blocked(stderr):
                         break  # same proxy, different clients won't help if IP is blocked
+                    if is_fmt_unavailable and client in ("web", "tv_embedded"):
+                        # Retry same client with simpler format — some videos only have progressive streams
+                        tmp_path2 = out_path + f".proxy{idx}.best.tmp"
+                        base2 = _ytdlp_base_flags(proxy, use_cookies=True)
+                        cmd2 = (["yt-dlp"] + base2 +
+                                ["--extractor-args", f"youtube:player_client={client}",
+                                 "-f", "best", "--merge-output-format", "mp4", "-o", tmp_path2, url])
+                        try:
+                            r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=45)
+                            if r2.returncode == 0 and Path(tmp_path2).exists() and Path(tmp_path2).stat().st_size > 0:
+                                with move_lock:
+                                    if not moved.is_set():
+                                        import shutil as _sh
+                                        _sh.move(tmp_path2, out_path)
+                                        moved.set()
+                                        logging.info("Proxy race won by %s client=%s fmt=best", proxy, client)
+                                        return True
+                        except Exception:
+                            pass
+                        finally:
+                            try:
+                                Path(tmp_path2).unlink(missing_ok=True)
+                            except Exception:
+                                pass
                 except Exception as e:
                     logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, proxy, client, e)
                     with proxy_errors_lock:
