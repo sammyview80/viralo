@@ -16,6 +16,7 @@ COPY shared/ ./shared/
 COPY workers/ ./workers/
 COPY services/video/ ./services/video/
 COPY yt-cookies.txt /app/yt-cookies.txt
+RUN uv pip install --system -e ./shared -e ./services/video
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "video.main:app", "--host", "0.0.0.0", "--port", "8003"]
 
@@ -27,5 +28,6 @@ COPY shared/ ./shared/
 COPY workers/ ./workers/
 COPY services/video/ ./services/video/
 COPY yt-cookies.txt /app/yt-cookies.txt
+RUN uv pip install --system -e ./shared -e ./services/video
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "video.main:app", "--host", "0.0.0.0", "--port", "8003", "--workers", "2"]

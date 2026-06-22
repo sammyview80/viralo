@@ -7,10 +7,9 @@ COPY shared/pyproject.toml ./shared/
 COPY services/workflow/pyproject.toml ./services/workflow/
 RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY shared/ ./shared/
-COPY services/workflow/pyproject.toml ./services/workflow/
-RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY workers/ ./workers/
 COPY services/workflow/ ./services/workflow/
+RUN uv pip install --system -e ./shared -e ./services/workflow
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "workflow.main:app", "--host", "0.0.0.0", "--port", "8005"]
 
@@ -19,9 +18,8 @@ COPY shared/pyproject.toml ./shared/
 COPY services/workflow/pyproject.toml ./services/workflow/
 RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY shared/ ./shared/
-COPY services/workflow/pyproject.toml ./services/workflow/
-RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY workers/ ./workers/
 COPY services/workflow/ ./services/workflow/
+RUN uv pip install --system -e ./shared -e ./services/workflow
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "workflow.main:app", "--host", "0.0.0.0", "--port", "8005", "--workers", "2"]

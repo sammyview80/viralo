@@ -7,13 +7,12 @@ COPY shared/pyproject.toml ./shared/
 COPY services/core/pyproject.toml ./services/core/
 RUN uv pip install --system -e ./shared -e ./services/core
 COPY shared/ ./shared/
-COPY services/core/pyproject.toml ./services/core/
-RUN uv pip install --system -e ./shared -e ./services/core
 COPY workers/ ./workers/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./alembic.ini
 COPY services/core/ ./services/core/
 COPY scripts/ ./scripts/
+RUN uv pip install --system -e ./shared -e ./services/core
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8001"]
 
@@ -22,12 +21,11 @@ COPY shared/pyproject.toml ./shared/
 COPY services/core/pyproject.toml ./services/core/
 RUN uv pip install --system -e ./shared -e ./services/core
 COPY shared/ ./shared/
-COPY services/core/pyproject.toml ./services/core/
-RUN uv pip install --system -e ./shared -e ./services/core
 COPY workers/ ./workers/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./alembic.ini
 COPY services/core/ ./services/core/
 COPY scripts/ ./scripts/
+RUN uv pip install --system -e ./shared -e ./services/core
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
