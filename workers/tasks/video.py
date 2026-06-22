@@ -3579,6 +3579,23 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> li
     return flags
 
 
+# PO Token (Proof-of-Origin) — YouTube 2024+ requires these for web/mweb/tv clients.
+# Generated automatically by the bgutil-ytdlp-pot-provider plugin if installed +
+# the provider HTTP server is reachable (BGUTIL_POT_BASE_URL, default :4416).
+# Set YTDLP_DISABLE_POT=1 to skip (e.g. if provider not deployed yet).
+_POT_CLIENTS = {"web", "mweb", "tv", "tv_embedded", "web_safari", "web_embedded"}
+
+
+def _pot_args(client: str) -> list[str]:
+    """Force PO-token fetch for clients that need it. No-op when disabled."""
+    if os.getenv("YTDLP_DISABLE_POT", "") == "1":
+        return []
+    if client not in _POT_CLIENTS:
+        return []
+    base_url = os.getenv("BGUTIL_POT_BASE_URL", "http://127.0.0.1:4416")
+    return ["--extractor-args", f"youtubepot-bgutilhttp:base_url={base_url}"]
+
+
 def _is_429(stderr: str) -> bool:
     return "429" in stderr or "Too Many Requests" in stderr
 
@@ -3616,35 +3633,39 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         fmt_fallback = f"bestvideo[height<={cap}][ext=mp4]+bestaudio[ext=m4a]/best[height<={cap}][ext=mp4]/best"
 
     def _client_args(proxy: str | None) -> list[list[str]]:
-        """Return ordered strategy list — best quality first, fallbacks after."""
-        base = _ytdlp_base_flags(proxy)
-        base_cookies = _ytdlp_base_flags(proxy, use_cookies=True)
+        """Return ordered strategy list — best quality first, fallbacks after.
+
+        web/tv first: with a PO token (bgutil) + cookies they return full format
+        lists. android_* are PO-free fallbacks but on most servers now return
+        metadata-only (rc=0, no file), so they go last.
+        """
+        bc = _ytdlp_base_flags(proxy, use_cookies=True)  # cookies on every strategy
+        base = _ytdlp_base_flags(proxy)  # android clients ignore cookies anyway
         return [
-            # android_vr (Oculus Quest): no PO token needed — primary
-            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
+            # web + PO token + cookies: full formats, handles sign-in / age-gate
+            ["yt-dlp"] + bc + _pot_args("web") + ["--extractor-args", "youtube:player_client=web",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # web + cookies: handles sign-in-required / age-gated videos
-            ["yt-dlp"] + base_cookies + ["--extractor-args", "youtube:player_client=web",
+            # tv_embedded + PO: bypasses some bot detection
+            ["yt-dlp"] + bc + _pot_args("tv_embedded") + ["--extractor-args", "youtube:player_client=tv_embedded",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # tv_embedded: bypasses some bot detection
-            ["yt-dlp"] + base_cookies + ["--extractor-args", "youtube:player_client=tv_embedded",
-                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # ios: different quota bucket
+            # Default client (web) + PO + cookies
+            ["yt-dlp"] + bc + _pot_args("web") + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # ios: different quota bucket, no PO needed
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=ios",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # android_testsuite: unlocks 4K AV1/VP9 streams
-            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_testsuite",
+            # mweb + PO + cookies
+            ["yt-dlp"] + bc + _pot_args("mweb") + ["--extractor-args", "youtube:player_client=mweb",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Default client + cookies
-            ["yt-dlp"] + base_cookies + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # android client — different quota bucket
+            # mp4-only format fallback (web + PO)
+            ["yt-dlp"] + bc + _pot_args("web") + ["-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
+            # android_vr: PO-free, metadata-only on most servers — last resort
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # android: different quota bucket
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # mp4-only fallback
-            ["yt-dlp"] + base_cookies + ["-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Last resort: mweb + cookies
-            ["yt-dlp"] + base_cookies + ["--extractor-args", "youtube:player_client=mweb",
-                                  "-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
+            # Last resort: best of anything
+            ["yt-dlp"] + bc + _pot_args("web") + ["-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
         ]
 
     import threading
@@ -3709,15 +3730,16 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return False
             import threading as _t
 
-            # Try multiple player clients per proxy — android_vr first, then web+cookies, tv_embedded, ios
-            _proxy_clients = ["android_vr", "web", "tv_embedded", "ios"]
+            # Try multiple player clients per proxy. web/tv first — they mint PO tokens
+            # (via bgutil provider) and return full format lists; android_vr is a
+            # last-ditch no-PO fallback. Cookies passed to ALL clients now.
+            _proxy_clients = ["web", "tv_embedded", "ios", "android_vr"]
             for client in _proxy_clients:
                 if moved.is_set():
                     return False
                 tmp_path = out_path + f".proxy{idx}.tmp"
-                use_cookies = client in ("web", "tv_embedded")
-                base = _ytdlp_base_flags(proxy, use_cookies=use_cookies)
-                cmd = (["yt-dlp"] + base + ["--verbose"] +
+                base = _ytdlp_base_flags(proxy, use_cookies=True)
+                cmd = (["yt-dlp"] + base + _pot_args(client) +
                        ["--extractor-args", f"youtube:player_client={client}",
                         "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
                 try:
@@ -3745,9 +3767,21 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                 moved.set()
                                 logging.info("Proxy race won by %s client=%s", proxy, client)
                                 return True
-                    # Find the actual ERROR line (last non-empty, non-traceback line)
-                    error_lines = [l for l in stderr_lines if l.strip() and not l.startswith("  ")]
-                    actual_error = error_lines[-1] if error_lines else (stderr_lines[-1] if stderr_lines else "")
+                    # Find the actual ERROR line. Skip [debug]/[download]/[info] progress
+                    # lines — with metadata-only clients (android_vr) the last stderr
+                    # line is a harmless [debug] line that reads as a fake ERROR.
+                    error_lines = [
+                        l for l in stderr_lines
+                        if l.strip() and not l.startswith("  ")
+                        and not l.lstrip().startswith(("[debug]", "[download]", "[info]", "[youtube]"))
+                    ]
+                    if not error_lines:
+                        # rc=0 + no file = client extracted metadata only (no usable formats / no PO token)
+                        error_lines = [
+                            "no downloadable formats (metadata-only extraction — missing PO token?)"
+                            if proc.returncode == 0 else (stderr_lines[-1] if stderr_lines else "")
+                        ]
+                    actual_error = error_lines[-1]
                     stderr = "\n".join(stderr_lines[-5:])
                     reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
                     is_fmt_unavailable = "not available" in actual_error and "format" in actual_error.lower()
@@ -3756,11 +3790,11 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: {reason}: {actual_error[:150]}")
                     if _is_429(stderr) or _is_bot_blocked(stderr):
                         break  # same proxy, different clients won't help if IP is blocked
-                    if is_fmt_unavailable and client in ("web", "tv_embedded"):
+                    if is_fmt_unavailable:
                         # Retry same client with simpler format — some videos only have progressive streams
                         tmp_path2 = out_path + f".proxy{idx}.best.tmp"
                         base2 = _ytdlp_base_flags(proxy, use_cookies=True)
-                        cmd2 = (["yt-dlp"] + base2 +
+                        cmd2 = (["yt-dlp"] + base2 + _pot_args(client) +
                                 ["--extractor-args", f"youtube:player_client={client}",
                                  "-f", "best", "--merge-output-format", "mp4", "-o", tmp_path2, url])
                         try:

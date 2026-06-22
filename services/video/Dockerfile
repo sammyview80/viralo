@@ -7,7 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg nodejs npm \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/nodejs /usr/local/bin/node
-RUN pip install yt-dlp curl_cffi
+# yt-dlp nightly tracks YouTube extractor changes; bgutil plugin mints PO tokens
+# (Proof-of-Origin) that web/tv/mweb clients now require to return formats.
+RUN pip install -U --pre "yt-dlp[default]" curl_cffi bgutil-ytdlp-pot-provider
 
 FROM deps AS development
 COPY shared/pyproject.toml ./shared/
