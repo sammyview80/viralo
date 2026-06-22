@@ -3553,16 +3553,27 @@ _COOKIES_LIVE = os.getenv("YT_COOKIES_LIVE", "/var/lib/yt/cookies.txt")
 _MIN_COOKIE_BYTES = 100
 
 
-def _seed_live_cookies() -> None:
-    """Seed the live cookie store from the bundled file if missing/empty. Idempotent."""
+def _is_valid_cookie_file(p: str) -> bool:
+    """True if file is a non-trivial Netscape-format cookie file (valid header)."""
     try:
-        live = Path(_COOKIES_LIVE)
-        if live.exists() and live.stat().st_size >= _MIN_COOKIE_BYTES:
+        f = Path(p)
+        if not f.exists() or f.stat().st_size < _MIN_COOKIE_BYTES:
+            return False
+        head = f.read_bytes()[:64].lstrip()
+        return head.startswith(b"# Netscape HTTP Cookie File") or head.startswith(b"# HTTP Cookie File")
+    except Exception:
+        return False
+
+
+def _seed_live_cookies() -> None:
+    """Seed the live cookie store from the bundled file if missing/empty/corrupt. Idempotent."""
+    try:
+        if _is_valid_cookie_file(_COOKIES_LIVE):
             return
-        bundled = Path(_COOKIES_BUNDLED)
-        if bundled.exists() and bundled.stat().st_size >= _MIN_COOKIE_BYTES:
+        if _is_valid_cookie_file(_COOKIES_BUNDLED):
+            live = Path(_COOKIES_LIVE)
             live.parent.mkdir(parents=True, exist_ok=True)
-            live.write_bytes(bundled.read_bytes())
+            live.write_bytes(Path(_COOKIES_BUNDLED).read_bytes())
             logging.info("Seeded live cookie store %s from bundled file", _COOKIES_LIVE)
     except Exception as e:
         logging.warning("_seed_live_cookies: %s", e)
@@ -3572,11 +3583,8 @@ def _active_cookies_path() -> str | None:
     """Path to the freshest usable cookie file: live store if present, else bundled."""
     _seed_live_cookies()
     for p in (_COOKIES_LIVE, _COOKIES_BUNDLED):
-        try:
-            if Path(p).exists() and Path(p).stat().st_size >= _MIN_COOKIE_BYTES:
-                return p
-        except Exception:
-            continue
+        if _is_valid_cookie_file(p):
+            return p
     return None
 
 
@@ -5806,29 +5814,46 @@ def refresh_youtube_cookies(self) -> dict:
     if not lock:
         return {"status": "locked"}
     try:
-        _seed_live_cookies()
-        path = _COOKIES_LIVE if (Path(_COOKIES_LIVE).exists() and
-                                 Path(_COOKIES_LIVE).stat().st_size >= _MIN_COOKIE_BYTES) else None
+        path = _active_cookies_path()
         if not path:
-            logging.warning("refresh_youtube_cookies: no live cookie store to refresh")
-            return {"status": "skip", "reason": "no live cookies"}
+            logging.warning("refresh_youtube_cookies: no valid cookie store to refresh")
+            return {"status": "skip", "reason": "no valid cookies"}
+        # always refresh the live store (seed it from bundled if needed)
+        if path == _COOKIES_BUNDLED:
+            _seed_live_cookies()
+            path = _COOKIES_LIVE if _is_valid_cookie_file(_COOKIES_LIVE) else _COOKIES_BUNDLED
 
+        # Write back ATOMICALLY: yt-dlp rewrites the --cookies file in place
+        # (non-atomic), so point it at a temp copy and os.replace() only on
+        # success. Otherwise concurrent download readers see a half-written file
+        # ("does not look like a Netscape format cookies file").
+        import tempfile as _tf
+        tmp = _tf.NamedTemporaryFile(suffix=".txt", delete=False, dir="/var/lib/yt", prefix=".warm-")
+        tmp.write(Path(path).read_bytes())
+        tmp.close()
         # --simulate: no download, just a metadata request that refreshes the session.
-        # tv_embedded + PO token mirrors the real download path. Write back in place.
+        # tv_embedded + PO token mirrors the real download path.
         cmd = (["yt-dlp", "--simulate", "--no-warnings",
                 "--socket-timeout", "20", "--retries", "1",
-                "--cookies", path]
+                "--cookies", tmp.name]
                + _pot_args("tv_embedded")
                + ["--extractor-args", "youtube:player_client=tv_embedded",
                   "-f", "bestvideo+bestaudio/best", _COOKIE_WARM_URL])
         proxy = (_ytdlp_proxies() or [None])[0]
         if proxy:
             cmd += ["--proxy", proxy]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
-        stderr = proc.stderr or ""
-        if proc.returncode == 0:
-            logging.info("refresh_youtube_cookies: session warm, cookies refreshed (%s)", path)
-            return {"status": "ok"}
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+            stderr = proc.stderr or ""
+            if proc.returncode == 0 and Path(tmp.name).stat().st_size >= _MIN_COOKIE_BYTES:
+                os.replace(tmp.name, path)  # atomic publish of refreshed cookies
+                logging.info("refresh_youtube_cookies: session warm, cookies refreshed (%s)", path)
+                return {"status": "ok"}
+        finally:
+            try:
+                Path(tmp.name).unlink(missing_ok=True)
+            except Exception:
+                pass
         if _is_bad_cookies(stderr):
             _alert_dead_cookies(stderr.strip().splitlines()[-1] if stderr.strip() else "")
             return {"status": "dead", "detail": stderr[-200:]}
