@@ -3635,36 +3635,35 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     def _client_args(proxy: str | None) -> list[list[str]]:
         """Return ordered strategy list — best quality first, fallbacks after.
 
-        web/tv first: with a PO token (bgutil) + cookies they return full format
-        lists. android_* are PO-free fallbacks but on most servers now return
-        metadata-only (rc=0, no file), so they go last.
+        Order reflects tested 2026 success rates: tv_embedded (+PO+cookies) and
+        android_vr download full streams; the `default` client auto-picks a
+        working one; web/ios are broken (SABR / n-challenge / no formats) so go
+        last. Cookies on every strategy (android ignores them harmlessly).
         """
         bc = _ytdlp_base_flags(proxy, use_cookies=True)  # cookies on every strategy
-        base = _ytdlp_base_flags(proxy)  # android clients ignore cookies anyway
+        base = _ytdlp_base_flags(proxy)
         return [
-            # web + PO token + cookies: full formats, handles sign-in / age-gate
-            ["yt-dlp"] + bc + _pot_args("web") + ["--extractor-args", "youtube:player_client=web",
-                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # tv_embedded + PO: bypasses some bot detection
+            # tv_embedded + PO + cookies: reliable full-format download, bypasses bot wall
             ["yt-dlp"] + bc + _pot_args("tv_embedded") + ["--extractor-args", "youtube:player_client=tv_embedded",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Default client (web) + PO + cookies
-            ["yt-dlp"] + bc + _pot_args("web") + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # ios: different quota bucket, no PO needed
-            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=ios",
-                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # mweb + PO + cookies
-            ["yt-dlp"] + bc + _pot_args("mweb") + ["--extractor-args", "youtube:player_client=mweb",
-                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # mp4-only format fallback (web + PO)
-            ["yt-dlp"] + bc + _pot_args("web") + ["-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
-            # android_vr: PO-free, metadata-only on most servers — last resort
+            # android_vr: PO-free, works on clean IPs
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # default client + PO + cookies: yt-dlp auto-negotiates a working client
+            ["yt-dlp"] + bc + _pot_args("web") + ["-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
             # android: different quota bucket
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # Last resort: best of anything
+            # tv_embedded mp4-only format fallback
+            ["yt-dlp"] + bc + _pot_args("tv_embedded") + ["--extractor-args", "youtube:player_client=tv_embedded",
+                                  "-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
+            # ios: usually no formats now, but different quota bucket — try late
+            ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=ios",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # web + PO + cookies: SABR-limited, last real attempt
+            ["yt-dlp"] + bc + _pot_args("web") + ["--extractor-args", "youtube:player_client=web",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # Last resort: best of anything via default client
             ["yt-dlp"] + bc + _pot_args("web") + ["-f", "best", "--merge-output-format", "mp4", "-o", out_path, url],
         ]
 
@@ -3730,10 +3729,11 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return False
             import threading as _t
 
-            # Try multiple player clients per proxy. web/tv first — they mint PO tokens
-            # (via bgutil provider) and return full format lists; android_vr is a
-            # last-ditch no-PO fallback. Cookies passed to ALL clients now.
-            _proxy_clients = ["web", "tv_embedded", "ios", "android_vr"]
+            # Client order by real 2026 success rate (tested): tv_embedded + PO + cookies
+            # and android_vr both download full streams; web is broken (YouTube forces
+            # SABR + needs a JS runtime for the n-challenge) and ios returns no formats,
+            # so both go last. Cookies + PO passed to all (android ignores them harmlessly).
+            _proxy_clients = ["tv_embedded", "android_vr", "ios", "web"]
             for client in _proxy_clients:
                 if moved.is_set():
                     return False

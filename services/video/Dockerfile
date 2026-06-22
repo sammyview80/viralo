@@ -9,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/nodejs /usr/local/bin/node
 # yt-dlp nightly tracks YouTube extractor changes; bgutil plugin mints PO tokens
 # (Proof-of-Origin) that web/tv/mweb clients now require to return formats.
-RUN pip install -U --pre "yt-dlp[default]" curl_cffi bgutil-ytdlp-pot-provider
+# bgutil plugin version MUST match the bgutil-pot server image tag (1.3.1).
+RUN pip install -U --pre "yt-dlp[default]" curl_cffi "bgutil-ytdlp-pot-provider==1.3.1"
 
 FROM deps AS development
 COPY shared/pyproject.toml ./shared/
