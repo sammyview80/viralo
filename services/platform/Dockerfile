@@ -7,6 +7,8 @@ COPY shared/pyproject.toml ./shared/
 COPY services/platform/pyproject.toml ./services/platform/
 RUN uv pip install --system -e ./shared -e ./services/platform
 COPY shared/ ./shared/
+COPY services/platform/pyproject.toml ./services/platform/
+RUN uv pip install --system -e ./shared -e ./services/platform
 COPY workers/ ./workers/
 COPY services/platform/ ./services/platform/
 ENV PYTHONPATH=/app
@@ -17,6 +19,8 @@ COPY shared/pyproject.toml ./shared/
 COPY services/platform/pyproject.toml ./services/platform/
 RUN uv pip install --system -e ./shared -e ./services/platform
 COPY shared/ ./shared/
+COPY services/platform/pyproject.toml ./services/platform/
+RUN uv pip install --system -e ./shared -e ./services/platform
 COPY workers/ ./workers/
 COPY services/platform/ ./services/platform/
 ENV PYTHONPATH=/app

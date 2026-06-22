@@ -3681,51 +3681,59 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         def _try_proxy(proxy: str, idx: int) -> bool:
             if moved.is_set():
                 return False
-            tmp_path = out_path + f".proxy{idx}.tmp"
-            base = _ytdlp_base_flags(proxy)
-            cmd = (["yt-dlp"] + base +
-                   ["--extractor-args", "youtube:player_client=android_vr",
-                    "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
-            try:
-                proc = subprocess.Popen(cmd + ["--newline"],
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                stderr_lines: list[str] = []
+            import threading as _t
 
-                def _drain():
-                    for line in proc.stderr:
-                        stderr_lines.append(line.rstrip())
-                        if moved.is_set():
-                            proc.kill()
-                            return
-
-                import threading as _t
-                t_stdout = _t.Thread(target=lambda: [_ for _ in proc.stdout], daemon=True)
-                t_stderr = _t.Thread(target=_drain, daemon=True)
-                t_stdout.start(); t_stderr.start()
-                proc.wait(timeout=25)
-                t_stderr.join(timeout=3)  # ensure stderr drained before reading
-                if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
-                    with move_lock:
-                        if not moved.is_set():
-                            import shutil as _sh
-                            _sh.move(tmp_path, out_path)
-                            moved.set()
-                            logging.info("Proxy race won by %s", proxy)
-                            return True
-                stderr = "\n".join(stderr_lines[-5:])
-                reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
-                logging.warning("Proxy[%d] %s → %s | %s", idx, proxy, reason, stderr[:120])
-                with proxy_errors_lock:
-                    proxy_errors.append(f"proxy[{idx}] {proxy}: {reason}: {stderr[:150]}")
-            except Exception as e:
-                logging.warning("Proxy[%d] %s → exception: %s", idx, proxy, e)
-                with proxy_errors_lock:
-                    proxy_errors.append(f"proxy[{idx}]: {e}")
-            finally:
+            # Try multiple player clients per proxy — android_vr first, then tv_embedded, ios
+            _proxy_clients = ["android_vr", "tv_embedded", "ios"]
+            for client in _proxy_clients:
+                if moved.is_set():
+                    return False
+                tmp_path = out_path + f".proxy{idx}.tmp"
+                base = _ytdlp_base_flags(proxy)
+                cmd = (["yt-dlp"] + base + ["--verbose"] +
+                       ["--extractor-args", f"youtube:player_client={client}",
+                        "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
                 try:
-                    Path(tmp_path).unlink(missing_ok=True)
-                except Exception:
-                    pass
+                    proc = subprocess.Popen(cmd + ["--newline"],
+                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    stderr_lines: list[str] = []
+
+                    def _drain(p=proc, sl=stderr_lines):
+                        for line in p.stderr:
+                            sl.append(line.rstrip())
+                            if moved.is_set():
+                                p.kill()
+                                return
+
+                    t_stdout = _t.Thread(target=lambda p=proc: [_ for _ in p.stdout], daemon=True)
+                    t_stderr = _t.Thread(target=_drain, daemon=True)
+                    t_stdout.start(); t_stderr.start()
+                    proc.wait(timeout=30)
+                    t_stderr.join(timeout=3)
+                    if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
+                        with move_lock:
+                            if not moved.is_set():
+                                import shutil as _sh
+                                _sh.move(tmp_path, out_path)
+                                moved.set()
+                                logging.info("Proxy race won by %s client=%s", proxy, client)
+                                return True
+                    stderr = "\n".join(stderr_lines[-10:])
+                    reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
+                    logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | %s", idx, proxy, client, reason, proc.returncode, stderr[:300])
+                    with proxy_errors_lock:
+                        proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: {reason}: {stderr[:150]}")
+                    if _is_429(stderr) or _is_bot_blocked(stderr):
+                        break  # same proxy, different clients won't help if IP is blocked
+                except Exception as e:
+                    logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, proxy, client, e)
+                    with proxy_errors_lock:
+                        proxy_errors.append(f"proxy[{idx}] [{client}]: {e}")
+                finally:
+                    try:
+                        Path(tmp_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
             return False
 
         # Race in batches of 10 — next batch fires immediately after all in current batch fail
@@ -3744,7 +3752,6 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return
             logging.info("Proxy batch %d-%d all failed, trying next batch",
                          batch_start, batch_start + len(batch) - 1)
-
         errors.extend(proxy_errors)
 
     # Phase 2: direct strategies (android_vr no-cookies, then cookie-based clients)

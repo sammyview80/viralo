@@ -7,6 +7,8 @@ COPY shared/pyproject.toml ./shared/
 COPY services/workflow/pyproject.toml ./services/workflow/
 RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY shared/ ./shared/
+COPY services/workflow/pyproject.toml ./services/workflow/
+RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY workers/ ./workers/
 COPY services/workflow/ ./services/workflow/
 ENV PYTHONPATH=/app
@@ -17,6 +19,8 @@ COPY shared/pyproject.toml ./shared/
 COPY services/workflow/pyproject.toml ./services/workflow/
 RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY shared/ ./shared/
+COPY services/workflow/pyproject.toml ./services/workflow/
+RUN uv pip install --system -e ./shared -e ./services/workflow
 COPY workers/ ./workers/
 COPY services/workflow/ ./services/workflow/
 ENV PYTHONPATH=/app

@@ -7,6 +7,8 @@ COPY shared/pyproject.toml ./shared/
 COPY services/core/pyproject.toml ./services/core/
 RUN uv pip install --system -e ./shared -e ./services/core
 COPY shared/ ./shared/
+COPY services/core/pyproject.toml ./services/core/
+RUN uv pip install --system -e ./shared -e ./services/core
 COPY workers/ ./workers/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./alembic.ini
@@ -20,6 +22,8 @@ COPY shared/pyproject.toml ./shared/
 COPY services/core/pyproject.toml ./services/core/
 RUN uv pip install --system -e ./shared -e ./services/core
 COPY shared/ ./shared/
+COPY services/core/pyproject.toml ./services/core/
+RUN uv pip install --system -e ./shared -e ./services/core
 COPY workers/ ./workers/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./alembic.ini
