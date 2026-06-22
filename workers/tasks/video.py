@@ -3560,6 +3560,96 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> lis
     return flags
 
 
+def _get_youtube_oauth_cookies(tenant_id: str) -> str | None:
+    """
+    Fetch the user's YouTube OAuth access token from DB, refresh if expired,
+    write a Netscape-format cookie file and return its path.
+    Returns None if no YouTube account connected.
+    """
+    import base64 as _b64, hashlib as _hs, tempfile as _tf, time as _time
+    try:
+        with _get_session(tenant_id) as session:
+            row = session.execute(
+                text(
+                    "SELECT access_token_enc, refresh_token_enc, token_expires_at "
+                    "FROM social_accounts "
+                    "WHERE tenant_id = CAST(:tid AS uuid) AND platform = 'youtube' AND is_active = true "
+                    "ORDER BY updated_at DESC LIMIT 1"
+                ),
+                {"tid": str(tenant_id)},
+            ).fetchone()
+    except Exception as e:
+        logging.warning("youtube_oauth_cookies: DB error: %s", e)
+        return None
+
+    if not row:
+        return None
+
+    # Decrypt
+    try:
+        import base64 as _b64, os as _os
+        from cryptography.fernet import Fernet
+
+        enc_key = _os.getenv("ENCRYPTION_KEY", "")
+        if not enc_key:
+            import hashlib as _hs
+            from shared.config import settings
+            raw = _hs.sha256(settings.secret_key.encode()).digest()
+            enc_key = _b64.urlsafe_b64encode(raw).decode()
+        fernet = Fernet(enc_key.encode() if isinstance(enc_key, str) else enc_key)
+
+        access_token = fernet.decrypt(row.access_token_enc.encode()).decode()
+        refresh_token = fernet.decrypt(row.refresh_token_enc.encode()).decode() if row.refresh_token_enc else None
+    except Exception as e:
+        logging.warning("youtube_oauth_cookies: decrypt error: %s", e)
+        return None
+
+    # Refresh if expired (or within 5 min of expiry)
+    expires_at = row.token_expires_at
+    if expires_at:
+        import datetime as _dt
+        now_utc = _dt.datetime.now(_dt.timezone.utc)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=_dt.timezone.utc)
+        if (expires_at - now_utc).total_seconds() < 300 and refresh_token:
+            try:
+                import httpx as _httpx
+                resp = _httpx.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "client_id": _os.environ["YOUTUBE_CLIENT_ID"],
+                        "client_secret": _os.environ["YOUTUBE_CLIENT_SECRET"],
+                        "refresh_token": refresh_token,
+                        "grant_type": "refresh_token",
+                    },
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                td = resp.json()
+                access_token = td["access_token"]
+                new_expires = now_utc + _dt.timedelta(seconds=td.get("expires_in", 3600))
+                # Persist refreshed token
+                new_enc = fernet.encrypt(access_token.encode()).decode()
+                with _get_session(tenant_id) as session:
+                    session.execute(
+                        text(
+                            "UPDATE social_accounts SET access_token_enc = :enc, token_expires_at = :exp "
+                            "WHERE tenant_id = CAST(:tid AS uuid) AND platform = 'youtube' AND is_active = true"
+                        ),
+                        {"enc": new_enc, "exp": new_expires, "tid": str(tenant_id)},
+                    )
+                logging.info("youtube_oauth_cookies: token refreshed for tenant %s", tenant_id)
+            except Exception as e:
+                logging.warning("youtube_oauth_cookies: token refresh failed: %s", e)
+
+    # Write Netscape cookie file with the OAuth Bearer token as __Secure-3PAPISID equivalent
+    # yt-dlp supports --username oauth2 --password TOKEN but cookie file is simpler
+    # Write a minimal cookie file so yt-dlp sends Authorization header via --add-header
+    # Actually: use --add-header "Authorization:Bearer <token>" — cleanest approach
+    # Return token string prefixed so caller knows to use --add-header
+    return f"Bearer {access_token}"
+
+
 def _is_429(stderr: str) -> bool:
     return "429" in stderr or "Too Many Requests" in stderr
 
@@ -3577,10 +3667,17 @@ def _is_bad_cookies(stderr: str) -> bool:
     )
 
 
-def _download_youtube(url: str, out_path: str, quality: str = "source", progress_cb=None) -> None:
+def _download_youtube(url: str, out_path: str, quality: str = "source", progress_cb=None, tenant_id: str | None = None) -> None:
     import time, random
     errors = []
     proxies = _ytdlp_proxies_with_refresh()
+
+    # OAuth token: user connected their YouTube account — use their session, no bot detection
+    oauth_bearer = _get_youtube_oauth_cookies(tenant_id) if tenant_id else None
+    if oauth_bearer:
+        logging.info("youtube_download: using user OAuth token for tenant %s", tenant_id)
+    else:
+        logging.info("youtube_download: no OAuth token, using cookies/proxy strategies")
 
     def _pick_proxy(attempt: int) -> str | None:
         if not proxies:
@@ -3671,6 +3768,20 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             return False, "timeout"
         except Exception as e:
             return False, str(e)
+
+    # Phase 0: OAuth — user's own YouTube session, most reliable
+    if oauth_bearer:
+        base_oauth = ["--no-check-certificate", "--retries", "2",
+                      "--socket-timeout", "30",
+                      "--add-header", f"Authorization:{oauth_bearer}"]
+        oauth_cmd = (["yt-dlp"] + base_oauth +
+                     ["--extractor-args", "youtube:player_client=android_vr",
+                      "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url])
+        ok, stderr = _run_strategy(oauth_cmd, "oauth", 0)
+        if ok:
+            return
+        logging.warning("YouTube OAuth strategy failed: %s", stderr[:200])
+        errors.append(f"oauth: {stderr[:200]}")
 
     # Phase 1: try all cookie-based strategies (direct, no proxy)
     cookie_strategies = [(cmd, "direct") for cmd in _client_args(None)]
@@ -4877,7 +4988,7 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
             _update_video(tenant_id, video_id, pipeline_pct=mapped)
 
         _download_youtube(url, out_path, quality=cfg.get("output_quality", "source"),
-                          progress_cb=_on_download_progress)
+                          progress_cb=_on_download_progress, tenant_id=str(tenant_id))
         _publish_progress(job_id, "download", 15, "processing", "Download complete, processing...")
         run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url, yt_meta=meta)
     except SoftTimeLimitExceeded:
