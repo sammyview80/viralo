@@ -3515,107 +3515,18 @@ def _get_youtube_duration(url: str) -> float | None:
     return _get_youtube_info(url).get("duration")
 
 
-_proxy_cache: list[str] = []
-_proxy_cache_ts: float = 0.0
-_PROXY_CACHE_TTL = 300  # 5 min
-
-# Hardcoded proxies verified working against YouTube with android_vr client (tested 2026-06-22)
-_VERIFIED_PROXIES: list[str] = [
-    "socks5://45.194.33.12:30001",
-    "socks5://2.26.87.216:1080",
-    "socks5://212.58.132.5:1080",
-    "socks5://171.25.158.95:1080",
-    "socks5://193.25.215.182:22222",
-    "socks5://152.53.144.223:1080",
-    "socks5://103.75.118.84:1080",
-]
-
-# Proxy sources ordered by YouTube success rate (tested)
-_PROXY_SOURCES = [
-    # proxygenerator1 — verified against Google/YouTube
-    "https://raw.githubusercontent.com/proxygenerator1/ProxyGenerator/main/MostStable/socks5.txt",
-    "https://raw.githubusercontent.com/proxygenerator1/ProxyGenerator/main/Stable/socks5.txt",
-    # TheSpeedX — updated daily
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
-    # ProxyScrape — anonymous/elite only
-    (
-        "https://api.proxyscrape.com/v3/free-proxy-list/get"
-        "?request=displayproxies&protocol=socks5&timeout=5000"
-        "&proxy_format=protocolipport&format=text&anonymity=elite,anonymous"
-    ),
-]
-
-
-def _fetch_fresh_proxies() -> list[str]:
-    import urllib.request as _req
-    all_proxies: list[str] = []
-    for url in _PROXY_SOURCES:
-        try:
-            with _req.urlopen(url, timeout=10) as resp:
-                text = resp.read().decode()
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
-            # Normalise: some sources return host:port, others socks5://host:port
-            normalised = [
-                l if l.startswith("socks5://") else f"socks5://{l}"
-                for l in lines if ":" in l
-            ]
-            all_proxies.extend(normalised[:150])
-            logging.info("Fetched %d proxies from %s", len(normalised[:150]), url[:60])
-        except Exception as e:
-            logging.warning("Proxy source failed %s: %s", url[:60], e)
-    return all_proxies
-
-
-def _test_proxy(proxy: str, timeout: int = 5) -> bool:
-    """Quick TCP connect test — filters dead proxies before handing to yt-dlp."""
-    import socket
-    try:
-        # proxy format: socks5://host:port
-        host_port = proxy.split("://")[-1]
-        host, port = host_port.rsplit(":", 1)
-        with socket.create_connection((host, int(port)), timeout=timeout):
-            return True
-    except Exception:
-        return False
-
-
 def _ytdlp_proxies() -> list[str]:
-    """Priority: env YTDLP_PROXY_LIST → hardcoded verified → fresh-fetched. TTL 5 min."""
-    import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    global _proxy_cache, _proxy_cache_ts
-    now = time.time()
-    if not _proxy_cache or (now - _proxy_cache_ts) > _PROXY_CACHE_TTL:
-        # 1. Operator-managed env list (highest priority)
-        env_raw = os.getenv("YTDLP_PROXY_LIST", "")
-        env_proxies = [
-            p.strip() if p.strip().startswith(("socks", "http")) else f"socks5://{p.strip()}"
-            for p in env_raw.split(",") if p.strip()
-        ]
-        # 2. Fresh from sources
-        raw = _fetch_fresh_proxies()
-        seen: set = set(env_proxies) | set(_VERIFIED_PROXIES)
-        fresh_deduped = [p for p in raw if p not in seen]
-        # Order: env → hardcoded verified → fresh
-        raw = env_proxies + _VERIFIED_PROXIES + fresh_deduped
-        logging.info("Proxy pool: %d env + %d verified + %d fresh = %d total",
-                     len(env_proxies), len(_VERIFIED_PROXIES), len(fresh_deduped), len(raw))
-        if raw:
-            # Test up to 50 proxies in parallel, keep first 20 that respond
-            candidates = raw[:50]
-            live: list[str] = []
-            with ThreadPoolExecutor(max_workers=20) as ex:
-                future_to_proxy = {ex.submit(_test_proxy, p): p for p in candidates}
-                for fut in as_completed(future_to_proxy):
-                    if fut.result():
-                        live.append(future_to_proxy[fut])
-                    if len(live) >= 20:
-                        break
-            logging.info("Proxy test: %d/%d live", len(live), len(candidates))
-            if live:
-                _proxy_cache = live
-                _proxy_cache_ts = now
-    return _proxy_cache
+    """Read proxies from YTDLP_PROXY_LIST env var only. No fetching, no TCP tests."""
+    env_raw = os.getenv("YTDLP_PROXY_LIST", "")
+    proxies = [
+        p.strip() if p.strip().startswith(("socks", "http")) else f"socks5://{p.strip()}"
+        for p in env_raw.split(",") if p.strip()
+    ]
+    if proxies:
+        logging.info("Proxy pool: %d proxies from YTDLP_PROXY_LIST", len(proxies))
+    else:
+        logging.warning("YTDLP_PROXY_LIST not set — no proxies available")
+    return proxies
 
 
 def _ytdlp_proxies_with_refresh() -> list[str]:
@@ -3910,9 +3821,6 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         except Exception as e:
             errors.append(f"RapidAPI TikTok: {e}")
 
-    # Bust proxy cache — force fresh fetch on next retry
-    _proxy_cache.clear()
-    _proxy_cache_ts = 0.0
     raise RuntimeError("YouTube download failed after all strategies.\n" + "\n".join(errors))
 
 
