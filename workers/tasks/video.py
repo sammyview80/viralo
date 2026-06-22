@@ -3533,30 +3533,17 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
     return _ytdlp_proxies()
 
 
-def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = True) -> list[str]:
-    """Return common yt-dlp flags. Cookies are omitted when proxy is set (IP mismatch invalidates session)."""
+def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> list[str]:
+    """Return common yt-dlp flags. Cookies disabled — proxies handle auth."""
     if proxy:
-        # No sleep delays for proxy strategies — flaky proxies compound wait time; socket-timeout handles hangs
         flags = ["--no-check-certificate", "--retries", "1",
                  "--socket-timeout", "15",
-                 "--js-runtimes", "node:/usr/bin/node"]
-        flags += ["--proxy", proxy]
+                 "--js-runtimes", "node:/usr/bin/node",
+                 "--proxy", proxy]
     else:
-        flags = ["--no-check-certificate", "--retries", "3",
-                 "--sleep-interval", "2", "--max-sleep-interval", "5",
+        flags = ["--no-check-certificate", "--retries", "2",
+                 "--socket-timeout", "20",
                  "--js-runtimes", "node:/usr/bin/node"]
-        if use_cookies:
-            cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
-            if cookies_file and Path(cookies_file).exists():
-                import shutil as _shutil
-                writable_cookies = "/tmp/yt-cookies-rw.txt"
-                # Always refresh writable copy so stale cached version doesn't persist
-                _shutil.copy2(cookies_file, writable_cookies)
-                flags += ["--cookies", writable_cookies]
-                logging.info("yt-dlp: using cookies from %s", cookies_file)
-            else:
-                logging.warning("yt-dlp: no cookies file (YTDLP_COOKIES_FILE=%r, exists=%s) — direct may 429",
-                                cookies_file, Path(cookies_file).exists() if cookies_file else False)
     return flags
 
 
@@ -3703,9 +3690,11 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                             return
 
                 import threading as _t
-                _t.Thread(target=lambda: [_ for _ in proc.stdout], daemon=True).start()
-                _t.Thread(target=_drain, daemon=True).start()
+                t_stdout = _t.Thread(target=lambda: [_ for _ in proc.stdout], daemon=True)
+                t_stderr = _t.Thread(target=_drain, daemon=True)
+                t_stdout.start(); t_stderr.start()
                 proc.wait(timeout=25)
+                t_stderr.join(timeout=3)  # ensure stderr drained before reading
                 if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
                     with move_lock:
                         if not moved.is_set():
