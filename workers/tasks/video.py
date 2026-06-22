@@ -3517,15 +3517,26 @@ def _get_youtube_duration(url: str) -> float | None:
 
 def _ytdlp_proxies() -> list[str]:
     """Read proxies from YTDLP_PROXY_LIST env var only. No fetching, no TCP tests."""
+    import re as _re
     env_raw = os.getenv("YTDLP_PROXY_LIST", "")
-    proxies = [
-        p.strip() if p.strip().startswith(("socks", "http")) else f"socks5://{p.strip()}"
-        for p in env_raw.split(",") if p.strip()
-    ]
+    proxies = []
+    for part in env_raw.split(","):
+        # Strip whitespace and any trailing env var pollution (e.g. "ip:portKEY=value")
+        p = part.strip().split()[0] if part.strip() else ""
+        # Validate: must match scheme://[user:pass@]host:port or host:port
+        if not p:
+            continue
+        if not p.startswith(("socks", "http")):
+            p = f"socks5://{p}"
+        # Reject if no valid host:port at end
+        if not _re.search(r':\d{2,5}$', p.split("@")[-1] if "@" in p else p):
+            logging.warning("Skipping malformed proxy entry: %r", p[:80])
+            continue
+        proxies.append(p)
     if proxies:
         logging.info("Proxy pool: %d proxies from YTDLP_PROXY_LIST", len(proxies))
     else:
-        logging.warning("YTDLP_PROXY_LIST not set — no proxies available")
+        logging.warning("YTDLP_PROXY_LIST not set or empty — no proxies available")
     return proxies
 
 
