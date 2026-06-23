@@ -648,34 +648,83 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
 def _fetch_youtube_captions(url: str, language: str = "en") -> list[WordTimestamp]:
-    """Download YouTube auto/manual captions and convert to WordTimestamp list. Returns [] if unavailable."""
-    import tempfile, re as _re
+    """Download YouTube auto/manual captions → WordTimestamp list. Returns [] if unavailable.
+
+    Routed through the proxy pool + cookies (a bare request bot-walls on a flagged
+    datacenter IP exactly like the download does, which is why this used to always
+    fall back to Whisper on prod). Prefers json3 (real per-word timing); falls back
+    to vtt (word timing approximated per segment).
+    """
+    import tempfile
     lang_codes = [language, "en"] if language != "en" else ["en"]
-    with tempfile.TemporaryDirectory() as tmp:
-        out_tmpl = os.path.join(tmp, "cap.%(ext)s")
-        for lang in lang_codes:
-            for sub_type in ["--write-sub", "--write-auto-sub"]:
-                try:
-                    _cookies = []
-                    _cf = os.getenv("YTDLP_COOKIES_FILE", "")
-                    if _cf and Path(_cf).exists():
-                        _cookies = ["--cookies", _cf]
-                    result = subprocess.run(
-                        ["yt-dlp", "--skip-download", sub_type,
-                         "--sub-lang", lang, "--sub-format", "vtt",
-                         "--no-check-certificate", "-o", out_tmpl] + _cookies + [url],
-                        capture_output=True, text=True, timeout=30,
-                    )
-                    vtt_files = list(Path(tmp).glob("*.vtt"))
-                    if not vtt_files:
-                        continue
-                    vtt_text = vtt_files[0].read_text(encoding="utf-8", errors="ignore")
-                    words = _parse_vtt_to_words(vtt_text)
-                    if words:
-                        return words
-                except Exception:
-                    continue
+    # direct first, then a few proxies — captions need no PO token, just an un-flagged IP
+    all_proxies = _ytdlp_proxies()
+    proxy_candidates = ([None] if os.getenv("YTDLP_SKIP_DIRECT") != "1" else []) + all_proxies[:8]
+    if not proxy_candidates:
+        proxy_candidates = [None]
+
+    _cookies = []
+    _cf = os.getenv("YTDLP_COOKIES_FILE", "")
+    if _cf and Path(_cf).exists():
+        _cookies = ["--cookies", _cf]
+
+    for proxy in proxy_candidates:
+        proxy_flag = ["--proxy", proxy] if proxy else []
+        with tempfile.TemporaryDirectory() as tmp:
+            out_tmpl = os.path.join(tmp, "cap.%(ext)s")
+            for lang in lang_codes:
+                # json3 (per-word timing) preferred; vtt as fallback
+                for sub_fmt, glob_pat, parser in [
+                    ("json3", "*.json3", _parse_json3_to_words),
+                    ("vtt", "*.vtt", _parse_vtt_to_words),
+                ]:
+                    for sub_type in ["--write-sub", "--write-auto-sub"]:
+                        try:
+                            subprocess.run(
+                                ["yt-dlp", "--skip-download", sub_type,
+                                 "--sub-lang", lang, "--sub-format", sub_fmt,
+                                 "--no-check-certificate", "--socket-timeout", "15",
+                                 "-o", out_tmpl] + proxy_flag + _cookies + [url],
+                                capture_output=True, text=True, timeout=40,
+                            )
+                            files = list(Path(tmp).glob(glob_pat))
+                            if not files:
+                                continue
+                            words = parser(files[0].read_text(encoding="utf-8", errors="ignore"))
+                            if words:
+                                logging.info("Using YouTube %s captions (%d words) via %s",
+                                             sub_fmt, len(words), "proxy" if proxy else "direct")
+                                return words
+                        except Exception:
+                            continue
     return []
+
+
+def _parse_json3_to_words(raw: str) -> list[WordTimestamp]:
+    """Parse YouTube json3 caption track into real per-word timestamps."""
+    words: list[WordTimestamp] = []
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    for event in data.get("events", []) or []:
+        seg_start = event.get("tStartMs")
+        segs = event.get("segs") or []
+        if seg_start is None:
+            continue
+        for seg in segs:
+            txt = (seg.get("utf8") or "").strip()
+            if not txt:
+                continue
+            # tOffsetMs is the word's offset from the event start (per-word timing)
+            ws = (seg_start + (seg.get("tOffsetMs") or 0)) / 1000.0
+            words.append(WordTimestamp(word=txt, start=round(ws, 3), end=round(ws, 3)))
+    # Fill end times from the next word's start
+    for i in range(len(words) - 1):
+        words[i].end = max(words[i].start, words[i + 1].start)
+    if words:
+        words[-1].end = words[-1].start + 0.4
+    return words
 
 
 def _parse_vtt_to_words(vtt: str) -> list[WordTimestamp]:
