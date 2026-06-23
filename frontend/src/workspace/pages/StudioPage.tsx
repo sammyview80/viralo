@@ -178,7 +178,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
   }, [onClose]);
 
   const handleImport = useCallback(async () => {
-    if (!urlVal.trim() || !formatsData) return;  // require a probed spec
+    if (!urlVal.trim()) return;
     setUploading(true);
     setError("");
     try {
@@ -189,7 +189,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
       setError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, clipConfig, precisionMode, formatsData]);
+  }, [urlVal, clipConfig, precisionMode]);
 
   const back = () => setStep((s) => Math.max(0, s - 1) as YtStep);
 
@@ -217,7 +217,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
       {/* Dialog */}
-      <div className="relative flex h-[760px] w-full max-w-[600px] flex-col overflow-hidden rounded-[24px] border border-white/[.09] bg-[#0b1018] shadow-[0_40px_120px_rgba(0,0,0,.7)]">
+      <div className="relative flex h-[760px] max-h-[92vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[24px] border border-white/[.09] bg-[#0b1018] shadow-[0_40px_120px_rgba(0,0,0,.7)]">
 
         {/* Header */}
         <div className="relative flex items-center gap-3 border-b border-white/[.07] bg-[radial-gradient(circle_at_8%_0%,rgba(248,113,113,.14),transparent_40%)] px-5 py-4">
@@ -481,9 +481,9 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
 
         {/* ── Step 2: Style ── */}
         {step === 2 && (
-          <div className="flex flex-1 gap-0">
-            {/* Left: controls */}
-            <div className="flex flex-1 flex-col p-6">
+          <div className="flex min-h-0 flex-1 gap-0">
+            {/* Left: controls (scrolls; footer stays pinned) */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
               <div className="mb-4">
                 <h2 className="font-display text-[18px] font-bold text-white">Style & export</h2>
                 <p className="text-[12px] text-zinc-500">Pick a template — preview updates live.</p>
@@ -603,7 +603,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
 
         {/* ── Step 2 Import footer ── */}
         {step === 2 && (
-          <div className="border-t border-white/[.07] bg-[#070b12] px-6 py-3.5">
+          <div className="shrink-0 border-t border-white/[.07] bg-[#070b12] px-6 py-3.5">
             {/* Clip spec — fetched from the YouTube URL */}
             {formatsLoading && (
               <div className="mb-3 flex items-center gap-2 text-[11.5px] text-zinc-500">
@@ -612,8 +612,9 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
               </div>
             )}
             {!formatsLoading && formatsError && (
-              <div className="mb-3 rounded-[10px] border border-red-500/25 bg-red-500/[.06] px-3 py-2 text-[11.5px] font-medium text-red-300">
-                Couldn’t read this video’s formats — {formatsError}. Import is disabled.
+              <div className="mb-3 rounded-[10px] border border-amber-500/25 bg-amber-500/[.06] px-3 py-2 text-[11.5px] font-medium text-amber-300">
+                Couldn’t detect this video’s formats — you can still import; pick a target
+                quality below and the downloader will get the best match available.
               </div>
             )}
             {!formatsLoading && formatsData && (
@@ -645,8 +646,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
                 </div>
               )}
               <Button
-                disabled={uploading || formatsLoading || !formatsData}
-                title={!formatsData ? "Video formats unavailable — cannot import" : undefined}
+                disabled={uploading || formatsLoading}
                 onClick={handleImport}
                 className="h-10 shrink-0 rounded-[11px] px-6 text-[13px] font-bold disabled:opacity-50"
               >
