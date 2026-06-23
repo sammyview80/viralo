@@ -45,6 +45,8 @@ __all__ = [
     '_ai_generate_clip_content',
     '_ai_generate_video_metadata',
     '_batch_ai_content',
+    '_hook_score',
+    '_topic_coherence_score',
 ]
 
 _AD_PHRASES = [
@@ -93,6 +95,45 @@ def _detect_ad_segments(words: list, min_gap_sec: float = 5.0) -> list[tuple[flo
         else:
             merged.append((start, end))
     return merged
+
+
+_HOOK_POWER_WORDS = {
+    "why", "what", "how", "when", "who", "which",
+    "nobody", "never", "always", "worst", "best", "secret", "truth",
+    "mistake", "wrong", "dangerous", "shocking", "surprising", "unbelievable",
+    "finally", "actually", "honestly", "literally", "seriously",
+    "but", "however", "except", "unless", "imagine", "stop", "wait",
+    "most", "least", "every", "only",
+}
+
+
+def _hook_score(words: list, start: float, window: float = 3.0) -> float:
+    """Score 0–1 based on power-word density in the first `window` seconds of clip."""
+    import math
+    hook_words = [w for w in words if start <= w.start <= start + window]
+    if not hook_words:
+        return 0.0
+    hits = sum(1 for w in hook_words if w.word.lower().strip(".,!?") in _HOOK_POWER_WORDS)
+    ratio = hits / len(hook_words)
+    return round(min(1.0, math.log1p(ratio * 10) / math.log1p(10)), 3)
+
+
+def _topic_coherence_score(clip, topic_blocks: list) -> float:
+    """Score 0–1: 1.0 if clip is fully within one topic block, lower if it crosses boundaries."""
+    if not topic_blocks:
+        return 0.5
+    clip_dur = clip.end - clip.start
+    if clip_dur <= 0:
+        return 0.5
+    overlap_total = 0.0
+    max_overlap = 0.0
+    for tb in topic_blocks:
+        ol = max(0.0, min(clip.end, tb.end_sec) - max(clip.start, tb.start_sec))
+        overlap_total += ol
+        max_overlap = max(max_overlap, ol)
+    if overlap_total <= 0:
+        return 0.5
+    return round(max_overlap / overlap_total, 3)
 
 
 def _youtube_chapter_signals(chapters: list[dict]) -> list[dict]:
@@ -301,6 +342,7 @@ def _ai_score_clips(
     precision_mode: bool = False,
     yt_engagement: dict | None = None,
     occasion: str = "",
+    topic_blocks: list | None = None,
 ) -> list[ClipResult]:
     if platforms is None:
         platforms = ["tiktok", "reels", "shorts"]
@@ -477,8 +519,12 @@ Return JSON with ALL signals found (aim for at least {max(num_clips * 2, 8)} sig
                      len(signals) - len(extra_signals), len(extra_signals), len(signals))
 
         # Step 2 — build clips around viral signals
+        for s in signals:
+            clip_start = float(s.get("timestamp_sec", 0))
+            hook_s = _hook_score(words, clip_start)
+            s["hook_score"] = hook_s
         signals_str = "\n".join(
-            f"- t={s.get('timestamp_sec', 0):.1f}s  score={s.get('score', 5)}/10  [{s.get('signal_type', '?')}]  \"{s.get('trigger_words', '')}\"  → {s.get('stop_scroll_reason', '')}"
+            f"- t={s.get('timestamp_sec', 0):.1f}s  score={s.get('score', 5)}/10  [{s.get('signal_type', '?')}]  \"{s.get('trigger_words', '')}\"  → {s.get('stop_scroll_reason', '')}  Hook strength: {s.get('hook_score', 0.0):.2f}"
             for s in sorted(signals, key=lambda x: x.get("score", 0), reverse=True)
         )
 
@@ -594,6 +640,7 @@ Return ONLY JSON:
             plat = c.get("platform", platforms[0])
             if plat not in platforms:
                 plat = platforms[0]
+            hook_s = _hook_score(words, start)
             clips.append(ClipResult(
                 start=round(start, 2),
                 end=round(end, 2),
@@ -601,6 +648,7 @@ Return ONLY JSON:
                 title=(c.get("title") or f"Clip {len(clips)+1}")[:100],
                 reason=c.get("reason", ""),
                 platform=plat,
+                hook_score=hook_s,
             ))
 
         # Filter clips overlapping with ad segments
