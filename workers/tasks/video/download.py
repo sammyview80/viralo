@@ -201,10 +201,16 @@ def _list_youtube_formats(url: str, timeout: int = 30, max_proxy_tries: int = 5)
     # web@360p even though a later proxy would have yielded 1080p+ — matching what the
     # real download (which walks every proxy for tv) actually fetches.
     all_proxies = _ytdlp_proxies()
-    tv_tries = min(len(all_proxies), max(max_proxy_tries, 12))
+    hd_tries = min(len(all_proxies), max(max_proxy_tries, 12))
     low_tries = min(len(all_proxies), 3)
+    # HD-capable clients first (tv / mweb / web_safari) with an exhaustive proxy search:
+    # `tv` is DRM-experiment-blocked on many proxy IPs (images-only), so mweb/web_safari
+    # must also get a wide search before we accept the 360p-capped `web`. See the
+    # download tier comment and yt-dlp #12563.
     tiers = [
-        ("tv", [None] + all_proxies[:tv_tries]),
+        ("tv", [None] + all_proxies[:hd_tries]),
+        ("mweb", [None] + all_proxies[:hd_tries]),
+        ("web_safari", [None] + all_proxies[:hd_tries]),
         ("web", [None] + all_proxies[:low_tries]),
         ("android_vr", [None] + all_proxies[:low_tries]),
         ("ios", [None] + all_proxies[:low_tries]),
@@ -297,6 +303,13 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             # `tv` replaces the now-unsupported `tv_embedded` (yt-dlp skips the latter).
             ["yt-dlp"] + bc + _pot_args("tv") + ["--extractor-args", "youtube:player_client=tv",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # mweb + PO + cookies: full HD/4K ladder, NOT under the tv DRM experiment that
+            # leaves tv with images-only on flagged IPs (yt-dlp #12563). Primary HD fallback.
+            ["yt-dlp"] + bc + _pot_args("mweb") + ["--extractor-args", "youtube:player_client=mweb",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
+            # web_safari + PO + cookies: full ladder too (not 360p-capped like plain web).
+            ["yt-dlp"] + bc + _pot_args("web_safari") + ["--extractor-args", "youtube:player_client=web_safari",
+                                  "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
             # android_vr: PO-free, works on clean IPs
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
@@ -371,7 +384,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     # Without this, Phase 1 races `web`@360p across every proxy and a proxied 360p win
     # returns BEFORE the direct `tv` 4K path is ever tried — capping every download at
     # 360p whenever `tv` has a transient miss on the proxy pool.
-    direct_hq = _client_args(None)[:2]  # [tv +PO +cookies, android_vr] — HD-capable only
+    direct_hq = _client_args(None)[:3]  # [tv, mweb, web_safari] — HD-capable clients only
     for attempt, cmd in enumerate(direct_hq):
         label = _client_of(cmd)
         logging.info("Phase 0: direct high-quality client=%s", label)
@@ -519,13 +532,15 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                             pass
             return False
 
-        # Client-MAJOR order: exhaust the high-quality `tv` client across EVERY proxy
-        # before settling for a lower-quality client. Otherwise a video where tv fails
-        # on proxy[0] but web works on proxy[0] would grab web (360p) instead of trying
-        # tv on proxy[1..N]. `tv` (full 480-1440p adaptive) first, then web/android_vr/ios.
-        # `tv_embedded` is rejected by yt-dlp now; web is 360p-only on datacenter IPs;
-        # android_vr/ios need a GVS PO token. Cookies + PO are passed to all.
-        _CLIENT_TIERS = ["tv", "web", "android_vr", "ios"]
+        # Client-MAJOR order: exhaust a high-quality client across EVERY proxy before
+        # settling for a lower-quality one. `tv` carries the full HD/4K ladder — BUT
+        # YouTube now runs a DRM experiment that, on many datacenter/proxy IPs, marks
+        # every `tv` https format DRM-protected so only storyboard images remain
+        # ("Requested format is not available"; yt-dlp #12563). `mweb` and `web_safari`
+        # return the same full adaptive ladder (4K/1080p, +PO +cookies), are NOT under
+        # that tv DRM experiment, and are NOT 360p-capped like plain `web` — so they sit
+        # right after `tv`. Plain `web` (360p-only on these IPs) and ios go last.
+        _CLIENT_TIERS = ["tv", "mweb", "web_safari", "android_vr", "web", "ios"]
 
         if _parallel:
             # Opt-in legacy behaviour: race all proxies in parallel batches, per client tier.
