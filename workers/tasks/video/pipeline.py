@@ -194,13 +194,20 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
                     }
             except Exception:
                 yt_chapters = []
-            words = _fetch_youtube_captions(yt_url, language)
+            # Burned karaoke captions need acoustic word-precision: Whisper aligns to the
+            # audio waveform, while YouTube auto-caption timing is display-timed and drifts
+            # noticeably on burn-in. So only use YT captions here when captions are NOT
+            # being burned (then they're just transcript/analysis input — fast & fine).
+            # Override with YT_CAPTIONS_FOR_BURN=1 to trade sync precision for speed.
+            burn = bool(cfg.get("add_captions", False))
+            force_yt = os.getenv("YT_CAPTIONS_FOR_BURN") == "1"
+            words = _fetch_youtube_captions(yt_url, language) if (not burn or force_yt) else []
             if words:
                 _publish_progress(job_id, "transcribe", 35, "processing",
                                   f"Using YouTube captions ({len(words)} words) — skipping AI transcription")
             else:
                 _publish_progress(job_id, "transcribe", 20, "processing",
-                                  "No YouTube captions found — transcribing with Groq Whisper...")
+                                  "Transcribing with Groq Whisper for precise caption sync...")
                 words = _transcribe(source_path, meta.duration, language)
                 _publish_progress(job_id, "transcribe", 35, "processing",
                                   f"Transcribed {len(words)} words via Whisper")
@@ -493,7 +500,11 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
                     }
             except Exception:
                 yt_chapters = []
-            words = _fetch_youtube_captions(yt_url, language)
+            # See note above: burned captions use Whisper for acoustic sync; YT captions
+            # only when not burning (or forced via YT_CAPTIONS_FOR_BURN=1).
+            burn = bool(cfg.get("add_captions", False))
+            force_yt = os.getenv("YT_CAPTIONS_FOR_BURN") == "1"
+            words = _fetch_youtube_captions(yt_url, language) if (not burn or force_yt) else []
             if words:
                 transcript_source = "youtube_captions"
                 _publish_progress(job_id, "transcribe", 20, "processing",
