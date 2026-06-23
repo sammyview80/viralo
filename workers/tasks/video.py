@@ -3776,10 +3776,25 @@ def _is_bad_cookies(stderr: str) -> bool:
     )
 
 
-def _download_youtube(url: str, out_path: str, quality: str = "source", progress_cb=None, tenant_id: str | None = None) -> None:
+def _download_youtube(url: str, out_path: str, quality: str = "source", progress_cb=None, tenant_id: str | None = None) -> str | None:
+    """Download a video, preferring the high-quality `tv` client.
+
+    Returns the name of the yt-dlp client that actually succeeded ("tv", "web",
+    "android_vr", "pytubefix", …) so the caller can warn the user when the
+    high-quality `tv` path was unavailable and a lower-quality client was used.
+    Raises RuntimeError if every strategy fails.
+    """
     import time, random
     errors = []
+    winner: dict[str, str | None] = {"client": None}
     proxies = _ytdlp_proxies_with_refresh()
+
+    def _client_of(cmd: list[str]) -> str:
+        """Extract the yt-dlp player_client from a built command, for win reporting."""
+        for c in cmd:
+            if c.startswith("youtube:player_client="):
+                return c.split("=", 1)[1]
+        return "default"
 
     def _pick_proxy(attempt: int) -> str | None:
         if not proxies:
@@ -3940,6 +3955,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                 import shutil as _sh
                                 _sh.move(produced, out_path)
                                 moved.set()
+                                winner["client"] = client
                                 logging.info("Proxy race won by %s client=%s", proxy, client)
                                 return True
                     # Find the actual ERROR line. Skip [debug]/[download]/[info] progress
@@ -3986,6 +4002,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                         import shutil as _sh
                                         _sh.move(produced2, out_path)
                                         moved.set()
+                                        winner["client"] = client
                                         logging.info("Proxy race won by %s client=%s fmt=permissive", proxy, client)
                                         return True
                             logging.warning("Proxy[%d] %s client=%s fmt-fallback found no a/v formats either",
@@ -4026,26 +4043,27 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                for i, p in enumerate(batch)}
                     for fut in concurrent.futures.as_completed(futures):
                         if moved.is_set():
-                            return
+                            return winner["client"]
                 if moved.is_set():
-                    return
+                    return winner["client"]
         else:
             # Default: one proxy at a time; advance only after the current fails.
             for idx, proxy in enumerate(proxies):
                 if _try_proxy(proxy, idx):
-                    return
+                    return winner["client"]
                 if moved.is_set():
-                    return
+                    return winner["client"]
                 logging.info("Proxy[%d] failed all clients, trying next proxy", idx)
         errors.extend(proxy_errors)
 
     # Phase 2: direct strategies (android_vr no-cookies, then cookie-based clients)
     logging.info("Phase 2: trying direct strategies (no proxy)")
-    cookie_strategies = [(cmd, "direct") for cmd in _client_args(None)]
+    cookie_strategies = [(cmd, _client_of(cmd)) for cmd in _client_args(None)]
     for attempt, (cmd, label) in enumerate(cookie_strategies):
         ok, stderr = _run_strategy(cmd, label, attempt)
         if ok:
-            return
+            winner["client"] = label
+            return winner["client"]
         errors.append(f"yt-dlp strategy {attempt+1} ({label}): {stderr[:200]}")
         if _is_bad_cookies(stderr):
             logging.error(
@@ -4068,7 +4086,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         if stream:
             downloaded = stream.download(output_path=str(Path(out_path).parent), filename="source.mp4")
             if Path(downloaded).exists() and Path(downloaded).stat().st_size > 0:
-                return
+                winner["client"] = "pytubefix"
+                return winner["client"]
         errors.append("pytubefix: no suitable stream")
     except Exception as e:
         errors.append(f"pytubefix: {e}")
@@ -4098,7 +4117,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 with open(out_path, "wb") as f:
                     f.write(resp.read())
             if Path(out_path).stat().st_size > 0:
-                return
+                winner["client"] = "rapidapi"
+                return winner["client"]
             errors.append("RapidAPI TikTok: downloaded file is empty")
         except Exception as e:
             errors.append(f"RapidAPI TikTok: {e}")
@@ -5158,8 +5178,21 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
                               f"Downloading YouTube video... {pct}%")
             _update_video(tenant_id, video_id, pipeline_pct=mapped)
 
-        _download_youtube(url, out_path, quality=cfg.get("output_quality", "source"),
+        won_client = _download_youtube(url, out_path, quality=cfg.get("output_quality", "source"),
                           progress_cb=_on_download_progress, tenant_id=str(tenant_id))
+        # The `tv` client carries the full HD/4K adaptive ladder; any other winning
+        # client (web/ios/android_vr/pytubefix/…) means the high-quality source was
+        # unavailable and a lower-quality stream was used — tell the user.
+        if won_client and won_client != "tv":
+            warn = ("High-quality (TV) source was unavailable for this video — "
+                    f"downloaded a standard-quality stream via the {won_client} client.")
+            logging.warning(warn)
+            _publish_progress(job_id, "download", 15, "processing", warn)
+            try:
+                _notify_video(tenant_id, video_id, "video_quality_downgraded",
+                              "Standard quality used", warn)
+            except Exception:
+                pass
         _publish_progress(job_id, "download", 15, "processing", "Download complete, processing...")
         run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url, yt_meta=meta)
     except SoftTimeLimitExceeded:
