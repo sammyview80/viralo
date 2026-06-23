@@ -3908,19 +3908,12 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         move_lock = _threading.Lock()
         moved = _threading.Event()
 
-        def _try_proxy(proxy: str, idx: int) -> bool:
+        def _try_proxy(proxy: str, idx: int, clients: list[str]) -> bool:
             if moved.is_set():
                 return False
             import threading as _t
 
-            # Client order by real 2026 success rate (re-tested through datacenter proxies):
-            # the `tv` client + PO token + cookies returns the FULL adaptive format set
-            # (480/720/1080/1440p) through proxy IPs, so it goes first. `tv_embedded` is now
-            # rejected by yt-dlp ("Skipping unsupported client"); `web` is degraded to a
-            # single 360p muxed format on datacenter IPs; `android_vr`/`ios` return no
-            # formats without a GVS PO token. Cookies + PO passed to all (harmless to ignorers).
-            _proxy_clients = ["tv", "web", "android_vr", "ios"]
-            for client in _proxy_clients:
+            for client in clients:
                 if moved.is_set():
                     return False
                 tmp_path = out_path + f".proxy{idx}.tmp"
@@ -4031,29 +4024,41 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                             pass
             return False
 
+        # Client-MAJOR order: exhaust the high-quality `tv` client across EVERY proxy
+        # before settling for a lower-quality client. Otherwise a video where tv fails
+        # on proxy[0] but web works on proxy[0] would grab web (360p) instead of trying
+        # tv on proxy[1..N]. `tv` (full 480-1440p adaptive) first, then web/android_vr/ios.
+        # `tv_embedded` is rejected by yt-dlp now; web is 360p-only on datacenter IPs;
+        # android_vr/ios need a GVS PO token. Cookies + PO are passed to all.
+        _CLIENT_TIERS = ["tv", "web", "android_vr", "ios"]
+
         if _parallel:
-            # Opt-in legacy behaviour: race all proxies in parallel batches.
+            # Opt-in legacy behaviour: race all proxies in parallel batches, per client tier.
             BATCH = 10
-            for batch_start in range(0, len(proxies), BATCH):
-                batch = proxies[batch_start:batch_start + BATCH]
-                logging.info("Proxy batch %d-%d: racing %d proxies",
-                             batch_start, batch_start + len(batch) - 1, len(batch))
-                with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH) as ex:
-                    futures = {ex.submit(_try_proxy, p, batch_start + i): p
-                               for i, p in enumerate(batch)}
-                    for fut in concurrent.futures.as_completed(futures):
-                        if moved.is_set():
-                            return winner["client"]
-                if moved.is_set():
-                    return winner["client"]
+            for client in _CLIENT_TIERS:
+                for batch_start in range(0, len(proxies), BATCH):
+                    batch = proxies[batch_start:batch_start + BATCH]
+                    logging.info("Client=%s batch %d-%d: racing %d proxies",
+                                 client, batch_start, batch_start + len(batch) - 1, len(batch))
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH) as ex:
+                        futures = {ex.submit(_try_proxy, p, batch_start + i, [client]): p
+                                   for i, p in enumerate(batch)}
+                        for fut in concurrent.futures.as_completed(futures):
+                            if moved.is_set():
+                                return winner["client"]
+                    if moved.is_set():
+                        return winner["client"]
         else:
-            # Default: one proxy at a time; advance only after the current fails.
-            for idx, proxy in enumerate(proxies):
-                if _try_proxy(proxy, idx):
-                    return winner["client"]
-                if moved.is_set():
-                    return winner["client"]
-                logging.info("Proxy[%d] failed all clients, trying next proxy", idx)
+            # Default: for each client tier, try every proxy in turn; only drop to the
+            # next (lower-quality) client after the current one fails on ALL proxies.
+            for client in _CLIENT_TIERS:
+                logging.info("Phase 1: trying client=%s across %d proxies", client, len(proxies))
+                for idx, proxy in enumerate(proxies):
+                    if _try_proxy(proxy, idx, [client]):
+                        return winner["client"]
+                    if moved.is_set():
+                        return winner["client"]
+                logging.info("Client=%s failed on all proxies, dropping to next client", client)
         errors.extend(proxy_errors)
 
     # Phase 2: direct strategies (android_vr no-cookies, then cookie-based clients)
