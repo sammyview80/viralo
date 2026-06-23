@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { navigate } from "@/lib/router";
-import { videoApi, type ClipConfig, type VideoResponse, type OutputQuality } from "@/lib/api";
+import { videoApi, type ClipConfig, type VideoResponse, type OutputQuality, type YouTubeFormatsResponse } from "@/lib/api";
 import { ClipConfigPanel, DEFAULT_CONFIG, PLATFORM_OPTIONS, ASPECT_OPTIONS, LANG_OPTIONS, CAPTION_STYLES } from "./UploadPage";
 
 type StudioTab = "ai" | "upload";
@@ -112,10 +112,12 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
   const [clipConfig, setClipConfig] = useState<ClipConfig>(DEFAULT_CONFIG);
   const [uploading, setUploading] = useState(false);
   const [error, setError]         = useState("");
-  // Qualities the backend confirms are downloadable for this URL. null = not yet
-  // probed / probe failed → fall back to the full static ladder.
-  const [availQualities, setAvailQualities] = useState<OutputQuality[] | null>(null);
+  // Full clip spec probed from the backend for this URL. null = not yet probed /
+  // probe failed. Import is blocked until this is populated.
+  const [formatsData, setFormatsData] = useState<YouTubeFormatsResponse | null>(null);
   const [formatsLoading, setFormatsLoading] = useState(false);
+  const [formatsError, setFormatsError] = useState("");
+  const availQualities = formatsData?.qualities ?? null;
 
   // validate + fetch metadata
   useEffect(() => {
@@ -125,23 +127,25 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
       setUrlReady(valid);
       if (!valid) {
         setError("Enter a valid YouTube URL");
-        setYtMeta(null); setAvailQualities(null);
+        setYtMeta(null); setFormatsData(null); setFormatsError("");
         return;
       }
       setError("");
 
-      // Probe real available qualities from the backend (authoritative). Clamp the
-      // current selection if it isn't offered. Failure falls back to the static list.
+      // Probe the full clip spec from the backend (authoritative). Clamp the current
+      // quality if it isn't offered. On failure, Import stays disabled.
       setFormatsLoading(true);
-      setAvailQualities(null);
+      setFormatsData(null);
+      setFormatsError("");
       videoApi.youtubeFormats(urlVal.trim())
         .then((f) => {
-          setAvailQualities(f.qualities);
+          setFormatsData(f);
           setClipConfig((c) =>
             f.qualities.includes((c.output_quality ?? "source") as OutputQuality)
               ? c : { ...c, output_quality: f.qualities[0] });
         })
-        .catch(() => setAvailQualities(null))
+        .catch((err) =>
+          setFormatsError(err instanceof Error ? err.message : "Could not read video formats"))
         .finally(() => setFormatsLoading(false));
 
       setYtMetaLoading(true);
@@ -174,7 +178,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
   }, [onClose]);
 
   const handleImport = useCallback(async () => {
-    if (!urlVal.trim()) return;
+    if (!urlVal.trim() || !formatsData) return;  // require a probed spec
     setUploading(true);
     setError("");
     try {
@@ -185,9 +189,24 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
       setError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, clipConfig, precisionMode]);
+  }, [urlVal, clipConfig, precisionMode, formatsData]);
 
   const back = () => setStep((s) => Math.max(0, s - 1) as YtStep);
+
+  // ── clip spec formatting helpers ──
+  const fmtDuration = (s?: number | null) => {
+    if (!s) return "—";
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+    return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+             : `${m}:${String(sec).padStart(2, "0")}`;
+  };
+  const fmtBytes = (b?: number | null) => {
+    if (!b) return null;
+    const u = ["B", "KB", "MB", "GB"]; let i = 0, n = b;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
+  };
+  const specTop = formatsData?.formats?.[0];  // largest height
 
   return createPortal(
     <div
@@ -585,6 +604,37 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
         {/* ── Step 2 Import footer ── */}
         {step === 2 && (
           <div className="border-t border-white/[.07] bg-[#070b12] px-6 py-3.5">
+            {/* Clip spec — fetched from the YouTube URL */}
+            {formatsLoading && (
+              <div className="mb-3 flex items-center gap-2 text-[11.5px] text-zinc-500">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-transparent" />
+                Reading video specs…
+              </div>
+            )}
+            {!formatsLoading && formatsError && (
+              <div className="mb-3 rounded-[10px] border border-red-500/25 bg-red-500/[.06] px-3 py-2 text-[11.5px] font-medium text-red-300">
+                Couldn’t read this video’s formats — {formatsError}. Import is disabled.
+              </div>
+            )}
+            {!formatsLoading && formatsData && (
+              <div className="mb-3 rounded-[10px] border border-white/[.07] bg-white/[.025] px-3 py-2.5">
+                <p className="mb-1.5 text-[9.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Clip spec</p>
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[11.5px]">
+                  {[
+                    ["Max resolution", specTop ? `${specTop.height}p${specTop.fps ? ` ${Math.round(specTop.fps)}fps` : ""}` : `${formatsData.max_height}p`],
+                    ["Duration", fmtDuration(formatsData.duration)],
+                    ["Qualities", formatsData.qualities.map((q) => (q === "source" ? "Full" : q)).join(" · ")],
+                    ["Largest size", specTop && fmtBytes(specTop.filesize) ? fmtBytes(specTop.filesize)! : "—"],
+                    ["Formats", String(formatsData.formats.length)],
+                  ].map(([k, v]) => (
+                    <span key={k} className="flex items-baseline gap-1.5">
+                      <span className="text-zinc-600">{k}</span>
+                      <span className="font-semibold text-zinc-300">{v}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               {ytMeta && (
                 <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] border border-white/[.07] bg-white/[.025] px-3 py-2">
@@ -594,8 +644,14 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
                   <p className="truncate text-[11.5px] font-semibold text-zinc-300">{ytMeta.title}</p>
                 </div>
               )}
-              <Button disabled={uploading} onClick={handleImport} className="h-10 shrink-0 rounded-[11px] px-6 text-[13px] font-bold">
-                {uploading ? <><span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />Processing…</> : "Import & Clip"}
+              <Button
+                disabled={uploading || formatsLoading || !formatsData}
+                title={!formatsData ? "Video formats unavailable — cannot import" : undefined}
+                onClick={handleImport}
+                className="h-10 shrink-0 rounded-[11px] px-6 text-[13px] font-bold disabled:opacity-50"
+              >
+                {uploading ? <><span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />Processing…</>
+                  : formatsLoading ? "Checking…" : "Import & Clip"}
               </Button>
             </div>
             {error && <p className="mt-2 text-[11.5px] font-medium text-red-400">{error}</p>}
