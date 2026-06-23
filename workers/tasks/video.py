@@ -3543,11 +3543,11 @@ def _list_youtube_formats(url: str, timeout: int = 30, max_proxy_tries: int = 5)
     # the direct (no-proxy) attempt is NOT fatal: the proxy attempts may still succeed.
     saw_private = False
 
-    def _probe(proxy: str | None) -> dict | None:
+    def _probe(proxy: str | None, client: str) -> dict | None:
         nonlocal saw_private
         base = _ytdlp_base_flags(proxy, use_cookies=True)
-        cmd = (["yt-dlp"] + base + _pot_args("tv")
-               + ["--extractor-args", "youtube:player_client=tv",
+        cmd = (["yt-dlp"] + base + _pot_args(client)
+               + ["--extractor-args", f"youtube:player_client={client}",
                   "-J", "--no-download", "--no-playlist", url])
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -3560,17 +3560,27 @@ def _list_youtube_formats(url: str, timeout: int = 30, max_proxy_tries: int = 5)
         if r.returncode != 0 or not r.stdout.strip():
             return None
         try:
-            return json.loads(r.stdout.splitlines()[0])
+            info = json.loads(r.stdout.splitlines()[0])
         except (json.JSONDecodeError, IndexError):
             return None
+        # Require at least one real video format — a metadata-only / images-only
+        # extraction (n-challenge failed, no PO token) has no usable formats.
+        if not any(f.get("height") and f.get("vcodec") not in (None, "none")
+                   for f in (info.get("formats") or [])):
+            return None
+        return info
 
-    # Direct first (fast); fall through to proxies sequentially on empty/blocked.
-    info = _probe(None)
-    if not info or not info.get("formats"):
-        for proxy in _ytdlp_proxies()[:max_proxy_tries]:
-            info = _probe(proxy)
-            if info and info.get("formats"):
+    # Mirror the download's client-major fallback so the probe is no stricter than a
+    # real download: tv (HD) first, across direct + proxies, then web/android_vr/ios.
+    info = None
+    proxy_candidates = [None] + _ytdlp_proxies()[:max_proxy_tries]
+    for client in ("tv", "web", "android_vr", "ios"):
+        for proxy in proxy_candidates:
+            info = _probe(proxy, client)
+            if info:
                 break
+        if info:
+            break
     if not info or not info.get("formats"):
         if saw_private:
             raise RuntimeError("Video is private, members-only, or unavailable")
