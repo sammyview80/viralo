@@ -693,7 +693,6 @@ def _render_ranking_segment(
                 a_layout = a_stream.layout.name if a_stream.layout else "stereo"
                 out_a = dst.add_stream("aac", rate=a_rate, layout=a_layout)
 
-            frame_idx = 0
             for packet in src.demux(*([v_stream] + ([a_stream] if a_stream else []))):
                 if packet.stream is v_stream:
                     for frame in packet.decode():
@@ -701,17 +700,21 @@ def _render_ranking_segment(
                         img = _draw_ranking_overlay(img, rank_number, title_text, theme_name, target_w, target_h, total=total, all_labels=all_labels, revealed_ranks=revealed_ranks, template_config=template_config)
                         img = img.convert("RGB")
                         new_frame = av.VideoFrame.from_image(img)
-                        new_frame.pts = frame_idx
-                        new_frame.time_base = Fraction(1, fps)
-                        frame_idx += 1
+                        # Preserve each frame's real presentation timestamp instead of
+                        # re-gridding onto a synthetic frame_idx/fps clock. The synthetic
+                        # clock drifts from the (continuous) audio whenever the intermediate
+                        # isn't perfectly CFR — progressively desyncing A/V. Carrying the
+                        # source pts/time_base keeps the two streams locked.
+                        new_frame.pts = frame.pts
+                        new_frame.time_base = frame.time_base
                         for pkt in out_v.encode(new_frame):
                             dst.mux(pkt)
                         del img, new_frame
                 elif out_a is not None and packet.stream is a_stream:
-                    if packet.dts is None:
-                        continue
+                    # Decode every audio packet and keep its decoded pts. Dropping packets
+                    # (or nulling pts to let the encoder re-pack sequentially) shortens the
+                    # audio track relative to video and desyncs it.
                     for aframe in packet.decode():
-                        aframe.pts = None
                         for apkt in out_a.encode(aframe):
                             dst.mux(apkt)
 
@@ -1293,7 +1296,7 @@ def _render_clip(
     caption_timeline = _build_caption_timeline(captions, style) if use_captions else {}
 
     fps = meta.fps
-    frame_idx = 0
+    last_vpts = -1
     audio_sample_idx = 0
 
     with av.open(output_path, "w", format="mp4") as dst:
@@ -1373,9 +1376,17 @@ def _render_clip(
                                 format="yuv420p",
                             )
 
-                        new_frame.pts = frame_idx
+                        # Place the frame at its REAL elapsed time from the same origin
+                        # the audio is anchored to (first_video_t) — NOT a uniform frame
+                        # counter. A uniform counter assumes the source is perfectly CFR at
+                        # meta.fps; when it isn't (VFR, 29.97 vs 30, or a dropped frame) the
+                        # video drifts away from the time-anchored audio and lip-sync breaks.
+                        vpts = int(round((t_frame - first_video_t) * fps))
+                        if vpts <= last_vpts:
+                            vpts = last_vpts + 1  # keep strictly monotonic for the encoder
+                        last_vpts = vpts
+                        new_frame.pts = vpts
                         new_frame.time_base = Fraction(1, int(fps))
-                        frame_idx += 1
                         for pkt in out_v.encode(new_frame):
                             dst.mux(pkt)
                         del new_frame  # release frame buffer before next decode
