@@ -3570,12 +3570,25 @@ def _list_youtube_formats(url: str, timeout: int = 30, max_proxy_tries: int = 5)
             return None
         return info
 
-    # Mirror the download's client-major fallback so the probe is no stricter than a
-    # real download: tv (HD) first, across direct + proxies, then web/android_vr/ios.
+    # Mirror the download's client-major fallback. CRUCIAL: the `tv` client is the only
+    # one that returns the full HD/4K ladder through datacenter proxies — `web` is
+    # capped at a single 360p stream on those IPs. So give `tv` an EXHAUSTIVE proxy
+    # search (direct + many proxies); only after tv fails everywhere do we accept a
+    # lower client. Otherwise tv failing on the first few proxies would settle for
+    # web@360p even though a later proxy would have yielded 1080p+ — matching what the
+    # real download (which walks every proxy for tv) actually fetches.
+    all_proxies = _ytdlp_proxies()
+    tv_tries = min(len(all_proxies), max(max_proxy_tries, 12))
+    low_tries = min(len(all_proxies), 3)
+    tiers = [
+        ("tv", [None] + all_proxies[:tv_tries]),
+        ("web", [None] + all_proxies[:low_tries]),
+        ("android_vr", [None] + all_proxies[:low_tries]),
+        ("ios", [None] + all_proxies[:low_tries]),
+    ]
     info = None
-    proxy_candidates = [None] + _ytdlp_proxies()[:max_proxy_tries]
-    for client in ("tv", "web", "android_vr", "ios"):
-        for proxy in proxy_candidates:
+    for client, candidates in tiers:
+        for proxy in candidates:
             info = _probe(proxy, client)
             if info:
                 break
