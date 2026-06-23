@@ -384,10 +384,11 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
             finally:
                 if got_lock:
                     source_cache.release_lock(yt_id)
-        # The `tv` client carries the full HD/4K adaptive ladder; any other winning
-        # client (web/ios/android_vr/pytubefix/…) means the high-quality source was
-        # unavailable and a lower-quality stream was used — tell the user.
-        if won_client and won_client != "tv":
+        # tv / mweb / web_safari / android_vr all carry the full HD/4K adaptive ladder.
+        # Only web / ios / pytubefix are 360p-capped fallbacks that win when every HD
+        # client failed — warn the user only in that case.
+        _HD_CLIENTS = {"tv", "mweb", "web_safari", "android_vr"}
+        if won_client and won_client not in _HD_CLIENTS:
             warn = ("High-quality (TV) source was unavailable for this video — "
                     f"downloaded a standard-quality stream via the {won_client} client.")
             logging.warning(warn)

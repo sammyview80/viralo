@@ -33,6 +33,15 @@ _DISABLED = os.getenv("SOURCE_CACHE_DISABLE") == "1" or CACHE_TTL_SEC <= 0
 _PREFIX = "yt:srccache"
 _INDEX = f"{_PREFIX}:index"
 
+# Clients that only win when every HD-capable client (tv/mweb/web_safari/android_vr)
+# failed on the proxy pool — their stream is a 360p artifact of a bad-IP run, NOT the
+# video's true max quality. Caching that would pin the video at 360p for the whole TTL,
+# so we refuse to cache it and let the next job retry for HD. Override via
+# SOURCE_CACHE_LOWQ_CLIENTS (comma list) — set empty to cache everything.
+_LOWQ_CLIENTS = {
+    c.strip() for c in os.getenv("SOURCE_CACHE_LOWQ_CLIENTS", "web,ios").split(",") if c.strip()
+}
+
 # youtube.com/watch?v=, youtu.be/, /shorts/, /embed/ — all carry the 11-char id.
 _YT_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})"
@@ -115,6 +124,13 @@ def store(yt_id: str | None, src_path: str, won_client: str | None = None,
     try:
         p = Path(src_path)
         if not p.exists() or p.stat().st_size < 1024:
+            return
+        # Refuse to cache a forced low-quality fallback (web/ios) — caching its 360p
+        # stream would pin the video at standard quality for the whole TTL. Let the
+        # next job retry the HD clients (tv/mweb/web_safari) instead.
+        if won_client in _LOWQ_CLIENTS:
+            logging.info("source_cache: NOT caching %s — low-quality fallback client=%s "
+                         "(retry for HD next run)", yt_id, won_client)
             return
         key = _storage_key(yt_id)
         if os.getenv("STORAGE_PROVIDER", "local") == "local":
