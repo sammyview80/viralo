@@ -58,6 +58,9 @@ __all__ = [
     'CaptionSegment',
     'ClipResult',
     'VideoMeta',
+    'SpeakerSegment',
+    'TopicBlock',
+    'SceneFrame',
     '_is_unlimited',
     '_get_session',
     '_publish_progress',
@@ -197,6 +200,9 @@ class ClipResult:
     audio_energy: float | None = None
     speech_rate: float | None = None
     chapter_match: bool = False
+    hook_score: float = 0.0
+    speaker_id: str | None = None
+    topic_id: int | None = None
 
 
 @dataclass
@@ -209,6 +215,29 @@ class VideoMeta:
     has_audio: bool
     audio_sample_rate: int = 44100
     audio_channels: int = 2
+
+
+@dataclass
+class SpeakerSegment:
+    start: float
+    end: float
+    speaker_id: str  # e.g. "SPEAKER_00"
+
+
+@dataclass
+class TopicBlock:
+    start_word_idx: int
+    end_word_idx: int
+    topic: str
+    keywords: list = field(default_factory=list)
+    start_sec: float = 0.0
+    end_sec: float = 0.0
+
+
+@dataclass
+class SceneFrame:
+    time_sec: float
+    path: str
 
 
 # ── DB / Redis helpers ────────────────────────────────────────────────────────
