@@ -229,7 +229,7 @@ class TopicBlock:
     start_word_idx: int
     end_word_idx: int
     topic: str
-    keywords: list = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
     start_sec: float = 0.0
     end_sec: float = 0.0
 

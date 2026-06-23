@@ -54,7 +54,7 @@ def upgrade():
         sa.Column('id', UUID(as_uuid=True), primary_key=True, server_default=sa.text('gen_random_uuid()')),
         sa.Column('tenant_id', UUID(as_uuid=True), nullable=False, index=True),
         sa.Column('clip_id', UUID(as_uuid=True), sa.ForeignKey('clips.id', ondelete='CASCADE'), nullable=False, index=True),
-        sa.Column('video_id', UUID(as_uuid=True), nullable=False),
+        sa.Column('video_id', UUID(as_uuid=True), sa.ForeignKey('videos.id', ondelete='CASCADE'), nullable=False, index=True),
         sa.Column('action', sa.String(20), nullable=False),  # 'approve'|'reject'|'edit_boundary'|'export'
         sa.Column('original_start', sa.Numeric(8, 2), nullable=True),
         sa.Column('original_end', sa.Numeric(8, 2), nullable=True),
