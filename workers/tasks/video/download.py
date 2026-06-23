@@ -365,6 +365,29 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         except Exception as e:
             return False, str(e)
 
+    # Phase 0: high-quality DIRECT attempt (no proxy) FIRST. Our own egress IP is
+    # usually unflagged, so the `tv` client (full HD/4K ladder, +PO +cookies) succeeds
+    # fast and clean here. Only when direct is bot-walled/429'd do we fall to proxies.
+    # Without this, Phase 1 races `web`@360p across every proxy and a proxied 360p win
+    # returns BEFORE the direct `tv` 4K path is ever tried — capping every download at
+    # 360p whenever `tv` has a transient miss on the proxy pool.
+    direct_hq = _client_args(None)[:2]  # [tv +PO +cookies, android_vr] — HD-capable only
+    for attempt, cmd in enumerate(direct_hq):
+        label = _client_of(cmd)
+        logging.info("Phase 0: direct high-quality client=%s", label)
+        ok, stderr = _run_strategy(cmd, label, attempt)
+        if ok:
+            winner["client"] = label
+            logging.info("Phase 0 won: direct client=%s", label)
+            return winner["client"]
+        errors.append(f"phase0 {label}: {stderr[:200]}")
+        if _is_bad_cookies(stderr):
+            logging.error("YouTube cookies INVALID/EXPIRED — refresh yt-cookies.txt")
+            break
+        if _is_429(stderr) or _is_bot_blocked(stderr):
+            logging.warning("Direct high-quality %s hit bot/429 — falling to proxies", label)
+            break
+
     # Phase 1: try env proxies SEQUENTIALLY — one proxy at a time, fall through to the
     # next only after the current one fails all its clients. Racing all proxies in
     # parallel hammered the same video from N IPs at once, which itself trips bot

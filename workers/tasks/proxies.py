@@ -1,6 +1,6 @@
 """Proxy provider abstraction for yt-dlp downloads.
 
-Two providers, selected by PROXY_PROVIDER:
+Three providers, selected by PROXY_PROVIDER:
 
   - static       (default): parse a fixed comma-list from YTDLP_PROXY_LIST. Datacenter
                   IPs — cheap, but YouTube 360p-caps and bot-blocks them fast.
@@ -8,6 +8,11 @@ Two providers, selected by PROXY_PROVIDER:
                   vendors (Bright Data / Oxylabs / IPRoyal) rotate the egress IP
                   server-side per distinct session, so each list entry resolves to a
                   fresh IP. Geo is pinned via the session username template.
+  - webshare:     a single Webshare "Rotating Proxy Endpoint" (p.webshare.io:80) that
+                  assigns a random IP from the pool on EVERY connection — no session
+                  token needed. We return N copies of the one gateway URL so the
+                  parallel-batch / client-major loops open N independent connections,
+                  each landing on a different egress IP.
 
 Both return list[str] — the exact shape the download loops already consume — so the
 client-major / parallel-batch logic in video.py is untouched.
@@ -27,6 +32,8 @@ def get_proxies() -> list[str]:
     provider = os.getenv("PROXY_PROVIDER", "static").lower()
     if provider == "residential":
         return _residential_proxies()
+    if provider in ("webshare", "rotating"):
+        return _webshare_rotating_proxies()
     return _static_proxies()
 
 
@@ -95,4 +102,47 @@ def _residential_proxies() -> list[str]:
         proxies.append(f"{scheme}://{quote(username, safe='')}:{quote(pw, safe='')}@{gateway}")
     logging.info("Proxy pool: %d residential sessions via gateway %s (country=%s)",
                  pool, gateway, country or "any")
+    return proxies
+
+
+def _webshare_rotating_proxies() -> list[str]:
+    """Build N copies of a single Webshare rotating-endpoint URL.
+
+    Webshare's rotating endpoint assigns a random IP per connection, so we don't
+    vary the URL at all — N identical entries give the download loops N independent
+    connections, each rotating to a fresh egress IP server-side.
+
+    Env:
+      WEBSHARE_PROXY_HOST       gateway host          (default p.webshare.io)
+      WEBSHARE_PROXY_PORT       gateway port          (default 80)
+      WEBSHARE_PROXY_USER       proxy username        (required; '-rotate' appended if absent)
+      WEBSHARE_PROXY_PASS       proxy password        (required)
+      WEBSHARE_PROXY_SCHEME     http | https | socks5 (default http)
+      WEBSHARE_PROXY_POOL_SIZE  number of entries     (default 12)
+    Falls back to static if credentials are missing.
+    """
+    user = os.getenv("WEBSHARE_PROXY_USER", "").strip()
+    pw = os.getenv("WEBSHARE_PROXY_PASS", "").strip()
+    if not (user and pw):
+        logging.warning(
+            "PROXY_PROVIDER=webshare but WEBSHARE_PROXY_USER/PASS incomplete "
+            "— falling back to static proxies")
+        return _static_proxies()
+
+    host = os.getenv("WEBSHARE_PROXY_HOST", "p.webshare.io").strip()
+    port = os.getenv("WEBSHARE_PROXY_PORT", "80").strip()
+    scheme = os.getenv("WEBSHARE_PROXY_SCHEME", "http").strip()
+    # The rotating endpoint requires the '-rotate' username suffix; add it if the
+    # user supplied the bare account name.
+    if not user.endswith("-rotate"):
+        user = f"{user}-rotate"
+    try:
+        pool = max(1, int(os.getenv("WEBSHARE_PROXY_POOL_SIZE", "12")))
+    except ValueError:
+        pool = 12
+
+    url = f"{scheme}://{quote(user, safe='')}:{quote(pw, safe='')}@{host}:{port}"
+    proxies = [url] * pool
+    logging.info("Proxy pool: %d connections via Webshare rotating endpoint %s:%s",
+                 pool, host, port)
     return proxies
