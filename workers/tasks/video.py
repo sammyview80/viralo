@@ -3521,17 +3521,25 @@ def _ytdlp_proxies() -> list[str]:
     env_raw = os.getenv("YTDLP_PROXY_LIST", "")
     proxies = []
     for part in env_raw.split(","):
-        # Strip whitespace and any trailing env var pollution (e.g. "ip:portKEY=value")
-        p = part.strip().split()[0] if part.strip() else ""
-        # Validate: must match scheme://[user:pass@]host:port or host:port
-        if not p:
+        # Strip embedded CR/whitespace first: a CRLF .env glues "\r" *inside* an entry
+        # (http://user:pass\r@host:port), which \s in the regex below treats as a break
+        # and silently drops every proxy. Remove all internal whitespace defensively.
+        part = "".join(part.split())
+        raw = part if part else ""
+        if not raw:
             continue
-        if not p.startswith(("socks", "http")):
-            p = f"socks5://{p}"
-        # Reject if no valid host:port at end
-        if not _re.search(r':\d{2,5}$', p.split("@")[-1] if "@" in p else p):
-            logging.warning("Skipping malformed proxy entry: %r", p[:80])
+        if not raw.startswith(("socks", "http")):
+            raw = f"socks5://{raw}"
+        # Salvage a valid proxy even when trailing env-var pollution is glued on with
+        # no delimiter, e.g. ".../199.187.189.69:6860TIKTOK_TREND_MAX_RESULTS=50" — a
+        # missing newline in .env concatenates the next var. Extract scheme://[auth@]host:port.
+        m = _re.match(r'(socks[45]?|https?)://(?:[^@/\s]+@)?[\w.\-]+:\d{2,5}', raw)
+        if not m:
+            logging.warning("Skipping malformed proxy entry: %r", raw[:80])
             continue
+        p = m.group(0)
+        if p != raw:
+            logging.warning("Salvaged proxy %r from polluted entry %r (fix .env newline)", p, raw[:80])
         proxies.append(p)
     if proxies:
         logging.info("Proxy pool: %d proxies from YTDLP_PROXY_LIST", len(proxies))
@@ -3639,6 +3647,27 @@ def _pot_args(client: str) -> list[str]:
     return ["--extractor-args", f"youtubepot-bgutilhttp:base_url={base_url}"]
 
 
+def _resolve_downloaded(template_path: str) -> str | None:
+    """Return the file yt-dlp actually wrote for output template `template_path`.
+
+    With `--merge-output-format mp4`, yt-dlp rewrites the output extension, so a
+    template like "out.mp4.proxy0.tmp" yields "out.mp4.proxy0.tmp.mp4" on disk.
+    Checking the bare template path misses it and a successful download (rc=0)
+    looks like a failure. Resolve the real, non-empty file instead.
+    """
+    import glob as _glob
+    cands = [template_path, template_path + ".mp4",
+             template_path + ".mkv", template_path + ".webm"]
+    cands += sorted(_glob.glob(_glob.escape(template_path) + ".*"))
+    for c in cands:
+        try:
+            if os.path.exists(c) and os.path.getsize(c) > 0:
+                return c
+        except OSError:
+            pass
+    return None
+
+
 def _is_429(stderr: str) -> bool:
     return "429" in stderr or "Too Many Requests" in stderr
 
@@ -3690,8 +3719,9 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         bc = _ytdlp_base_flags(proxy, use_cookies=True)  # cookies on every strategy
         base = _ytdlp_base_flags(proxy)
         return [
-            # tv_embedded + PO + cookies: reliable full-format download, bypasses bot wall
-            ["yt-dlp"] + bc + _pot_args("tv_embedded") + ["--extractor-args", "youtube:player_client=tv_embedded",
+            # tv + PO + cookies: reliable full-format download (480-1440p), bypasses bot wall.
+            # `tv` replaces the now-unsupported `tv_embedded` (yt-dlp skips the latter).
+            ["yt-dlp"] + bc + _pot_args("tv") + ["--extractor-args", "youtube:player_client=tv",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
             # android_vr: PO-free, works on clean IPs
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android_vr",
@@ -3701,8 +3731,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             # android: different quota bucket
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=android",
                                   "-f", fmt, "--merge-output-format", "mp4", "-o", out_path, url],
-            # tv_embedded mp4-only format fallback
-            ["yt-dlp"] + bc + _pot_args("tv_embedded") + ["--extractor-args", "youtube:player_client=tv_embedded",
+            # tv mp4-only format fallback
+            ["yt-dlp"] + bc + _pot_args("tv") + ["--extractor-args", "youtube:player_client=tv",
                                   "-f", fmt_fallback, "--merge-output-format", "mp4", "-o", out_path, url],
             # ios: usually no formats now, but different quota bucket — try late
             ["yt-dlp"] + base + ["--extractor-args", "youtube:player_client=ios",
@@ -3761,11 +3791,16 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         except Exception as e:
             return False, str(e)
 
-    # Phase 1: race env proxies in parallel — android_vr client, first win takes it
+    # Phase 1: try env proxies SEQUENTIALLY — one proxy at a time, fall through to the
+    # next only after the current one fails all its clients. Racing all proxies in
+    # parallel hammered the same video from N IPs at once, which itself trips bot
+    # detection; sequential is gentler and stops as soon as one proxy wins.
+    # Set YTDLP_PROXY_PARALLEL=1 to restore the old parallel race.
     if proxies:
         import concurrent.futures, threading as _threading
-        race_proxies = proxies[:10]
-        logging.info("Phase 1: racing %d env proxies in parallel", len(race_proxies))
+        _parallel = os.getenv("YTDLP_PROXY_PARALLEL", "") == "1"
+        logging.info("Phase 1: trying %d env proxies (%s)", len(proxies),
+                     "parallel race" if _parallel else "sequential")
         proxy_errors: list[str] = []
         proxy_errors_lock = _threading.Lock()
         move_lock = _threading.Lock()
@@ -3776,11 +3811,13 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return False
             import threading as _t
 
-            # Client order by real 2026 success rate (tested): tv_embedded + PO + cookies
-            # and android_vr both download full streams; web is broken (YouTube forces
-            # SABR + needs a JS runtime for the n-challenge) and ios returns no formats,
-            # so both go last. Cookies + PO passed to all (android ignores them harmlessly).
-            _proxy_clients = ["tv_embedded", "android_vr", "ios", "web"]
+            # Client order by real 2026 success rate (re-tested through datacenter proxies):
+            # the `tv` client + PO token + cookies returns the FULL adaptive format set
+            # (480/720/1080/1440p) through proxy IPs, so it goes first. `tv_embedded` is now
+            # rejected by yt-dlp ("Skipping unsupported client"); `web` is degraded to a
+            # single 360p muxed format on datacenter IPs; `android_vr`/`ios` return no
+            # formats without a GVS PO token. Cookies + PO passed to all (harmless to ignorers).
+            _proxy_clients = ["tv", "web", "android_vr", "ios"]
             for client in _proxy_clients:
                 if moved.is_set():
                     return False
@@ -3809,11 +3846,12 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     # proxies mid-handshake. 60s gives them room; dead proxies still cut fast.
                     proc.wait(timeout=60)
                     t_stderr.join(timeout=3)
-                    if proc.returncode == 0 and Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
+                    produced = _resolve_downloaded(tmp_path) if proc.returncode == 0 else None
+                    if produced:
                         with move_lock:
                             if not moved.is_set():
                                 import shutil as _sh
-                                _sh.move(tmp_path, out_path)
+                                _sh.move(produced, out_path)
                                 moved.set()
                                 logging.info("Proxy race won by %s client=%s", proxy, client)
                                 return True
@@ -3854,11 +3892,12 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                  "--merge-output-format", "mp4", "-o", tmp_path2, url])
                         try:
                             r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
-                            if r2.returncode == 0 and Path(tmp_path2).exists() and Path(tmp_path2).stat().st_size > 0:
+                            produced2 = _resolve_downloaded(tmp_path2) if r2.returncode == 0 else None
+                            if produced2:
                                 with move_lock:
                                     if not moved.is_set():
                                         import shutil as _sh
-                                        _sh.move(tmp_path2, out_path)
+                                        _sh.move(produced2, out_path)
                                         moved.set()
                                         logging.info("Proxy race won by %s client=%s fmt=permissive", proxy, client)
                                         return True
@@ -3867,37 +3906,50 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         except Exception:
                             pass
                         finally:
-                            try:
-                                Path(tmp_path2).unlink(missing_ok=True)
-                            except Exception:
-                                pass
+                            import glob as _glob
+                            for _f in [tmp_path2] + _glob.glob(_glob.escape(tmp_path2) + ".*"):
+                                try:
+                                    Path(_f).unlink(missing_ok=True)
+                                except Exception:
+                                    pass
                 except Exception as e:
                     logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, proxy, client, e)
                     with proxy_errors_lock:
                         proxy_errors.append(f"proxy[{idx}] [{client}]: {e}")
                 finally:
-                    try:
-                        Path(tmp_path).unlink(missing_ok=True)
-                    except Exception:
-                        pass
+                    # Remove the template path AND any extension-rewritten file
+                    # (tmp_path + ".mp4" etc.) plus stray intermediates.
+                    import glob as _glob
+                    for _f in [tmp_path] + _glob.glob(_glob.escape(tmp_path) + ".*"):
+                        try:
+                            Path(_f).unlink(missing_ok=True)
+                        except Exception:
+                            pass
             return False
 
-        # Race in batches of 10 — next batch fires immediately after all in current batch fail
-        BATCH = 10
-        for batch_start in range(0, len(proxies), BATCH):
-            batch = proxies[batch_start:batch_start + BATCH]
-            logging.info("Proxy batch %d-%d: racing %d proxies",
-                         batch_start, batch_start + len(batch) - 1, len(batch))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH) as ex:
-                futures = {ex.submit(_try_proxy, p, batch_start + i): p
-                           for i, p in enumerate(batch)}
-                for fut in concurrent.futures.as_completed(futures):
-                    if moved.is_set():
-                        return
-            if moved.is_set():
-                return
-            logging.info("Proxy batch %d-%d all failed, trying next batch",
-                         batch_start, batch_start + len(batch) - 1)
+        if _parallel:
+            # Opt-in legacy behaviour: race all proxies in parallel batches.
+            BATCH = 10
+            for batch_start in range(0, len(proxies), BATCH):
+                batch = proxies[batch_start:batch_start + BATCH]
+                logging.info("Proxy batch %d-%d: racing %d proxies",
+                             batch_start, batch_start + len(batch) - 1, len(batch))
+                with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH) as ex:
+                    futures = {ex.submit(_try_proxy, p, batch_start + i): p
+                               for i, p in enumerate(batch)}
+                    for fut in concurrent.futures.as_completed(futures):
+                        if moved.is_set():
+                            return
+                if moved.is_set():
+                    return
+        else:
+            # Default: one proxy at a time; advance only after the current fails.
+            for idx, proxy in enumerate(proxies):
+                if _try_proxy(proxy, idx):
+                    return
+                if moved.is_set():
+                    return
+                logging.info("Proxy[%d] failed all clients, trying next proxy", idx)
         errors.extend(proxy_errors)
 
     # Phase 2: direct strategies (android_vr no-cookies, then cookie-based clients)
