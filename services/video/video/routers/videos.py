@@ -41,6 +41,7 @@ from video.schemas import (
     VideoListResponse,
     VideoResponse,
     VideoUpdateRequest,
+    YouTubeFormatsResponse,
     YouTubeImportRequest,
     YouTubeInspectRequest,
     YouTubeInspectResponse,
@@ -300,6 +301,39 @@ async def inspect_youtube(
         upload_date=upload_date or None,
         description=(ytdlp_data.get("description") or "")[:500] or None,
     )
+
+
+@router.post("/youtube/formats", response_model=YouTubeFormatsResponse)
+async def youtube_formats(
+    body: YouTubeInspectRequest,
+    token: TokenPayload = Depends(get_current_user),
+):
+    """Return the quality options actually available for a YouTube URL.
+
+    Probes via yt-dlp (tv client + PO token + cookies + proxy fallback) so the
+    frontend only offers qualities a download can really fetch.
+    """
+    try:
+        url = _validate_youtube_url(body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    # Lazy import: the worker module is heavy (PyAV/celery); only load on demand.
+    from workers.tasks.video import _list_youtube_formats
+
+    try:
+        data = await asyncio.get_event_loop().run_in_executor(
+            None, functools.partial(_list_youtube_formats, url, 30)
+        )
+    except RuntimeError as exc:
+        # private / members-only / no formats — a client-actionable condition
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to probe video formats. Try again.",
+        )
+    return YouTubeFormatsResponse(url=url, **data)
 
 
 @router.post("/upload", response_model=VideoResponse, status_code=status.HTTP_202_ACCEPTED)

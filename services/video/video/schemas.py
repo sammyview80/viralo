@@ -28,7 +28,7 @@ class ClipConfig(BaseModel):
     )
 
     # Output quality
-    output_quality: Literal["source", "1080p", "720p", "480p"] = Field(
+    output_quality: Literal["source", "1080p", "720p", "480p", "360p"] = Field(
         default="1080p", description="Output resolution cap (source = no downscale)"
     )
 
@@ -199,6 +199,22 @@ class YouTubeInspectResponse(BaseModel):
     upload_date: str | None = None
     description: str | None = None
     error: str | None = None
+
+
+class YouTubeFormatInfo(BaseModel):
+    height: int
+    fps: float | None = None
+    ext: str | None = None
+    filesize: int | None = None
+
+
+class YouTubeFormatsResponse(BaseModel):
+    url: str
+    qualities: list[str]          # subset of ["source","1080p","720p","480p","360p"]
+    max_height: int
+    title: str | None = None
+    duration: float | None = None
+    formats: list[YouTubeFormatInfo] = Field(default_factory=list)
 
 
 class SearchVideoHit(BaseModel):

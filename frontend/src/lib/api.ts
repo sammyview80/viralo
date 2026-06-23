@@ -314,13 +314,31 @@ export interface ClipConfig {
   aspect_ratio?: string;
   duration_max?: number;
   duration_min?: number;
-  output_quality?: "source" | "1080p" | "720p" | "480p";
+  output_quality?: OutputQuality;
   precision_mode?: boolean;
   template_id?: string | null;
   music?: boolean;
   music_track?: string | null;
   voiceover?: boolean;
   occasion?: string | null;
+}
+
+export type OutputQuality = "source" | "1080p" | "720p" | "480p" | "360p";
+
+export interface YouTubeFormatInfo {
+  height: number;
+  fps?: number | null;
+  ext?: string | null;
+  filesize?: number | null;
+}
+
+export interface YouTubeFormatsResponse {
+  url: string;
+  qualities: OutputQuality[];
+  max_height: number;
+  title?: string | null;
+  duration?: number | null;
+  formats: YouTubeFormatInfo[];
 }
 
 export const videoApi = {
@@ -337,6 +355,8 @@ export const videoApi = {
       ...(title ? { title } : {}),
       ...(config ? { config } : {}),
     }),
+  youtubeFormats: (url: string) =>
+    videoReq<YouTubeFormatsResponse>("POST", "/youtube/formats", { url }),
   get:     (id: string) => videoReq<VideoResponse>("GET", `/videos/${id}`),
   list:    (page = 1, per_page = 20) =>
     videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos?page=${page}&per_page=${per_page}`)

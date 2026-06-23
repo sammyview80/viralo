@@ -150,12 +150,16 @@ services:
       dockerfile: services/video/Dockerfile
     ports:
       - "8003:8003"
-    mem_limit: 512m
-    memswap_limit: 512m
+    # 2g: the /youtube/formats probe runs yt-dlp + a Deno n-challenge solver
+    # in-process; Deno's V8 was OOM-killed (SIGKILL -9) under the old 512m cap.
+    mem_limit: 2g
+    memswap_limit: 2g
     environment:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      # /youtube/formats probes yt-dlp in-process; needs the PO-token server like the workers.
+      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage

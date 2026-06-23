@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { navigate } from "@/lib/router";
-import { videoApi, type ClipConfig, type VideoResponse } from "@/lib/api";
+import { videoApi, type ClipConfig, type VideoResponse, type OutputQuality } from "@/lib/api";
 import { ClipConfigPanel, DEFAULT_CONFIG, PLATFORM_OPTIONS, ASPECT_OPTIONS, LANG_OPTIONS, CAPTION_STYLES } from "./UploadPage";
 
 type StudioTab = "ai" | "upload";
@@ -112,6 +112,10 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
   const [clipConfig, setClipConfig] = useState<ClipConfig>(DEFAULT_CONFIG);
   const [uploading, setUploading] = useState(false);
   const [error, setError]         = useState("");
+  // Qualities the backend confirms are downloadable for this URL. null = not yet
+  // probed / probe failed → fall back to the full static ladder.
+  const [availQualities, setAvailQualities] = useState<OutputQuality[] | null>(null);
+  const [formatsLoading, setFormatsLoading] = useState(false);
 
   // validate + fetch metadata
   useEffect(() => {
@@ -119,8 +123,27 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
     const t = setTimeout(async () => {
       const valid = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?.*v=|shorts\/|embed\/)|youtu\.be\/)[\w-]{11}/.test(urlVal.trim());
       setUrlReady(valid);
-      if (!valid) { setError("Enter a valid YouTube URL"); setYtMeta(null); return; }
+      if (!valid) {
+        setError("Enter a valid YouTube URL");
+        setYtMeta(null); setAvailQualities(null);
+        return;
+      }
       setError("");
+
+      // Probe real available qualities from the backend (authoritative). Clamp the
+      // current selection if it isn't offered. Failure falls back to the static list.
+      setFormatsLoading(true);
+      setAvailQualities(null);
+      videoApi.youtubeFormats(urlVal.trim())
+        .then((f) => {
+          setAvailQualities(f.qualities);
+          setClipConfig((c) =>
+            f.qualities.includes((c.output_quality ?? "source") as OutputQuality)
+              ? c : { ...c, output_quality: f.qualities[0] });
+        })
+        .catch(() => setAvailQualities(null))
+        .finally(() => setFormatsLoading(false));
+
       setYtMetaLoading(true);
       try {
         const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(urlVal.trim())}&format=json`);
@@ -515,20 +538,35 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
                 })}
               </div>
 
-              {/* Quality */}
-              <div className="mb-auto">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Output quality</p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {(["source","1080p","720p","480p"] as const).map((q) => (
-                    <button key={q} type="button"
-                      onClick={() => setClipConfig({ ...clipConfig, output_quality: q })}
-                      className={cn(
-                        "cursor-pointer rounded-[8px] border py-1.5 text-center text-[11px] font-bold transition",
-                        clipConfig.output_quality === q ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.06] text-zinc-500 hover:border-white/[.12]"
-                      )}>{q === "source" ? "Full" : q}</button>
-                  ))}
-                </div>
-              </div>
+              {/* Quality — dynamic: only qualities the backend confirms downloadable */}
+              {(() => {
+                const qualities = availQualities ?? (["source", "1080p", "720p", "480p"] as OutputQuality[]);
+                return (
+                  <div className="mb-auto">
+                    <div className="mb-2 flex items-center gap-2">
+                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Output quality</p>
+                      {formatsLoading && <span className="text-[9px] text-zinc-600">checking…</span>}
+                    </div>
+                    <div
+                      className="grid gap-1.5"
+                      style={{ gridTemplateColumns: `repeat(${Math.max(qualities.length, 1)}, minmax(0,1fr))` }}
+                    >
+                      {qualities.map((q) => (
+                        <button key={q} type="button"
+                          disabled={formatsLoading}
+                          onClick={() => setClipConfig({ ...clipConfig, output_quality: q })}
+                          className={cn(
+                            "cursor-pointer rounded-[8px] border py-1.5 text-center text-[11px] font-bold transition disabled:cursor-default disabled:opacity-50",
+                            clipConfig.output_quality === q ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.06] text-zinc-500 hover:border-white/[.12]"
+                          )}>{q === "source" ? "Full" : q}</button>
+                      ))}
+                    </div>
+                    {availQualities && (
+                      <p className="mt-1.5 text-[9px] text-zinc-600">Detected from this video</p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Right: live template preview */}

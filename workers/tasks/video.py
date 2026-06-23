@@ -92,6 +92,7 @@ QUALITY_CAP = {
     "1080p": 1080,
     "720p":  720,
     "480p":  480,
+    "360p":  360,
 }
 
 CAPTION_STYLE_CFG = {
@@ -3515,6 +3516,92 @@ def _get_youtube_duration(url: str) -> float | None:
     return _get_youtube_info(url).get("duration")
 
 
+# Canonical quality ladder shown in the UI. "source" (best available) is always
+# offered when the video has any downloadable format.
+_QUALITY_LADDER = [("1080p", 1080), ("720p", 720), ("480p", 480), ("360p", 360)]
+
+
+def _list_youtube_formats(url: str, timeout: int = 30, max_proxy_tries: int = 5) -> dict:
+    """Probe the qualities actually available for a YouTube URL (no download).
+
+    Returns {"qualities": ["source", "1080p", ...], "max_height": int,
+             "title": str|None, "duration": float|None,
+             "formats": [{"height", "fps", "ext", "filesize"}]}.
+    Raises RuntimeError when the video is private/unavailable or yields no formats.
+
+    Reuses the same `tv` client + bgutil PO token + cookies + proxy fallback proven
+    for downloads, so the qualities reported match what a download can actually fetch.
+    """
+    from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+    p = urlparse(url)
+    qs = {k: v[0] for k, v in parse_qs(p.query).items()
+          if k not in ("list", "index", "start_radio")}
+    url = urlunparse(p._replace(query=urlencode(qs)))
+
+    # Track whether any attempt explicitly reported a private/members-only video —
+    # only that is a hard, client-actionable failure. A bot-block / "unavailable" on
+    # the direct (no-proxy) attempt is NOT fatal: the proxy attempts may still succeed.
+    saw_private = False
+
+    def _probe(proxy: str | None) -> dict | None:
+        nonlocal saw_private
+        base = _ytdlp_base_flags(proxy, use_cookies=True)
+        cmd = (["yt-dlp"] + base + _pot_args("tv")
+               + ["--extractor-args", "youtube:player_client=tv",
+                  "-J", "--no-download", "--no-playlist", url])
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return None
+        stderr = (r.stderr or "").lower()
+        if "private video" in stderr or "members-only" in stderr or "members only" in stderr:
+            saw_private = True
+            return None
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+        try:
+            return json.loads(r.stdout.splitlines()[0])
+        except (json.JSONDecodeError, IndexError):
+            return None
+
+    # Direct first (fast); fall through to proxies sequentially on empty/blocked.
+    info = _probe(None)
+    if not info or not info.get("formats"):
+        for proxy in _ytdlp_proxies()[:max_proxy_tries]:
+            info = _probe(proxy)
+            if info and info.get("formats"):
+                break
+    if not info or not info.get("formats"):
+        if saw_private:
+            raise RuntimeError("Video is private, members-only, or unavailable")
+        raise RuntimeError("No downloadable formats found for this video")
+
+    # Best (largest) entry per video height.
+    by_h: dict[int, dict] = {}
+    for f in info["formats"]:
+        h = f.get("height")
+        if not h or f.get("vcodec") in (None, "none"):
+            continue
+        size = f.get("filesize") or f.get("filesize_approx")
+        cur = by_h.get(h)
+        if cur is None or (size and (cur.get("filesize") or 0) < size):
+            by_h[h] = {"height": int(h), "fps": f.get("fps"),
+                       "ext": f.get("ext"), "filesize": size}
+    if not by_h:
+        raise RuntimeError("No video formats found for this video")
+
+    max_h = max(by_h)
+    qualities = ["source"] + [label for label, h in _QUALITY_LADDER if max_h >= h]
+    formats = [by_h[h] for h in sorted(by_h, reverse=True)]
+    return {
+        "qualities": qualities,
+        "max_height": max_h,
+        "title": info.get("title"),
+        "duration": float(info.get("duration") or 0) or None,
+        "formats": formats,
+    }
+
+
 def _ytdlp_proxies() -> list[str]:
     """Read proxies from YTDLP_PROXY_LIST env var only. No fetching, no TCP tests."""
     import re as _re
@@ -3704,7 +3791,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         fmt = "bestvideo+bestaudio/best"
         fmt_fallback = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
     else:
-        cap = {"1080p": 1080, "720p": 720, "480p": 480}.get(quality, 1080)
+        cap = {"1080p": 1080, "720p": 720, "480p": 480, "360p": 360}.get(quality, 1080)
         fmt = f"bestvideo[height<={cap}]+bestaudio/best[height<={cap}]"
         fmt_fallback = f"bestvideo[height<={cap}][ext=mp4]+bestaudio[ext=m4a]/best[height<={cap}][ext=mp4]/best"
 
