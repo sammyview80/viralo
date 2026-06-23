@@ -4,6 +4,12 @@ x-service-defaults: &service-defaults
   networks:
     - viralo-internal
   restart: unless-stopped
+  # Warm-shutdown window: on `restart`/`stop`/deploy, Docker sends SIGTERM and waits
+  # this long before SIGKILL. Lets a Celery worker finish a short in-flight task
+  # (download/transcribe) cleanly instead of being killed mid-task at the 10s default.
+  # Longer renders that exceed this are SIGKILLed and safely requeued
+  # (task_reject_on_worker_lost) + caught by reconcile_stuck_videos.
+  stop_grace_period: 120s
   env_file:
     - .env
   logging:

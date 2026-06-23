@@ -318,6 +318,19 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
     _p = urlparse(url)
     _qs = {k: v[0] for k, v in parse_qs(_p.query).items() if k not in ("list", "index", "start_radio")}
     url = _urlunparse(_p._replace(query=urlencode(_qs)))
+    # Idempotency: a redelivered task (worker crash + acks_late requeue) must not
+    # re-process a video that already finished or was cancelled.
+    try:
+        with _get_session(tenant_id) as _s:
+            _row = _s.execute(
+                text("SELECT status FROM videos WHERE id = CAST(:vid AS uuid)"),
+                {"vid": video_id}).fetchone()
+        if _row and _row[0] in ("ready", "completed", "cancelled"):
+            logging.info("process_youtube_video: video %s already %s — skipping redelivery",
+                         video_id, _row[0])
+            return
+    except Exception as _e:
+        logging.warning("idempotency check failed for %s: %s", video_id, _e)
     try:
         _update_video(tenant_id, video_id, status="processing",
                       celery_task_id=job_id, pipeline_step="download", pipeline_pct=5)
@@ -1125,6 +1138,74 @@ def prune_source_cache(self) -> dict:
     """Evict source-cache entries older than the TTL from storage + Redis index."""
     from workers.tasks import source_cache
     return {"pruned": source_cache.prune()}
+
+
+@celery_app.task(
+    bind=True,
+    name="workers.tasks.video.reconcile_stuck_videos",
+    queue="viralo.video.pipeline",
+    acks_late=True,
+    soft_time_limit=120,
+    time_limit=150,
+)
+def reconcile_stuck_videos(self) -> dict:
+    """Backstop for jobs orphaned by a worker crash / restart / OOM.
+
+    task_reject_on_worker_lost requeues a killed task immediately, so this only
+    catches the rare cases that slipped through (broker lost the message, the
+    startup-race wedge, etc.). It re-enqueues faithfully from the row's own
+    source_url + clip_config, bounded by a retry counter so it can't loop forever.
+
+    Thresholds avoid false positives:
+      - 'processing': only >65 min stale — PAST the 60-min hard time limit, so a
+        still-running long job is never mistaken for dead.
+      - 'queued'/'pending': >15 min — a task that never started executing.
+    Runs tenantless (worker DB role owns the tables → RLS bypassed; if not, the
+    query simply returns no rows and this is a safe no-op).
+    """
+    requeued = failed = 0
+    try:
+        with Session(engine) as s:
+            rows = s.execute(text("""
+                SELECT id, tenant_id, source_url, clip_config, status,
+                       COALESCE((metadata->>'reconcile_retries')::int, 0) AS retries
+                FROM videos
+                WHERE (status = 'processing' AND updated_at < NOW() - INTERVAL '65 minutes')
+                   OR (status IN ('queued','pending') AND updated_at < NOW() - INTERVAL '15 minutes')
+            """)).fetchall()
+            for vid, tid, src_url, cfg, status_, retries in rows:
+                if src_url and retries < 2:
+                    s.execute(text("""
+                        UPDATE videos
+                        SET metadata = COALESCE(metadata,'{}'::jsonb)
+                                       || jsonb_build_object('reconcile_retries', :r),
+                            status='queued', pipeline_step='download', pipeline_pct=0,
+                            error_message=NULL, updated_at=NOW()
+                        WHERE id = :vid
+                    """), {"r": retries + 1, "vid": vid})
+                    s.commit()
+                    celery_app.send_task(
+                        "workers.tasks.video.process_youtube_video",
+                        args=[str(tid), str(vid), src_url, cfg or {}])
+                    requeued += 1
+                    logging.warning("reconcile_stuck_videos: requeued video %s (was %s, retry %d)",
+                                    vid, status_, retries + 1)
+                else:
+                    s.execute(text("""
+                        UPDATE videos SET status='failed', pipeline_step='failed',
+                            error_message='Processing was interrupted and could not be auto-recovered. Please retry.',
+                            updated_at=NOW()
+                        WHERE id = :vid
+                    """), {"vid": vid})
+                    s.commit()
+                    failed += 1
+                    logging.error("reconcile_stuck_videos: gave up on video %s (was %s, retries=%d)",
+                                  vid, status_, retries)
+    except Exception as e:
+        logging.warning("reconcile_stuck_videos failed: %s", e)
+    if requeued or failed:
+        logging.info("reconcile_stuck_videos: requeued=%d failed=%d", requeued, failed)
+    return {"requeued": requeued, "failed": failed}
 
 
 @celery_app.task(

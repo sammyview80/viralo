@@ -40,6 +40,14 @@ celery_app.conf.update(
     task_time_limit=3600,        # 60 min: hard SIGKILL if soft ignored
     worker_prefetch_multiplier=1,  # each worker takes 1 task at a time — prevents one worker hoarding queue
     task_acks_late=True,           # ack only after task completes — safe redelivery on worker crash
+    # Restart-mid-task safety (p99): when a worker is SIGKILLed while running a task
+    # (deploy/OOM/crash), requeue it instead of dropping it. Pairs with acks_late.
+    task_reject_on_worker_lost=True,
+    # Mark tasks STARTED so a reconciler / the UI can tell running from merely-queued.
+    task_track_started=True,
+    # On broker connection loss, cancel in-flight long tasks so they aren't also
+    # redelivered-and-run elsewhere → prevents double processing of the same video.
+    worker_cancel_long_running_tasks_on_connection_loss=True,
     broker_heartbeat=120,          # send heartbeat every 120s so RabbitMQ knows worker is alive during long ffmpeg encodes
     broker_heartbeat_checkrate=2,  # check heartbeat twice per interval
     task_routes={
@@ -77,5 +85,11 @@ celery_app.conf.beat_schedule = {
         # Evict cached YouTube sources past their TTL so storage doesn't grow unbounded.
         "task": "workers.tasks.video.prune_source_cache",
         "schedule": crontab(hour=4, minute=0),  # daily at 04:00 UTC
+    },
+    "reconcile-stuck-videos": {
+        # Backstop: re-enqueue / fail videos orphaned by a worker crash or restart
+        # so none stay wedged in 'processing'/'queued' forever.
+        "task": "workers.tasks.video.reconcile_stuck_videos",
+        "schedule": crontab(minute="*/10"),  # every 10 min
     },
 }
