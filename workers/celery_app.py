@@ -73,4 +73,9 @@ celery_app.conf.beat_schedule = {
         "task": "workers.tasks.video.refresh_youtube_cookies",
         "schedule": crontab(minute="*/25"),  # every 25 min — under YouTube's rotation cadence
     },
+    "prune-source-cache": {
+        # Evict cached YouTube sources past their TTL so storage doesn't grow unbounded.
+        "task": "workers.tasks.video.prune_source_cache",
+        "schedule": crontab(hour=4, minute=0),  # daily at 04:00 UTC
+    },
 }
