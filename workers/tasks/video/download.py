@@ -386,7 +386,9 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     # Without this, Phase 1 races `web`@360p across every proxy and a proxied 360p win
     # returns BEFORE the direct `tv` 4K path is ever tried — capping every download at
     # 360p whenever `tv` has a transient miss on the proxy pool.
-    direct_hq = _client_args(None)[:3]  # [tv, mweb, web_safari] — HD-capable clients only
+    # On a known-flagged host (datacenter egress IP) direct attempts always bot-wall,
+    # so Phase 0 just burns ~3s before the proxy phase. Set YTDLP_SKIP_DIRECT=1 there.
+    direct_hq = [] if os.getenv("YTDLP_SKIP_DIRECT") == "1" else _client_args(None)[:3]
     for attempt, cmd in enumerate(direct_hq):
         label = _client_of(cmd)
         logging.info("Phase 0: direct high-quality client=%s", label)

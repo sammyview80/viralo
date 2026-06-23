@@ -741,26 +741,30 @@ def _multi_agent_clip_content(
     content_type: str,
     topic_focus: str | None = None,
 ) -> dict:
-    """Run 3 parallel agents: viral description, trending hashtags, title optimizer."""
-    import concurrent.futures
+    """Generate viral description, trending hashtags and an optimized title.
 
-    platforms_str = ", ".join(platforms)
+    Single combined LLM call (was 3 parallel calls). With clips also processed in
+    parallel upstream, 3 calls/clip produced a burst of ~12 concurrent requests that
+    tripped free-tier 429s and forced slow fallbacks. One call/clip cuts that load 3×
+    and keeps work on the fast primary provider.
+    """
     topic_ctx = f"Topic: {topic_focus}\n" if topic_focus else ""
     clip_ctx = f"Clip reason: {clip.reason}\nClip title hint: {clip.title}"
 
-    # Agent 1 — Viral Description Writer
-    def _desc_agent():
-        prompt = f"""You are a viral social media copywriter specializing in {content_type} content.
+    prompt = f"""You are a viral social media expert for {content_type} content. For this clip,
+produce THREE things in one JSON object: platform descriptions, trending hashtags, and the best title.
 
 {topic_ctx}{clip_ctx}
 Transcript excerpt:
 {transcript_snippet[:3000]}
 
-Write platform-optimized descriptions for this clip. Each description must:
-- Open with a HOOK (first 5 words stop the scroll)
-- Build curiosity or emotional connection in 2-3 sentences
-- End with a call-to-action or cliffhanger
-- Match platform tone: TikTok=casual/punchy, Reels=visual/trendy, Shorts=direct/fast
+1) DESCRIPTIONS — per platform, each: open with a HOOK (first 5 words stop the scroll),
+   build curiosity/emotion in 2-3 sentences, end with a CTA/cliffhanger. Tone:
+   TikTok=casual/punchy, Reels=visual/trendy, Shorts=direct/fast.
+2) HASHTAGS — REAL trending tags (not invented). 4-5 mega (#viral #trending #fyp #foryou #explore),
+   4-5 topic, 3-4 niche, 2-3 engagement. ALL lowercase, no spaces/special chars, include # prefix.
+3) TITLE — generate 5 options (score 1-10) and return the single best. Under 80 chars, curiosity
+   gap / bold claim / emotion, must reflect the actual clip (no false clickbait).
 
 Return JSON:
 {{
@@ -768,42 +772,7 @@ Return JSON:
     "tiktok": {{"description": "<150 char hook-first caption>", "cta": "<comment bait question>"}},
     "reels": {{"description": "<visual storytelling caption 100-200 chars>", "cta": "<save/share prompt>"}},
     "shorts": {{"description": "<direct punchy caption under 100 chars>", "cta": "<subscribe hook>"}}
-  }}
-}}"""
-        return _call_llm_json([{"role": "user", "content": prompt}], temperature=0.7, max_tokens=1000)
-
-    # Agent 2 — Trending Hashtag Researcher
-    def _hashtag_agent():
-        prompt = f"""You are a viral hashtag research agent. Your job is to identify the REAL trending hashtags being used right now on TikTok, Instagram Reels, and YouTube Shorts for this type of content.
-
-Content type: {content_type}
-{topic_ctx}{clip_ctx}
-Transcript excerpt:
-{transcript_snippet[:400]}
-
-RESEARCH TASK — Think like a trending content analyst:
-1. What topics, people, events, or themes appear in this clip?
-2. What hashtags are people ACTUALLY searching and following for this content RIGHT NOW?
-3. What mega viral tags (#viral #trending #fyp #foryou #reels) apply universally?
-4. What niche tags are specific to this exact topic/moment?
-5. What community tags will surface this to the right audience?
-
-HASHTAG STRATEGY:
-- 4-5 mega tags: #viral #trending #fyp #foryoupage #explore (always include these)
-- 4-5 topic tags: specific to what's discussed (e.g. #politics #news #science #gaming)
-- 3-4 niche tags: sub-topic specifics (e.g. #2024election #aitools #streetfood)
-- 2-3 engagement tags: #watchthis #mustsee #mindblown or emotion-driven tags
-- 2-3 platform-native tags relevant to current trends on each platform
-
-RULES — CRITICAL:
-- ALL tags must be LOWERCASE only — no CamelCase, no uppercase, no mixed case
-- No spaces inside tags
-- No special characters except letters and numbers
-- Include # prefix in output
-- Research actual trending tags — do NOT make up fake tags
-
-Return JSON:
-{{
+  }},
   "hashtags": {{
     "mega": ["#viral", "#trending", "#fyp", "#foryou", "#explore"],
     "topic": ["#tag1", "#tag2", "#tag3", "#tag4"],
@@ -814,57 +783,20 @@ Return JSON:
       "reels": ["#reels", "#instagram", "#explore", "<5 more topic-specific lowercase tags>"],
       "shorts": ["#shorts", "#youtubeshorts", "<3 more topic-specific lowercase tags>"]
     }}
-  }}
-}}"""
-        return _call_llm_json([{"role": "user", "content": prompt}], temperature=0.4, max_tokens=1000)
-
-    # Agent 3 — Title Optimizer (generates 5 options, picks best)
-    def _title_agent():
-        prompt = f"""You are a viral title specialist. Generate 5 title options for this clip, then select the single BEST one.
-
-Content type: {content_type}
-{topic_ctx}{clip_ctx}
-Transcript excerpt:
-{transcript_snippet[:400]}
-
-Title rules:
-- Under 80 characters
-- Creates curiosity gap OR makes a bold claim OR triggers emotion
-- Optimized for click-through as a TikTok caption or YouTube Shorts title
-- NO clickbait that doesn't deliver — the title must reflect what's actually in the clip
-- Formats that work: "X did Y and Z happened", "Nobody talks about X", "The truth about X", "When X meets Y"
-
-Generate 5 options, score each 1-10, then return only the best.
-
-Return JSON:
-{{
-  "titles": [
-    {{"text": "<title>", "score": <1-10>, "hook_type": "<curiosity|emotion|bold|reveal>"}}
-  ],
+  }},
+  "titles": [{{"text": "<title>", "score": <1-10>, "hook_type": "<curiosity|emotion|bold|reveal>"}}],
   "best_title": "<the highest scoring title>"
 }}"""
-        return _call_llm_json([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=600)
 
-    # Run all 3 in parallel
     desc_result, hashtag_result, title_result = {}, {}, {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(_desc_agent): "desc",
-            executor.submit(_hashtag_agent): "hashtag",
-            executor.submit(_title_agent): "title",
-        }
-        for future in concurrent.futures.as_completed(futures):
-            agent_name = futures[future]
-            try:
-                result = future.result(timeout=30)
-                if agent_name == "desc":
-                    desc_result = result
-                elif agent_name == "hashtag":
-                    hashtag_result = result
-                elif agent_name == "title":
-                    title_result = result
-            except Exception as e:
-                logging.warning("_multi_agent_clip_content %s agent failed: %s", agent_name, e)
+    try:
+        data = _call_llm_json([{"role": "user", "content": prompt}], temperature=0.7, max_tokens=1500)
+        if isinstance(data, dict):
+            desc_result = {"platforms": data.get("platforms", {})}
+            hashtag_result = {"hashtags": data.get("hashtags", {})}
+            title_result = {"best_title": data.get("best_title"), "titles": data.get("titles", [])}
+    except Exception as e:
+        logging.warning("_multi_agent_clip_content combined call failed: %s", e)
 
     def _normalize_tag(t: str) -> str:
         """Lowercase, strip #, remove spaces/special chars, re-add #."""

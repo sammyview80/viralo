@@ -286,8 +286,10 @@ _lock = threading.Lock()
 # Dead providers cached for 60s, live providers cached for 30s.
 _probe_cache: dict[str, tuple[bool, float]] = {}
 _probe_cache_lock = threading.Lock()
-_PROBE_CACHE_LIVE_TTL = 30.0   # re-probe live providers after 30s
-_PROBE_CACHE_DEAD_TTL = 60.0   # skip dead providers for 60s
+_PROBE_CACHE_LIVE_TTL = float(os.getenv("LLM_PROBE_LIVE_TTL", "30"))   # re-probe live providers
+# A rate-limited free-tier key typically stays limited for minutes; re-probing it
+# every 60s mid-job wastes a failed HTTP round-trip per call. Default 180s.
+_PROBE_CACHE_DEAD_TTL = float(os.getenv("LLM_PROBE_DEAD_TTL", "180"))  # skip dead providers
 
 
 def _probe_cached(name: str, api_key: str, base_url: str, model: str, json_mode: bool, azure: bool = False) -> bool:

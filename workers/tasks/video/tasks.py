@@ -361,6 +361,7 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         from workers.tasks import source_cache
         yt_id = source_cache.youtube_id(url)
         won_client = None
+        _cache_thread = None
         cache_meta = source_cache.fetch_to(yt_id, out_path)
         if cache_meta:
             won_client = cache_meta.get("won_client")
@@ -380,7 +381,15 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
                     won_client = _download_youtube(
                         url, out_path, quality=cfg.get("output_quality", "source"),
                         progress_cb=_on_download_progress, tenant_id=str(tenant_id))
-                    source_cache.store(yt_id, out_path, won_client=won_client)
+                    # Cache upload (often 100MB+ to Cloudinary, ~15s) off the critical
+                    # path: a background thread overlaps the transcribe/score/render
+                    # pipeline below instead of blocking before it. Joined after the
+                    # pipeline (the source file lives through the whole task).
+                    import threading as _thr
+                    _cache_thread = _thr.Thread(
+                        target=source_cache.store, args=(yt_id, out_path),
+                        kwargs={"won_client": won_client}, daemon=True)
+                    _cache_thread.start()
             finally:
                 if got_lock:
                     source_cache.release_lock(yt_id)
@@ -400,6 +409,10 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
                 pass
         _publish_progress(job_id, "download", 15, "processing", "Download complete, processing...")
         run_video_pipeline(tenant_id, video_id, out_path, job_id, cfg, yt_url=url, yt_meta=meta)
+        # Ensure the backgrounded source-cache upload finished before the task ends
+        # (and the work dir is reclaimed). It has been overlapping the pipeline above.
+        if _cache_thread is not None:
+            _cache_thread.join(timeout=120)
     except SoftTimeLimitExceeded:
         import gc
         msg = "Processing timed out (20 min limit). Try a shorter video or lower clip count."
