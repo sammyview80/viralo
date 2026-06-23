@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { navigate } from "@/lib/router";
-import { videoApi, type ClipConfig, type VideoResponse, type OutputQuality, type YouTubeFormatsResponse } from "@/lib/api";
+import { videoApi, type ClipConfig, type VideoResponse, type YouTubeFormatsResponse } from "@/lib/api";
 import { ClipConfigPanel, DEFAULT_CONFIG, PLATFORM_OPTIONS, ASPECT_OPTIONS, LANG_OPTIONS, CAPTION_STYLES } from "./UploadPage";
 
 type StudioTab = "ai" | "upload";
@@ -117,7 +117,6 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
   const [formatsData, setFormatsData] = useState<YouTubeFormatsResponse | null>(null);
   const [formatsLoading, setFormatsLoading] = useState(false);
   const [formatsError, setFormatsError] = useState("");
-  const availQualities = formatsData?.qualities ?? null;
 
   // validate + fetch metadata
   useEffect(() => {
@@ -138,12 +137,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
       setFormatsData(null);
       setFormatsError("");
       videoApi.youtubeFormats(urlVal.trim())
-        .then((f) => {
-          setFormatsData(f);
-          setClipConfig((c) =>
-            f.qualities.includes((c.output_quality ?? "source") as OutputQuality)
-              ? c : { ...c, output_quality: f.qualities[0] });
-        })
+        .then((f) => setFormatsData(f))
         .catch((err) =>
           setFormatsError(err instanceof Error ? err.message : "Could not read video formats"))
         .finally(() => setFormatsLoading(false));
@@ -182,7 +176,8 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
     setUploading(true);
     setError("");
     try {
-      const cfg: ClipConfig = precisionMode ? { ...clipConfig, precision_mode: true } : clipConfig;
+      // Always request the highest available quality — backend picks the best.
+      const cfg: ClipConfig = { ...clipConfig, output_quality: "source", ...(precisionMode ? { precision_mode: true } : {}) };
       const video = await videoApi.youtube(urlVal.trim(), undefined, cfg);
       navigate(`/projects/${video.id}`);
     } catch (err) {
@@ -557,35 +552,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
                 })}
               </div>
 
-              {/* Quality — dynamic: only qualities the backend confirms downloadable */}
-              {(() => {
-                const qualities = availQualities ?? (["source", "1080p", "720p", "480p"] as OutputQuality[]);
-                return (
-                  <div className="mb-auto">
-                    <div className="mb-2 flex items-center gap-2">
-                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Output quality</p>
-                      {formatsLoading && <span className="text-[9px] text-zinc-600">checking…</span>}
-                    </div>
-                    <div
-                      className="grid gap-1.5"
-                      style={{ gridTemplateColumns: `repeat(${Math.max(qualities.length, 1)}, minmax(0,1fr))` }}
-                    >
-                      {qualities.map((q) => (
-                        <button key={q} type="button"
-                          disabled={formatsLoading}
-                          onClick={() => setClipConfig({ ...clipConfig, output_quality: q })}
-                          className={cn(
-                            "cursor-pointer rounded-[8px] border py-1.5 text-center text-[11px] font-bold transition disabled:cursor-default disabled:opacity-50",
-                            clipConfig.output_quality === q ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.06] text-zinc-500 hover:border-white/[.12]"
-                          )}>{q === "source" ? "Full" : q}</button>
-                      ))}
-                    </div>
-                    {availQualities && (
-                      <p className="mt-1.5 text-[9px] text-zinc-600">Detected from this video</p>
-                    )}
-                  </div>
-                );
-              })()}
+              <div className="mb-auto" />
             </div>
 
             {/* Right: live template preview */}

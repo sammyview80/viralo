@@ -5151,6 +5151,9 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
     from urllib.parse import urlparse, urlencode, parse_qs, urlunparse as _urlunparse
     job_id = self.request.id or video_id
     cfg = cfg or {}
+    # Quality is no longer user-selectable — always fetch & render the highest
+    # available source. Override whatever the client sent.
+    cfg["output_quality"] = "source"
     # Strip playlist params — yt-dlp hangs enumerating playlists
     _p = urlparse(url)
     _qs = {k: v[0] for k, v in parse_qs(_p.query).items() if k not in ("list", "index", "start_radio")}
