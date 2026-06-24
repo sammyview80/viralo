@@ -491,19 +491,39 @@ def _draw_ranking_overlay(
     # ── Title: centered, top of frame ────────────────────────────────────────
     title = (title_text or "").strip()
     if title:
-        title_sz = int(width * 0.07)
-        title_font = _load_font(title_sz)
         words = title.split()
-        mid = max(1, len(words) // 2)
-        line1 = " ".join(words[:mid])
-        line2 = " ".join(words[mid:])
+        max_w = int(width * 0.92)  # keep title inside the frame, small side margin
+
+        def _balanced_two_lines(ws: list[str]) -> tuple[str, str]:
+            mid = max(1, len(ws) // 2)
+            return " ".join(ws[:mid]), " ".join(ws[mid:])
+
+        def _line_w(line: str, font) -> int:
+            if not line:
+                return 0
+            tb = draw.textbbox((0, 0), line, font=font)
+            return tb[2] - tb[0]
+
+        # Auto-shrink the title until both lines fit the frame width. Fixed
+        # width*0.07 overflowed long titles, pushing text off both edges.
+        title_sz = int(width * 0.07)
+        min_sz = max(18, int(width * 0.035))
+        while title_sz > min_sz:
+            title_font = _load_font(title_sz)
+            l1, l2 = _balanced_two_lines(words)
+            if max(_line_w(l1, title_font), _line_w(l2, title_font)) <= max_w:
+                break
+            title_sz -= 2
+        title_font = _load_font(title_sz)
+        line1, line2 = _balanced_two_lines(words)
+
         ty = int(height * 0.03)
         for line_idx, line in enumerate([line1, line2]):
             if not line:
                 continue
             tb = draw.textbbox((0, 0), line, font=title_font)
             tw, th = tb[2] - tb[0], tb[3] - tb[1]
-            tx = (width - tw) // 2   # centered
+            tx = max(int((width - max_w) // 2), (width - tw) // 2)   # centered, never off-frame
             fill = theme["num_fill"] if line_idx == 1 else theme["title_fill"]
             for dx in range(-sw, sw + 1):
                 for dy in range(-sw, sw + 1):
@@ -517,8 +537,8 @@ def _draw_ranking_overlay(
     revealed_set = set(revealed_ranks) if revealed_ranks else {rank_number}
 
     # Uniform base font size — active slightly larger, capped so list fits frame
-    base_sz   = min(int(width * 0.060), int(height * 0.045))
-    active_sz = min(int(width * 0.078), int(height * 0.058))
+    base_sz   = min(int(width * 0.048), int(height * 0.036))
+    active_sz = min(int(width * 0.062), int(height * 0.046))
     line_gap  = int(active_sz * 1.30)   # tight line spacing
 
     # Position block so it ends near bottom
