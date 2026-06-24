@@ -3,15 +3,19 @@ import asyncio
 import json
 import re
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.deps import get_current_user
+from shared.deps import get_current_user, get_tenant_db
 from shared.llm import call_llm_json
 from shared.schemas.auth import TokenPayload
+from video.models import Clip
 
 router = APIRouter(tags=["viral"])
 
@@ -313,4 +317,48 @@ async def analyze_viral(
             "upload_date": meta.get("upload_date") or "",
             "thumbnail_url": meta.get("thumbnail_url") or meta.get("thumbnail") or "",
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Clip feedback
+# ---------------------------------------------------------------------------
+
+class ClipFeedbackRequest(BaseModel):
+    action: str  # "approve" | "reject" | "edit_boundary" | "export"
+    edited_start: float | None = None
+    edited_end: float | None = None
+
+
+@router.post("/clips/{clip_id}/feedback", status_code=204)
+async def submit_clip_feedback(
+    clip_id: uuid.UUID,
+    body: ClipFeedbackRequest,
+    db: AsyncSession = Depends(get_tenant_db),
+    current_user=Depends(get_current_user),
+):
+    if body.action not in {"approve", "reject", "edit_boundary", "export"}:
+        raise HTTPException(status_code=422, detail=f"Unknown action: {body.action}")
+
+    row = await db.execute(
+        select(Clip).where(Clip.id == clip_id)
+    )
+    clip = row.scalar_one_or_none()
+    if clip is None:
+        raise HTTPException(status_code=404, detail="Clip not found")
+
+    from workers.tasks.video.feedback import record_clip_feedback
+    from workers.tasks.video._core import engine as sync_engine
+    record_clip_feedback(
+        tenant_id=str(current_user.tenant_id),
+        clip_id=str(clip_id),
+        video_id=str(clip.video_id),
+        action=body.action,
+        original_start=float(clip.start_sec) if clip.start_sec is not None else None,
+        original_end=float(clip.end_sec) if clip.end_sec is not None else None,
+        edited_start=body.edited_start,
+        edited_end=body.edited_end,
+        original_score=float(clip.score) if clip.score is not None else None,
+        clip_signals=(clip.clip_metadata or {}).get("signals"),
+        engine=sync_engine,
     )
