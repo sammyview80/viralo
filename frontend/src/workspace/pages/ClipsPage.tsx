@@ -580,6 +580,7 @@ export function ClipsPage() {
   const perPage = 24;
   const [editClip, setEditClip] = useState<ClipApiResponse | null>(null);
   const [failedPostBanner, setFailedPostBanner] = useState<string | null>(null);
+  const [upscalingId, setUpscalingId] = useState<string | null>(null);
   async function handleSaveAiSuggestions(clip: ClipApiResponse, suggestions: TagSuggestResponse) {
     setSavingTags(true);
     try {
@@ -1174,6 +1175,22 @@ export function ClipsPage() {
                         Download
                       </Button>
                     </div>
+                    <Button
+                      className="w-full h-8 text-[12px]"
+                      variant="secondary"
+                      disabled={upscalingId === drawer.id || !drawer.storage_url}
+                      onClick={async () => {
+                        setUpscalingId(drawer.id);
+                        try {
+                          const updated = await videoApi.upscaleClip(drawer.id, "4K");
+                          setClips((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+                        } finally {
+                          setUpscalingId(null);
+                        }
+                      }}
+                    >
+                      {upscalingId === drawer.id ? "Upscaling…" : drawer.upscaled_storage_url ? "⬆ Upscaled ✓" : "⬆ Upscale 4K"}
+                    </Button>
                   </div>
                 </div>
               </div>
