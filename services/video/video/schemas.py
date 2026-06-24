@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ClipConfig(BaseModel):
@@ -37,6 +37,14 @@ class ClipConfig(BaseModel):
     music_track: Literal["hype", "dramatic", "chill"] | None = Field(default=None, description="Music track key override (None = auto from template)")
     voiceover: bool = Field(default=False, description="Generate and mix AI narrator voiceover")
     occasion: Literal["football", "soccer", "sports", "cricket", "ufc", "boxing", "mma", "f1", "racing", "gaming", "esports", "podcast", "interview", "concert", "music", "wedding", "travel", "general"] | None = Field(default=None, description="Content occasion hint. None = auto-detect.")
+
+    @model_validator(mode="after")
+    def _check_duration_bounds(self) -> "ClipConfig":
+        # Frontend can send an inverted pair (e.g. slider race). Swap rather than
+        # 422 so a transient UI glitch never blocks a clip job.
+        if self.duration_min > self.duration_max:
+            self.duration_min, self.duration_max = self.duration_max, self.duration_min
+        return self
 
 
 class VideoResponse(BaseModel):
@@ -80,6 +88,7 @@ class ClipResponse(BaseModel):
     clip_metadata: dict | None = None
     upload_attempts: int | None = None
     upload_error: str | None = None
+    upscaled_storage_url: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
 

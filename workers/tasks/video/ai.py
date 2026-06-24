@@ -610,7 +610,10 @@ Return ONLY JSON:
             for sig in used_signals:
                 ts = float(sig.get("timestamp_sec", 0))
                 start = max(0.0, ts - 3.0)  # 3s lead-in
-                end = min(duration, start + min(max_dur, 30))
+                # Target the midpoint of the user's window so direct-from-signal
+                # clips respect duration_max instead of an arbitrary 30s cap.
+                target_len = min(max_dur, max(min_dur, (min_dur + max_dur) // 2))
+                end = min(duration, start + target_len)
                 if end - start >= min_dur:
                     raw_clips.append({
                         "start_seconds": start,

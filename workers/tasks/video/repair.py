@@ -96,5 +96,10 @@ def _repair_all_clips(
     clips: list[ClipResult],
     words: list[WordTimestamp],
     topic_blocks: list[TopicBlock],
+    min_duration: float = _MIN_CLIP_SEC,
+    max_duration: float = _MAX_CLIP_SEC,
 ) -> list[ClipResult]:
-    return [_repair_clip_boundaries(c, words, topic_blocks) for c in clips]
+    return [
+        _repair_clip_boundaries(c, words, topic_blocks, min_duration, max_duration)
+        for c in clips
+    ]

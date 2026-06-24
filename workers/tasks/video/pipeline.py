@@ -120,6 +120,44 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
     logging.info("_auto_schedule_clips: created %d scheduled posts for tenant %s", posts_created, tenant_id)
 
 
+def _clamp_clip_durations(
+    clips: list[ClipResult],
+    min_dur: int,
+    max_dur: int,
+    video_duration: float,
+) -> list[ClipResult]:
+    """Hard-enforce the user's [min_dur, max_dur] length window.
+
+    Scoring/repair are best-effort; this is the final guarantee that no persisted
+    or exported clip violates the frontend-supplied bounds:
+      - trim over-long clips to max_dur
+      - extend too-short clips up to min_dur when the source has room
+      - drop clips that still can't reach min_dur (source too short)
+    """
+    out: list[ClipResult] = []
+    for c in clips:
+        start = max(0.0, float(c.start))
+        end = min(float(video_duration), float(c.end)) if video_duration else float(c.end)
+
+        if end - start > max_dur:
+            end = start + max_dur
+
+        if end - start < min_dur:
+            # try to grow forward, then backward, bounded by the source
+            end = min(start + min_dur, video_duration) if video_duration else start + min_dur
+            if end - start < min_dur:
+                start = max(0.0, end - min_dur)
+            if end - start < min_dur:
+                logging.info(
+                    "_clamp_clip_durations: dropping clip %.1f-%.1f — source too short for min %ds",
+                    c.start, c.end, min_dur,
+                )
+                continue
+
+        out.append(dataclass_replace(c, start=round(start, 3), end=round(end, 3)))
+    return out
+
+
 def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: str, cfg: dict | None = None, yt_url: str | None = None, yt_meta: dict | None = None) -> None:
     cfg = cfg or {}
     work_dir = Path(VIDEO_TEMP_DIR) / video_id
@@ -315,8 +353,10 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             platform=platforms[0],
         )]
 
-    # Stage 10: Clip boundary repair
-    clips = _repair_all_clips(clips, words, topic_blocks)
+    # Stage 10: Clip boundary repair — honor the user's requested length window
+    # (defaults baked into repair.py are only used when bounds aren't supplied).
+    clips = _repair_all_clips(clips, words, topic_blocks, float(min_dur), float(max_dur))
+    clips = _clamp_clip_durations(clips, min_dur, max_dur, meta.duration)
 
     _update_video(tenant_id, video_id, pipeline_step="scoring", pipeline_pct=55)
     _publish_progress(job_id, "scoring", 55, "processing",
@@ -647,6 +687,9 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
             score=0.5, title="Clip 1", reason="fallback",
             platform=platforms[0],
         )]
+
+    # Hard-enforce the user's requested length window before persisting.
+    clips = _clamp_clip_durations(clips, min_dur, max_dur, duration)
 
     _publish_progress(job_id, "scoring", 60, "processing",
                       f"Found {len(clips)} viral clips (source={transcript_source})")
