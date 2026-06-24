@@ -35,6 +35,10 @@ from workers.tasks.video.transcribe import *
 from workers.tasks.video.ai import *
 from workers.tasks.video.render import *
 from workers.tasks.video.download import *
+from workers.tasks.video.scene import _extract_scene_frames, _save_scene_frames
+from workers.tasks.video.diarize import _diarize_audio, _assign_speakers_to_words, _save_speaker_segments
+from workers.tasks.video.segment import _segment_topics, _save_topic_blocks
+from workers.tasks.video.repair import _repair_all_clips
 
 __all__ = [
     '_auto_schedule_clips',
@@ -167,7 +171,13 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         "fps": meta.fps, "codec": meta.codec,
     })
 
+    # Stage 4b: Scene frame extraction
+    _publish_progress(job_id, "scene_extraction", 12, "processing", "Extracting scene frames…")
+    scene_frames = _extract_scene_frames(source_path, meta.duration, n_frames=10, tmp_dir=str(work_dir))
+
     words: list[WordTimestamp] = []
+    speaker_segments: list[SpeakerSegment] = []
+    topic_blocks: list[TopicBlock] = []
 
     if _check_cancelled(tenant_id, video_id):
         return
@@ -213,7 +223,17 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
 
         if words:
             _save_transcript(tenant_id, video_id, words)
-        _update_video(tenant_id, video_id, pipeline_step="transcribe", pipeline_pct=35)
+
+            # Stage 6: Speaker diarization
+            _publish_progress(job_id, "diarization", 36, "processing", "Identifying speakers…")
+            audio_path = str(work_dir / "audio.mp3")
+            speaker_segments = _diarize_audio(audio_path if Path(audio_path).exists() else source_path, meta.duration)
+
+            # Stage 7: Topic segmentation
+            _publish_progress(job_id, "topic_segmentation", 38, "processing", "Segmenting topics…")
+            topic_blocks = _segment_topics(words, llm_fn=_call_llm_json, max_topics=8)
+
+        _update_video(tenant_id, video_id, pipeline_step="transcribe", pipeline_pct=38)
         _save_step_artifact(tenant_id, video_id, "transcript",
                             {"word_count": len(words), "language": language,
                              "source": "youtube_captions" if yt_url and words else "whisper"})
@@ -260,6 +280,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         precision_mode=precision_mode,
         yt_engagement=yt_engagement,
         occasion=_occasion,
+        topic_blocks=topic_blocks,
     )
 
     # Fill remaining slots with heuristic clips if AI returned fewer than requested
@@ -286,6 +307,9 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             score=0.5, title="Clip 1", reason="fallback",
             platform=platforms[0],
         )]
+
+    # Stage 10: Clip boundary repair
+    clips = _repair_all_clips(clips, words, topic_blocks)
 
     _update_video(tenant_id, video_id, pipeline_step="scoring", pipeline_pct=55)
     _publish_progress(job_id, "scoring", 55, "processing",
@@ -401,6 +425,14 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             _auto_schedule_clips(tenant_id, clip_ids, cfg["auto_publish_config"])
         except Exception:
             logging.exception("Auto-schedule clips failed for video %s", video_id)
+
+    # Persist new pipeline stage results to DB (best-effort)
+    try:
+        _save_scene_frames(tenant_id, video_id, scene_frames, engine)
+        _save_speaker_segments(tenant_id, video_id, speaker_segments, engine)
+        _save_topic_blocks(tenant_id, video_id, topic_blocks, engine)
+    except Exception:
+        logging.exception("Failed to persist pipeline stage results for video %s", video_id)
 
     # Work dir cleaned up per-clip by upload_clip_to_storage; remove dir after all queued
     # (uploads may still be running — only rmtree the work_dir skeleton, not clip files)

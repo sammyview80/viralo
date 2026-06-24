@@ -1613,6 +1613,11 @@ def _export_clip(
         "viral_type": viral_type or "",
         "template_id": cfg.get("template_id") or "",
         "aspect_ratio": aspect_ratio,
+        "signals": {
+            "hook_score": round(clip.hook_score, 3) if clip.hook_score else 0.0,
+            "audio_energy": round(clip.audio_energy, 3) if clip.audio_energy else None,
+            "speech_rate": round(clip.speech_rate, 3) if clip.speech_rate else None,
+        },
     }
     if content.get("all_hashtags"):
         clip_meta["trending_hashtags"] = content["all_hashtags"]
