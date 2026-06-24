@@ -595,16 +595,6 @@ export function ProjectsPage() {
                     <div className="mt-3 rounded-[12px] border border-white/[.06] bg-white/[.02] p-3.5">
                       <div className="mb-3 text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Clip config</div>
                       <div className="space-y-2 text-[12px]">
-                        {selected.clip_config.platforms && selected.clip_config.platforms.length > 0 && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Platforms</span>
-                            <div className="flex gap-1">
-                              {selected.clip_config.platforms.map((p) => (
-                                <span key={p} className="rounded-full border border-white/[.06] bg-white/[.04] px-2 py-0.5 text-[10px] font-semibold capitalize text-zinc-300">{p}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                         {selected.clip_config.aspect_ratio && (
                           <div className="flex items-center justify-between">
                             <span className="text-zinc-500">Aspect ratio</span>
@@ -621,12 +611,6 @@ export function ProjectsPage() {
                           <div className="flex items-center justify-between">
                             <span className="text-zinc-500">Max clips</span>
                             <span className="font-semibold text-zinc-300">{selected.clip_config.max_clips}</span>
-                          </div>
-                        )}
-                        {selected.clip_config.language && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Language</span>
-                            <span className="font-semibold uppercase text-zinc-300">{selected.clip_config.language}</span>
                           </div>
                         )}
                         {selected.clip_config.add_captions != null && (
@@ -658,4 +642,3 @@ export function ProjectsPage() {
     </>
   );
 }
-

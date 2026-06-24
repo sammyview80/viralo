@@ -14,9 +14,6 @@ class ClipConfig(BaseModel):
 
     # Output format
     aspect_ratio: Literal["9:16", "1:1", "16:9", "4:5"] = Field(default="9:16", description="Output aspect ratio")
-    platforms: list[Literal["tiktok", "reels", "shorts", "twitter", "linkedin"]] = Field(
-        default=["tiktok", "reels", "shorts"], description="Target platforms for clip labelling"
-    )
 
     # AI scoring
     min_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Min virality score 0-1 (0.5 = balanced, 0.8 = viral only)")
@@ -32,12 +29,7 @@ class ClipConfig(BaseModel):
         default="1080p", description="Output resolution cap (source = no downscale)"
     )
 
-    # Content
-    language: str = Field(default="en", description="Spoken language (en, es, fr, ...)")
     topic_focus: str | None = Field(default=None, description="Guide AI to focus on specific topic")
-
-    # Precision mode
-    precision_mode: bool = False
 
     # Template / occasion-aware rendering
     template_id: Literal["sports-hype", "gaming-clutch", "cinematic", "music-vibe", "talking-head", "generic"] | None = Field(default=None, description="Template ID override (None = auto-detect from occasion)")
@@ -62,6 +54,14 @@ class VideoResponse(BaseModel):
     error_message: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
+
+    @field_validator("clip_config", mode="before")
+    @classmethod
+    def hide_destination_config(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            hidden = {"platforms", "language", "precision_mode"}
+            return {k: v for k, v in value.items() if k not in hidden}
+        return value
 
 
 class ClipResponse(BaseModel):

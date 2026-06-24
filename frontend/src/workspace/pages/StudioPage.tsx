@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { platforms } from "../data";
 import { ChipRow, Panel, Phone, Ring, SelectLike } from "../components";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,13 +10,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { navigate } from "@/lib/router";
 import { videoApi, type ClipConfig, type VideoResponse } from "@/lib/api";
-import { ClipConfigPanel, DEFAULT_CONFIG, PLATFORM_OPTIONS, ASPECT_OPTIONS, LANG_OPTIONS, CAPTION_STYLES } from "./UploadPage";
+import { AspectRatioSelector, ClipConfigPanel, DEFAULT_CONFIG, TargetLengthControl } from "./UploadPage";
 
 type StudioTab = "ai" | "upload";
 type YtStep = 0 | 1 | 2;
-type UploadStep = "source" | "destinations" | "clips" | "style" | "review";
+type UploadStep = "source" | "format" | "clips" | "style" | "review";
 
-const YT_STEPS = ["Source", "Clips", "Style"] as const;
+const YT_STEPS = ["Source", "Style"] as const;
 
 // ── Template definitions ──────────────────────────────────────────────────────
 
@@ -108,7 +107,6 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
   const [urlReady, setUrlReady]   = useState(false);
   const [ytMeta, setYtMeta]       = useState<{ title: string; thumbnail: string } | null>(null);
   const [ytMetaLoading, setYtMetaLoading] = useState(false);
-  const [precisionMode, setPrecisionMode] = useState(false);
   const [clipConfig, setClipConfig] = useState<ClipConfig>(DEFAULT_CONFIG);
   const [uploading, setUploading] = useState(false);
   const [error, setError]         = useState("");
@@ -163,14 +161,14 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
     setError("");
     try {
       // Always request the highest available quality — backend picks the best.
-      const cfg: ClipConfig = { ...clipConfig, output_quality: "source", ...(precisionMode ? { precision_mode: true } : {}) };
+      const cfg: ClipConfig = { ...clipConfig, output_quality: "source" };
       const video = await videoApi.youtube(urlVal.trim(), undefined, cfg);
       navigate(`/projects/${video.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, clipConfig, precisionMode]);
+  }, [urlVal, clipConfig]);
 
   const back = () => setStep((s) => Math.max(0, s - 1) as YtStep);
   return createPortal(
@@ -182,7 +180,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
       {/* Dialog */}
-      <div className="relative flex h-[760px] max-h-[92vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[24px] border border-white/[.09] bg-[#0b1018] shadow-[0_40px_120px_rgba(0,0,0,.7)]">
+      <div className="relative flex h-[760px] max-h-[92vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[22px] border border-white/[.09] bg-[#0b1018] shadow-[0_40px_120px_rgba(0,0,0,.7)]">
 
         {/* Header */}
         <div className="relative flex items-center gap-3 border-b border-white/[.07] bg-[radial-gradient(circle_at_8%_0%,rgba(248,113,113,.14),transparent_40%)] px-5 py-4">
@@ -240,14 +238,14 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
 
         {/* ── Step 0: Source + Confirm ── */}
         {step === 0 && (
-          <div className="flex-1 p-7">
+          <div className="flex-1 overflow-y-auto p-7">
             <div className="mb-5 flex items-center gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-red-400/25 bg-red-400/[.10]">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
               </div>
               <div>
                 <h2 className="font-display text-[18px] font-bold text-white">Import from YouTube</h2>
-                <p className="text-[12px] text-zinc-500">Paste URL, confirm video, choose clip mode</p>
+                <p className="text-[12px] text-zinc-500">Paste URL, confirm video, choose output format.</p>
               </div>
             </div>
 
@@ -260,7 +258,7 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
                 onKeyDown={(e) => e.key === "Enter" && urlReady && setStep(1)}
                 placeholder="https://youtube.com/watch?v=…"
                 aria-label="YouTube video URL"
-                className="h-[52px] rounded-[13px] border-white/[.09] bg-[#060b12] pr-28 text-[14px] font-medium placeholder:text-zinc-600 focus:border-[#ff3d6a]/50 focus:ring-4 focus:ring-[#ff3d6a]/10"
+                className="h-[52px] rounded-[13px] border-white/[.09] bg-[#060b12] pr-28 text-[14px] font-medium placeholder:text-zinc-600 focus:border-[#ff3d6a]/60 focus:ring-4 focus:ring-[#ff3d6a]/15"
               />
               <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-full border border-white/[.07] bg-white/[.04] px-2.5 py-1 text-[10px] font-bold text-zinc-600 sm:block">YouTube</span>
             </div>
@@ -303,204 +301,99 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
               </div>
             )}
 
-            {/* Clip mode */}
-            <div className="mb-5 grid grid-cols-2 gap-2">
-              {([
-                [false, "Multi Clip",      "Extract multiple viral moments"],
-                [true,  "Best Viral Clip", "Single clip · 9.5+ virality score"],
-              ] as [boolean, string, string][]).map(([isPrecision, label, desc]) => (
-                <button key={label} onClick={() => setPrecisionMode(isPrecision)}
-                  className={cn(
-                    "cursor-pointer rounded-[13px] border p-3.5 text-left transition",
-                    precisionMode === isPrecision
-                      ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
-                      : "border-white/[.07] bg-white/[.02] hover:border-white/[.12] hover:bg-white/[.035]"
-                  )}>
-                  <p className={cn("text-[13px] font-bold", precisionMode === isPrecision ? "text-white" : "text-zinc-300")}>{label}</p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">{desc}</p>
-                </button>
-              ))}
-            </div>
-
-            {/* Platforms */}
-            <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Destinations</p>
-            <div className="mb-4 grid grid-cols-3 gap-2">
-              {PLATFORM_OPTIONS.map((p) => {
-                const active = (clipConfig.platforms ?? []).includes(p.id);
-                return (
-                  <button key={p.id} type="button"
-                    onClick={() => {
-                      const cur = clipConfig.platforms ?? [];
-                      setClipConfig({ ...clipConfig, platforms: active ? cur.filter((x) => x !== p.id) : [...cur, p.id] });
-                    }}
-                    className={cn(
-                      "flex cursor-pointer items-center justify-center gap-1.5 rounded-[11px] border py-2.5 text-[12px] font-semibold transition",
-                      active ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:border-white/[.13] hover:text-zinc-200"
-                    )}>
-                    <span className="text-[13px]">{p.ltr}</span>{p.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Aspect ratio + Language */}
-            <div className="mb-5 grid grid-cols-2 gap-2">
-              <div className="rounded-[12px] border border-white/[.07] bg-white/[.025] p-3">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Aspect ratio</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {ASPECT_OPTIONS.map((r) => (
-                    <button key={r} type="button" onClick={() => setClipConfig({ ...clipConfig, aspect_ratio: r })}
-                      className={cn(
-                        "cursor-pointer rounded-[8px] border py-1.5 text-center text-[12px] font-semibold transition",
-                        clipConfig.aspect_ratio === r ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.07] bg-white/[.02] text-zinc-400 hover:border-white/[.13]"
-                      )}>{r}</button>
-                  ))}
-                </div>
+            <div className="mb-5 flex flex-col gap-4">
+              <div className="rounded-[12px] border border-white/[.07] bg-white/[.018] p-3">
+                <AspectRatioSelector value={clipConfig.aspect_ratio} onChange={(aspect_ratio) => setClipConfig({ ...clipConfig, aspect_ratio })} />
               </div>
-              <div className="rounded-[12px] border border-white/[.07] bg-white/[.025] p-3">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Language</p>
-                <select value={clipConfig.language ?? "en"} onChange={(e) => setClipConfig({ ...clipConfig, language: e.target.value })}
-                  className="w-full rounded-[9px] border border-white/[.08] bg-[#060b12] px-3 py-2 text-[13px] text-zinc-100 outline-none focus:border-[#ff3d6a]/50">
-                  {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
-                </select>
+              <div className="rounded-[12px] border border-white/[.07] bg-white/[.018] p-3">
+                <TargetLengthControl
+                  min={clipConfig.duration_min}
+                  max={clipConfig.duration_max}
+                  onChange={(patch) => setClipConfig({ ...clipConfig, ...patch })}
+                  inputClassName="w-full rounded-[10px] border border-white/[.08] bg-[#060b12] px-3 py-2.5 text-[13px] text-zinc-100 outline-none transition focus:border-[#ff3d6a]/50"
+                />
               </div>
             </div>
 
-            <Button disabled={!urlReady} onClick={() => setStep(1)} className="h-[52px] w-full rounded-[13px] text-[14px] font-bold">
-              Continue to Clip settings
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="ml-1"><path d="M9 18l6-6-6-6"/></svg>
-            </Button>
-          </div>
-        )}
-
-        {/* ── Step 1: Clips ── */}
-        {step === 1 && (
-          <div className="flex-1 p-7">
-            <div className="mb-5">
-              <h2 className="font-display text-[18px] font-bold text-white">Clip settings</h2>
-              <p className="text-[12px] text-zinc-500">Control quantity, quality threshold, and focus.</p>
-            </div>
-
-            {/* Target length */}
-            <div className="mb-4 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <p className="mb-3 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Target length (seconds)</p>
-              <div className="grid grid-cols-[1fr_28px_1fr] items-center gap-2">
-                <input type="number" min={5} max={clipConfig.duration_max} value={clipConfig.duration_min}
-                  onChange={(e) => setClipConfig({ ...clipConfig, duration_min: Number(e.target.value) })}
-                  className="w-full rounded-[10px] border border-white/[.08] bg-[#060b12] px-3 py-2.5 text-center text-[14px] font-bold text-zinc-100 outline-none focus:border-[#ff3d6a]/50" />
-                <span className="text-center text-[11px] text-zinc-600">to</span>
-                <input type="number" min={clipConfig.duration_min} max={300} value={clipConfig.duration_max}
-                  onChange={(e) => setClipConfig({ ...clipConfig, duration_max: Number(e.target.value) })}
-                  className="w-full rounded-[10px] border border-white/[.08] bg-[#060b12] px-3 py-2.5 text-center text-[14px] font-bold text-zinc-100 outline-none focus:border-[#ff3d6a]/50" />
-              </div>
-            </div>
-
-            {/* Max clips */}
-            <div className="mb-4 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Max clips</p>
-                <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-0.5 text-[12px] font-bold text-[#ff5f86]">{clipConfig.max_clips}</span>
-              </div>
-              <input type="range" min={1} max={20} value={clipConfig.max_clips}
-                onChange={(e) => setClipConfig({ ...clipConfig, max_clips: Number(e.target.value) })}
-                className="w-full accent-[#ff3d6a]" />
-              <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1 focused</span><span>20 batch</span></div>
-            </div>
-
-            {/* Viral score */}
-            <div className="mb-4 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Min virality score</p>
-                <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-0.5 text-[12px] font-bold text-[#ff5f86]">{Math.round((clipConfig.min_score ?? 0.5) * 10)}/10</span>
-              </div>
-              <input type="range" min={0} max={10} step={1} value={Math.round((clipConfig.min_score ?? 0.5) * 10)}
-                onChange={(e) => setClipConfig({ ...clipConfig, min_score: Number(e.target.value) / 10 })}
-                className="w-full accent-[#ff3d6a]" />
-              <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any usable</span><span>Balanced</span><span>Viral only</span></div>
-            </div>
-
-            {/* Topic focus */}
-            <div className="mb-5 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Topic focus <span className="normal-case tracking-normal text-zinc-600">optional</span></p>
-              <input type="text"
-                placeholder="e.g. controversial moment, product demo…"
-                value={clipConfig.topic_focus ?? ""}
-                onChange={(e) => setClipConfig({ ...clipConfig, topic_focus: e.target.value || null })}
-                className="w-full rounded-[10px] border border-white/[.08] bg-[#060b12] px-3 py-2.5 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-[#ff3d6a]/50" />
-            </div>
-
-            <Button onClick={() => setStep(2)} className="h-[52px] w-full rounded-[13px] text-[14px] font-bold">
-              Next — Style & export
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="ml-1"><path d="M9 18l6-6-6-6"/></svg>
-            </Button>
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={handleImport}
-              className="mt-2.5 w-full cursor-pointer rounded-[13px] border border-white/[.07] bg-transparent py-3 text-[12.5px] font-semibold text-zinc-500 transition hover:border-white/[.13] hover:text-zinc-300 disabled:opacity-40"
+            <Button
+              disabled={!urlReady}
+              onClick={() => setStep(1)}
+              className={cn(
+                "h-[52px] w-full rounded-[13px] text-[14px] font-bold",
+                urlReady && "bg-gradient-to-r from-[#ff3d6a] via-[#ff5f86] to-[#ff7a3d] shadow-[0_14px_34px_rgba(255,61,106,.28)]"
+              )}
             >
-              Skip style — import with defaults
-            </button>
+              Continue to Style
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="ml-1"><path d="M9 18l6-6-6-6"/></svg>
+            </Button>
           </div>
         )}
 
-        {/* ── Step 2: Style ── */}
-        {step === 2 && (
+        {/* ── Step 1: Style ── */}
+        {step === 1 && (
           <div className="flex min-h-0 flex-1 gap-0">
             {/* Left: controls (scrolls; footer stays pinned) */}
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
               <div className="mb-4">
                 <h2 className="font-display text-[18px] font-bold text-white">Style & export</h2>
-                <p className="text-[12px] text-zinc-500">Pick a template — preview updates live.</p>
+                <p className="text-[12px] text-zinc-500">Choose clip count and caption style.</p>
               </div>
 
-              {/* Template picker */}
-              <div className="mb-4">
-                <p className="mb-2.5 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Template</p>
+              {/* Max clips */}
+              <div className="mb-4 rounded-[12px] border border-white/[.07] bg-white/[.025] p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-zinc-400">Max clips</p>
+                  <span className="rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08] px-2.5 py-1 text-[12px] font-bold text-[#ff7a9a]">{clipConfig.max_clips}</span>
+                </div>
+                <input type="range" min={1} max={20} value={clipConfig.max_clips}
+                  onChange={(e) => setClipConfig({ ...clipConfig, max_clips: Number(e.target.value) })}
+                  className="w-full accent-[#ff3d6a]" />
+                <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Focused</span><span>Batch</span></div>
+              </div>
+
+              {/* Captions */}
+              <div className="mb-4 rounded-[12px] border border-white/[.07] bg-white/[.025] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold text-zinc-400">Captions</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-600">Pick how subtitles appear on generated clips.</p>
+                  </div>
+                  <button type="button"
+                    onClick={() => setClipConfig({ ...clipConfig, add_captions: !(clipConfig.add_captions ?? true) })}
+                    className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors", (clipConfig.add_captions ?? true) ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                    <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]", (clipConfig.add_captions ?? true) ? "left-[calc(100%-22px)]" : "left-0.5")} />
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
-                  {TEMPLATE_DEFS.map((t) => (
-                    <button key={String(t.id)} type="button"
-                      onClick={() => setClipConfig({ ...clipConfig, template_id: t.id })}
+                  {([
+                    ["capcut", "Pop", "Bold words with color punch"],
+                    ["capcut-bold", "Impact", "Large high-contrast captions"],
+                    ["classic", "Classic", "Clean subtitle treatment"],
+                    ["minimal", "Minimal", "Subtle lower-third captions"],
+                  ] as [string, string, string][]).map(([id, label, desc]) => (
+                    <button key={id} type="button"
+                      disabled={!(clipConfig.add_captions ?? true)}
+                      onClick={() => setClipConfig({ ...clipConfig, caption_style: id })}
                       className={cn(
-                        "cursor-pointer rounded-[11px] border p-2.5 text-left transition",
-                        (clipConfig.template_id ?? null) === t.id
-                          ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09]"
-                          : "border-white/[.07] bg-white/[.02] hover:border-white/[.13]"
+                        "cursor-pointer rounded-[10px] border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40",
+                        clipConfig.caption_style === id && (clipConfig.add_captions ?? true)
+                          ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08]"
+                          : "border-white/[.07] bg-white/[.025] hover:border-white/[.13]"
                       )}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[16px]">{t.icon}</span>
-                        <div>
-                          <p className={cn("text-[12px] font-bold", (clipConfig.template_id ?? null) === t.id ? "text-[#ff5f86]" : "text-zinc-200")}>{t.label}</p>
-                          <p className="text-[10px] leading-3 text-zinc-600">{t.desc}</p>
-                        </div>
+                      <div className={cn("mb-2 rounded-[7px] border border-white/[.08] bg-black/20 px-2 py-2 text-center text-[11px] font-black uppercase", clipConfig.caption_style === id ? "text-[#ff7a9a]" : "text-zinc-300")}>
+                        {id === "minimal" ? "clean caption" : id === "classic" ? "Here is your subtitle" : "HERE IS YOUR SUBTITLE"}
                       </div>
+                      <p className={cn("text-[12px] font-bold", clipConfig.caption_style === id ? "text-[#ff7a9a]" : "text-zinc-200")}>{label}</p>
+                      <p className="mt-0.5 text-[10.5px] leading-4 text-zinc-600">{desc}</p>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Content type */}
-              <div className="mb-4">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Content type</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { id: null, label: "Auto" }, { id: "podcast", label: "Podcast" }, { id: "gaming", label: "Gaming" },
-                    { id: "football", label: "Football" }, { id: "concert", label: "Concert" }, { id: "general", label: "Other" },
-                  ].map((o) => (
-                    <button key={String(o.id)} type="button"
-                      onClick={() => setClipConfig({ ...clipConfig, occasion: o.id })}
-                      className={cn(
-                        "cursor-pointer rounded-[9px] border px-2 py-1.5 text-center text-[11px] font-semibold transition",
-                        (clipConfig.occasion ?? null) === o.id ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:border-white/[.13]"
-                      )}>{o.label}</button>
-                  ))}
-                </div>
-              </div>
-
               {/* Toggles */}
-              <div className="mb-4 grid grid-cols-3 gap-2">
+              <div className="mb-4 grid grid-cols-2 gap-2">
                 {([
-                  ["add_captions", "Captions",  "Subtitles"],
                   ["music",        "Music",     "BG track"],
                   ["voiceover",    "Voiceover", "AI narrator"],
                 ] as [keyof ClipConfig, string, string][]).map(([key, label, desc]) => {
@@ -525,21 +418,21 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
               <div className="mb-auto" />
             </div>
 
-            {/* Right: live template preview */}
+            {/* Right: live caption preview */}
             <div className="flex w-[200px] shrink-0 flex-col items-center justify-center border-l border-white/[.06] bg-[#070b12] px-4 py-6">
-              <TemplatePreview templateId={clipConfig.template_id ?? null} thumbnail={ytMeta?.thumbnail} />
+              <TemplatePreview templateId={null} thumbnail={ytMeta?.thumbnail} />
               <p className="mt-3 text-center text-[10.5px] font-semibold text-zinc-500">
-                {TEMPLATE_DEFS.find((t) => (t.id ?? null) === (clipConfig.template_id ?? null))?.label ?? "Auto"}
+                {clipConfig.add_captions ? `${clipConfig.caption_style ?? "capcut"} captions` : "Captions off"}
               </p>
               <p className="mt-0.5 text-center text-[9.5px] leading-4 text-zinc-700">
-                {TEMPLATE_DEFS.find((t) => (t.id ?? null) === (clipConfig.template_id ?? null))?.preview ?? ""}
+                Preview updates with the selected caption treatment.
               </p>
             </div>
           </div>
         )}
 
         {/* ── Step 2 Import footer ── */}
-        {step === 2 && (
+        {step === 1 && (
           <div className="shrink-0 border-t border-white/[.07] bg-[#070b12] px-6 py-3.5">
             <div className="flex items-center gap-3">
               {ytMeta && (
@@ -678,7 +571,6 @@ export function StudioPage() {
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Panel title="Platforms"><ChipRow items={platforms.map((p) => p[1])} active={["TikTok", "Reels"]} /></Panel>
                   <Panel title="Duration"><ChipRow items={["30s", "60s", "90s"]} active={["60s"]} /></Panel>
                   <Panel title="Voice"><SelectLike value="Alex (energetic)" /></Panel>
                   <Panel title="Captions"><ChipRow items={["Word", "Line", "None"]} active={["Word"]} /></Panel>
@@ -749,12 +641,12 @@ export function StudioPage() {
               <div className="space-y-1.5">
                 {([
                   ["source",       "1", "Source",       "Upload file or YouTube"],
-                  ["destinations", "2", "Destinations", "Platforms & format"],
+                  ["format", "2", "Format", "Ratio and length"],
                   ["clips",        "3", "Clips",        "Length, count, score"],
                   ["style",        "4", "Style",        "AI, captions, quality"],
                   ["review",       "5", "Review",       "Confirm & start"],
                 ] as [UploadStep, string, string, string][]).map(([id, number, label, hint]) => {
-                  const ORDER: UploadStep[] = ["source","destinations","clips","style","review"];
+                  const ORDER: UploadStep[] = ["source","format","clips","style","review"];
                   const done   = ORDER.indexOf(id) < ORDER.indexOf(uploadStep);
                   const active = uploadStep === id;
                   return (
@@ -869,21 +761,21 @@ export function StudioPage() {
 
                       <button
                         type="button"
-                        onClick={() => setUploadStep("destinations")}
+                        onClick={() => setUploadStep("format")}
                         className="w-full cursor-pointer rounded-[12px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-left text-[12.5px] font-bold text-zinc-200 transition hover:bg-white/[.07]"
                       >
-                        Tune recipe before upload
-                        <span className="mt-1 block text-[11.5px] font-medium text-zinc-500">Format, duration, captions, and platform targets.</span>
+                        Tune settings before upload
+                        <span className="mt-1 block text-[11.5px] font-medium text-zinc-500">Format, duration, captions, and style.</span>
                       </button>
                     </div>
                   </div>
                 </div>
               )}
 
-              {(uploadStep === "destinations" || uploadStep === "clips" || uploadStep === "style") && (() => {
+              {(uploadStep === "format" || uploadStep === "clips" || uploadStep === "style") && (() => {
                 const RECIPE_META: Record<string, { title: string; desc: string; panelStep: 1|2|3; prev: UploadStep; next: UploadStep; nextLabel: string }> = {
-                  destinations: { title: "Destinations",  desc: "Pick platforms, aspect ratio, and language for this session.", panelStep: 1, prev: "source",       next: "clips",  nextLabel: "Next — Clips" },
-                  clips:        { title: "Clips",          desc: "Set clip count, target length, and minimum viral score.",       panelStep: 2, prev: "destinations", next: "style",  nextLabel: "Next — Style" },
+                  format: { title: "Format",  desc: "Pick aspect ratio and target length for this session.", panelStep: 1, prev: "source", next: "clips", nextLabel: "Next — Clips" },
+                  clips:  { title: "Clips",   desc: "Set clip count, target length, and minimum viral score.",          panelStep: 2, prev: "format", next: "style", nextLabel: "Next — Style" },
                   style:        { title: "Style & quality",desc: "Choose AI enhancements, captions, and output quality.",         panelStep: 3, prev: "clips",        next: "review", nextLabel: "Review settings" },
                 };
                 const meta = RECIPE_META[uploadStep];
@@ -896,7 +788,7 @@ export function StudioPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-[18px] border border-white/[.07] bg-[#0b101a] px-5 py-5 sm:px-6">
+                    <div className="rounded-[14px] border border-white/[.07] bg-white/[.025] px-5 py-5 sm:px-6">
                       <ClipConfigPanel config={clipConfig} onChange={setClipConfig} step={meta.panelStep} />
                     </div>
 
@@ -931,7 +823,6 @@ export function StudioPage() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     {[
-                      ["Platforms", `${clipConfig.platforms?.length ?? 0} selected`],
                       ["Format", clipConfig.aspect_ratio],
                       ["Length", `${clipConfig.duration_min}-${clipConfig.duration_max}s`],
                       ["Captions", clipConfig.add_captions ? "On" : "Off"],
@@ -948,7 +839,7 @@ export function StudioPage() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setUploadStep("destinations")}
+                        onClick={() => setUploadStep("format")}
                         className="h-10 cursor-pointer rounded-[11px] border border-white/[.08] px-4 text-[12.5px] font-bold text-zinc-300 transition hover:bg-white/[.05]"
                       >
                         Edit recipe

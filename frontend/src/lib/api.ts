@@ -304,10 +304,8 @@ function normalizePaginated<T>(data: PaginatedResponse<T> | T[] | null | undefin
 }
 
 export interface ClipConfig {
-  language?: string;
   max_clips?: number;
   min_score?: number;
-  platforms?: string[];
   topic_focus?: string | null;
   add_captions?: boolean;
   caption_style?: string;
@@ -315,7 +313,6 @@ export interface ClipConfig {
   duration_max?: number;
   duration_min?: number;
   output_quality?: OutputQuality;
-  precision_mode?: boolean;
   template_id?: string | null;
   music?: boolean;
   music_track?: string | null;

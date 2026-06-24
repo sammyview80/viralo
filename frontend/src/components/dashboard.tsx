@@ -253,7 +253,6 @@ function VideoList() {
       ) : (
         <div>
           {videos.map((video: VideoResponse, index: number) => {
-            const plats: string[] = video.clip_config?.platforms ?? [];
             const grad = GRAD_POOL[index % GRAD_POOL.length];
             return (
               <div
@@ -280,16 +279,6 @@ function VideoList() {
                   <div className="truncate text-[13px] font-medium">{video.title ?? "Untitled"}</div>
                   <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
                     <span>{formatRelative(video.created_at)}</span>
-                    {plats.length > 0 && (
-                      <>
-                        <span className="opacity-40">·</span>
-                        <span className="flex gap-1">
-                          {plats.slice(0, 3).map((p) => (
-                            <Platform key={p} id={p} size="xs" />
-                          ))}
-                        </span>
-                      </>
-                    )}
                   </div>
                 </div>
                 <StatusBadge status={video.status} />

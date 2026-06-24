@@ -12,23 +12,24 @@ type Source = "file" | "yt";
 type View = "upload" | "processing" | "results";
 
 /* ─── Clip config panel ─── */
-export const PLATFORM_OPTIONS = [
-  { id:"tiktok",    label:"TikTok",    ltr:"♪" },
-  { id:"reels",     label:"Reels",     ltr:"◎" },
-  { id:"shorts",    label:"Shorts",    ltr:"▶" },
-  { id:"youtube",   label:"YouTube",   ltr:"▶" },
-  { id:"instagram", label:"Instagram", ltr:"⊙" },
-  { id:"twitter",   label:"Twitter/X", ltr:"𝕏" },
-];
-
 export const ASPECT_OPTIONS = ["9:16","1:1","16:9"];
-export const LANG_OPTIONS   = ["en","es","fr","de","pt","ja","ko","zh","ar","hi"];
+
+const ASPECT_DETAILS: Record<string, { title: string; desc: string; badge: string }> = {
+  "9:16": { title: "Vertical", desc: "TikTok, Shorts, Reels", badge: "Shorts" },
+  "1:1": { title: "Square", desc: "Feed posts", badge: "Feed" },
+  "16:9": { title: "Wide", desc: "YouTube, landscape", badge: "YouTube" },
+};
+
+export const LENGTH_PRESETS = [
+  { id: "short", label: "Short", hint: "Under 60s", min: 15, max: 60 },
+  { id: "standard", label: "Standard", hint: "1-2 mins", min: 60, max: 120 },
+  { id: "extended", label: "Extended", hint: "3-5 mins", min: 180, max: 300 },
+  { id: "custom", label: "Custom", hint: "Manual", min: null, max: null },
+] as const;
 
 export const DEFAULT_CONFIG: ClipConfig = {
-  language: "en",
   max_clips: 3,
   min_score: 0.5,
-  platforms: ["tiktok","reels","shorts"],
   topic_focus: null,
   add_captions: false,
   caption_style: "capcut",
@@ -50,21 +51,184 @@ export const CAPTION_STYLES = [
   { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline" },
 ];
 
+export function AspectPreview({ ratio, active }: { ratio: string; active: boolean }) {
+  return (
+    <div className={cn(
+      "mx-auto grid h-12 place-items-center rounded-[8px] border transition",
+      active ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/[.07]" : "border-white/[.08] bg-black/10"
+    )}>
+      {ratio === "9:16" ? (
+        <div className={cn(
+          "relative h-10 w-6 overflow-hidden rounded-[6px] border",
+          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-white/[.18] bg-white/[.055]"
+        )}>
+          <div className="absolute inset-x-1 top-1 h-1 rounded-full bg-white/30" />
+          <div className="absolute bottom-1 left-1 right-2 h-0.5 rounded-full bg-white/55" />
+          <div className="absolute bottom-2 left-1 right-1 h-0.5 rounded-full bg-white/25" />
+          <div className="absolute right-1 top-3 flex flex-col gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-white/40" />
+            <span className="h-1.5 w-1.5 rounded-full bg-white/30" />
+          </div>
+        </div>
+      ) : ratio === "1:1" ? (
+        <div className={cn(
+          "relative h-9 w-9 overflow-hidden rounded-[6px] border",
+          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-white/[.18] bg-white/[.055]"
+        )}>
+          <div className="absolute inset-x-1 top-1 h-4 rounded bg-white/15" />
+          <div className="absolute bottom-2 left-1 right-1 h-0.5 rounded-full bg-white/45" />
+          <div className="absolute bottom-1 left-1 right-3 h-0.5 rounded-full bg-white/25" />
+        </div>
+      ) : (
+        <div className={cn(
+          "relative h-7 w-12 overflow-hidden rounded-[6px] border",
+          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-white/[.18] bg-white/[.055]"
+        )}>
+          <div className="absolute inset-0 grid place-items-center">
+            <span className="h-0 w-0 border-y-[5px] border-l-[8px] border-y-transparent border-l-white/55" />
+          </div>
+          <div className="absolute bottom-1 left-1 right-1 h-0.5 rounded-full bg-white/35" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function formatClipTime(seconds: number | undefined) {
+  const safe = Math.max(0, Math.round(seconds ?? 0));
+  const minutes = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+export function AspectRatioSelector({
+  value,
+  onChange,
+  labelClassName = "mb-2 block text-[11px] font-semibold text-zinc-400",
+}: {
+  value?: string;
+  onChange: (ratio: string) => void;
+  labelClassName?: string;
+}) {
+  return (
+    <div>
+      <label className={labelClassName}>Aspect ratio</label>
+      <div className="grid grid-cols-3 gap-2">
+        {ASPECT_OPTIONS.map((r) => {
+          const detail = ASPECT_DETAILS[r];
+          const active = value === r;
+          return (
+            <button key={r} type="button" onClick={() => onChange(r)}
+              className={cn(
+                "cursor-pointer rounded-[9px] border p-2 text-center transition",
+                active ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.075] text-[#ff7a9a]" : "border-white/[.09] bg-white/[.025] text-zinc-400 hover:border-white/[.15] hover:bg-white/[.04]"
+              )}>
+              <AspectPreview ratio={r} active={active} />
+              <div className="mt-1.5 text-[12px] font-bold">{r}</div>
+              <div className={cn("mt-0.5 truncate text-[10.5px] font-semibold", active ? "text-zinc-100" : "text-zinc-400")}>{detail.title}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function TargetLengthControl({
+  min,
+  max,
+  onChange,
+  labelClassName = "mb-2 block text-[11px] font-semibold text-zinc-400",
+  inputClassName = "w-full rounded-[10px] border border-white/[.10] bg-white/[.04] px-3 py-2.5 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#ff3d6a]/45 focus:bg-white/[.055] focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]",
+}: {
+  min?: number;
+  max?: number;
+  onChange: (patch: Pick<ClipConfig, "duration_min" | "duration_max">) => void;
+  labelClassName?: string;
+  inputClassName?: string;
+}) {
+  const durationMin = min ?? 20;
+  const durationMax = max ?? 60;
+  const activePreset = LENGTH_PRESETS.find((preset) => preset.min === durationMin && preset.max === durationMax)?.id ?? "custom";
+  const [manualOpen, setManualOpen] = useState(activePreset === "custom");
+  const selectedPreset = manualOpen ? "custom" : activePreset;
+
+  const updateMin = (value: number) => onChange({ duration_min: Math.min(value, durationMax), duration_max: durationMax });
+  const updateMax = (value: number) => onChange({ duration_min: durationMin, duration_max: Math.max(value, durationMin) });
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <label className={cn(labelClassName, "mb-0")}>Target length</label>
+        <span className="rounded-full border border-white/[.08] bg-white/[.035] px-2.5 py-1 text-[11px] font-semibold text-zinc-300">
+          {formatClipTime(durationMin)}-{formatClipTime(durationMax)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {LENGTH_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            onClick={() => {
+              if (preset.id === "custom") {
+                setManualOpen(true);
+                return;
+              }
+              setManualOpen(false);
+              if (preset.min != null && preset.max != null) onChange({ duration_min: preset.min, duration_max: preset.max });
+            }}
+            className={cn(
+              "cursor-pointer rounded-[10px] border px-3 py-2.5 text-left transition",
+              selectedPreset === preset.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.075]" : "border-white/[.09] bg-white/[.025] hover:border-white/[.15] hover:bg-white/[.04]"
+            )}
+          >
+            <div className={cn("text-[12px] font-bold", selectedPreset === preset.id ? "text-[#ff7a9a]" : "text-zinc-200")}>{preset.label}</div>
+            <div className="mt-0.5 text-[10.5px] text-zinc-500">{preset.hint}</div>
+          </button>
+        ))}
+      </div>
+
+      {!manualOpen ? (
+        <div className="mt-3 rounded-[11px] border border-white/[.08] bg-white/[.025] px-3 py-2.5">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500">
+            <span>Selected range</span>
+            <span className="text-zinc-300">{formatClipTime(durationMin)} to {formatClipTime(durationMax)}</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.08]">
+            <div className="h-full rounded-full bg-[#ff3d6a]" style={{ width: `${Math.min(100, Math.max(12, (durationMax / 300) * 100))}%` }} />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 rounded-[11px] border border-white/[.08] bg-white/[.025] p-3">
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold text-zinc-600">Minimum seconds</span>
+            <input type="number" min={5} max={durationMax} value={durationMin}
+              onChange={(e) => updateMin(Number(e.target.value))}
+              className={inputClassName} />
+          </div>
+          <span className="pb-3 text-sm text-zinc-600">to</span>
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold text-zinc-600">Maximum seconds</span>
+            <input type="number" min={durationMin} max={300} value={durationMax}
+              onChange={(e) => updateMax(Number(e.target.value))}
+              className={inputClassName} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig; onChange: (c: ClipConfig) => void; step?: 1 | 2 | 3 }) {
   const set = (patch: Partial<ClipConfig>) => onChange({ ...config, ...patch });
-  const togglePlat = (id: string) => {
-    const cur = config.platforms ?? [];
-    set({ platforms: cur.includes(id) ? cur.filter((p) => p !== id) : [...cur, id] });
-  };
 
-  const selectedPlatforms = config.platforms ?? [];
   const virality = Math.round((config.min_score ?? 0.5) * 10);
   const durationLabel = `${config.duration_min ?? 20}-${config.duration_max ?? 60}s`;
-  const labelCls = "mb-2 block text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500";
-  const inputCls = "w-full rounded-[11px] border border-white/[.08] bg-[#0a0f18] px-3.5 py-3 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#ff3d6a]/55 focus:shadow-[0_0_0_3px_rgba(255,61,106,.09)]";
-  const chipBase = "rounded-[10px] border px-3 py-2 text-[12px] font-semibold transition cursor-pointer";
-  const chipOn  = "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.13] text-[#ff5f86] shadow-[inset_0_1px_0_rgba(255,255,255,.05)]";
-  const chipOff = "border-white/[.08] bg-white/[.035] text-zinc-400 hover:border-white/[.15] hover:bg-white/[.06] hover:text-zinc-200";
+  const labelCls = "mb-2 block text-[11px] font-semibold text-zinc-400";
+  const inputCls = "w-full rounded-[10px] border border-white/[.10] bg-white/[.04] px-3 py-2.5 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#ff3d6a]/45 focus:bg-white/[.055] focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]";
+  const chipOn  = "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.10] text-[#ff6f92]";
+  const chipOff = "border-white/[.09] bg-white/[.03] text-zinc-400 hover:border-white/[.16] hover:bg-white/[.05] hover:text-zinc-200";
 
   const showAll = !step;
   const s1 = showAll || step === 1;
@@ -73,72 +237,34 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
 
   return (
     <div>
-      {/* Header row with summary chips — only in full (non-stepped) mode */}
       {showAll && (
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="font-display text-[15px] font-bold text-white">Clip recipe</h3>
-            <p className="mt-0.5 text-[12px] text-zinc-500">Tune output once. Viralo uses these rules for every generated clip.</p>
+            <h3 className="font-display text-[15px] font-bold text-white">Clip settings</h3>
+            <p className="mt-0.5 text-[12px] text-zinc-500">Applied to every generated clip from this source.</p>
           </div>
           <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-300">
-            <span className="rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1">{selectedPlatforms.length} platforms</span>
-            <span className="rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1">{durationLabel}</span>
-            <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-1 text-[#ff6c90]">≥ {virality}/10</span>
+            <span className="rounded-full border border-white/[.08] bg-white/[.035] px-2.5 py-1">{durationLabel}</span>
+            <span className="rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08] px-2.5 py-1 text-[#ff7a9a]">Score {virality}/10+</span>
           </div>
         </div>
       )}
 
-      <div className="space-y-6">
-        {/* Step 1: Destinations */}
-        {s1 && <div>
-          <label className={labelCls}>Destinations</label>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {PLATFORM_OPTIONS.map((p) => {
-              const active = selectedPlatforms.includes(p.id);
-              return (
-                <button key={p.id} type="button" onClick={() => togglePlat(p.id)}
-                  className={cn("flex items-center justify-center gap-2", chipBase, active ? chipOn : chipOff)}>
-                  <span className={cn("text-[13px]", active ? "text-[#ff7a9a]" : "text-zinc-500")}>{p.ltr}</span>
-                  {p.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[11.5px] text-zinc-600">Select every platform you plan to publish on so framing and captions stay safe.</p>
-        </div>}
-
-        {/* Step 1 continued: Aspect ratio + Language + Target length */}
+      <div className="space-y-5">
+        {/* Step 1: Aspect ratio + Target length */}
         {s1 && <div className={showAll ? "border-t border-white/[.06] pt-5" : ""}>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr_1.2fr]">
-            <div>
-              <label className={labelCls}>Aspect ratio</label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {ASPECT_OPTIONS.map((r) => (
-                  <button key={r} type="button" onClick={() => set({ aspect_ratio: r })}
-                    className={cn(chipBase, "px-2 text-center", config.aspect_ratio === r ? chipOn : chipOff)}>
-                    {r}
-                  </button>
-                ))}
-              </div>
+          <div className="flex flex-col gap-4">
+            <div className="rounded-[12px] border border-white/[.07] bg-white/[.018] p-3">
+              <AspectRatioSelector value={config.aspect_ratio} onChange={(aspect_ratio) => set({ aspect_ratio })} labelClassName={labelCls} />
             </div>
-            <div>
-              <label className={labelCls}>Language</label>
-              <select value={config.language ?? "en"} onChange={(e) => set({ language: e.target.value })}
-                className={inputCls}>
-                {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Target length</label>
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                <input type="number" min={5} max={config.duration_max} value={config.duration_min}
-                  onChange={(e) => set({ duration_min: Number(e.target.value) })}
-                  className={inputCls} />
-                <span className="text-zinc-600 text-sm">to</span>
-                <input type="number" min={config.duration_min} max={300} value={config.duration_max}
-                  onChange={(e) => set({ duration_max: Number(e.target.value) })}
-                  className={inputCls} />
-              </div>
+            <div className="rounded-[12px] border border-white/[.07] bg-white/[.018] p-3">
+              <TargetLengthControl
+                min={config.duration_min}
+                max={config.duration_max}
+                onChange={(patch) => set(patch)}
+                labelClassName={labelCls}
+                inputClassName={inputCls}
+              />
             </div>
           </div>
         </div>}
@@ -153,7 +279,7 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
             <input type="range" min={1} max={20} value={config.max_clips}
               onChange={(e) => set({ max_clips: Number(e.target.value) })}
               className="w-full accent-[#ff3d6a]" />
-            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1 focused clip</span><span>20 batch clips</span></div>
+            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Focused</span><span>Batch</span></div>
           </div>
 
           <div>
@@ -164,7 +290,7 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
             <input type="range" min={0} max={10} step={1} value={virality}
               onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
               className="w-full accent-[#ff3d6a]" />
-            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any usable</span><span>Balanced</span><span>Viral only</span></div>
+            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any</span><span>Balanced</span><span>Strict</span></div>
           </div>
         </div>}
 
@@ -179,7 +305,7 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
             <p className="mt-2 text-[11.5px] text-zinc-600">Use this to bias clip selection without changing the source video.</p>
           </div>
 
-          <div className="flex items-start justify-between gap-3 pt-[22px]">
+          <div className="flex items-start justify-between gap-3 rounded-[12px] border border-white/[.08] bg-white/[.025] p-3.5">
             <div>
               <div className="text-[13px] font-bold text-zinc-100">Auto captions</div>
               <div className="mt-0.5 text-[11.5px] text-zinc-500">Burn readable subtitles into every clip.</div>
@@ -195,14 +321,14 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
         </div>}
 
         {s2 && config.add_captions && (
-          <div className="border-t border-[#ff3d6a]/15 pt-5">
+          <div className="border-t border-white/[.06] pt-5">
             <label className={labelCls}>Caption style</label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {CAPTION_STYLES.map((s) => (
                 <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
-                  className={cn("rounded-[11px] border px-3 py-2.5 text-left transition",
-                    config.caption_style === s.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
-                  <div className={cn("text-[12px] font-bold", config.caption_style === s.id ? "text-[#ff5f86]" : "text-zinc-200")}>{s.label}</div>
+                  className={cn("rounded-[10px] border px-3 py-2.5 text-left transition",
+                    config.caption_style === s.id ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08]" : "border-white/[.08] bg-white/[.025] hover:border-white/[.14]")}>
+                  <div className={cn("text-[12px] font-bold", config.caption_style === s.id ? "text-[#ff7a9a]" : "text-zinc-200")}>{s.label}</div>
                   <div className="mt-0.5 text-[10.5px] leading-4 text-zinc-500">{s.desc}</div>
                 </button>
               ))}
@@ -211,17 +337,16 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
         )}
 
         {/* Step 3: AI enhancements */}
-        {s3 && <div className={cn("space-y-3", showAll && "border-t border-white/[.06] pt-5")}>
+        {s3 && <div className={cn("space-y-4", showAll && "border-t border-white/[.06] pt-5")}>
           <label className={labelCls}>AI enhancements</label>
 
-          {/* Occasion + Style side by side when stepped */}
-          <div className={cn(!showAll && "grid grid-cols-2 gap-4")}>
+          <div className={cn(!showAll && "grid gap-4 lg:grid-cols-2")}>
             <div>
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="mb-1.5 flex items-center gap-2">
                 <div className="text-[12px] font-bold text-zinc-100">Content type</div>
-                {!config.occasion && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
+                {!config.occasion && <span className="rounded-full border border-emerald-400/20 bg-emerald-400/[.08] px-2 py-0.5 text-[10px] font-bold text-emerald-300">Auto</span>}
               </div>
-              <div className="grid grid-cols-3 gap-1">
+              <div className="grid grid-cols-3 gap-1.5">
                 {[
                   { id: null,        label: "Auto" },
                   { id: "football",  label: "Football" },
@@ -235,23 +360,22 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
                 ].map((o) => (
                   <button key={String(o.id)} type="button"
                     onClick={() => set({ occasion: o.id })}
-                    className={cn("rounded-[7px] border px-1.5 py-1 text-[10.5px] font-medium transition-colors text-center cursor-pointer",
+                    className={cn("cursor-pointer rounded-[8px] border px-2 py-1.5 text-center text-[10.5px] font-medium transition-colors",
                       (config.occasion ?? null) === o.id
-                        ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10 text-[#ff5f86]"
-                        : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12]")}>
+                        ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08] text-[#ff7a9a]"
+                        : "border-white/[.08] bg-white/[.025] text-zinc-400 hover:border-white/[.14]")}>
                     {o.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Style picker */}
             <div className={cn(showAll && "border-t border-white/[.05] pt-3")}>
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="mb-1.5 flex items-center gap-2">
                 <div className="text-[12px] font-bold text-zinc-100">Style</div>
-                {!config.template_id && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
+                {!config.template_id && <span className="rounded-full border border-emerald-400/20 bg-emerald-400/[.08] px-2 py-0.5 text-[10px] font-bold text-emerald-300">Auto</span>}
               </div>
-              <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                 {[
                   { id: null,             label: "Auto",      desc: "Matched to content" },
                   { id: "sports-hype",    label: "Hype",      desc: "Bold hook + blur bg" },
@@ -262,21 +386,20 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
                 ].map((t) => (
                   <button key={String(t.id)} type="button"
                     onClick={() => set({ template_id: t.id })}
-                    className={cn("rounded-[7px] border px-1.5 py-1 text-left transition-colors cursor-pointer",
+                    className={cn("cursor-pointer rounded-[8px] border px-2 py-1.5 text-left transition-colors",
                       (config.template_id ?? null) === t.id
-                        ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10"
-                        : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
-                    <div className={cn("text-[10.5px] font-bold", (config.template_id ?? null) === t.id ? "text-[#ff5f86]" : "text-zinc-200")}>{t.label}</div>
-                    <div className="text-[9.5px] text-zinc-500 mt-0.5 leading-tight">{t.desc}</div>
+                        ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08]"
+                        : "border-white/[.08] bg-white/[.025] hover:border-white/[.14]")}>
+                    <div className={cn("text-[10.5px] font-bold", (config.template_id ?? null) === t.id ? "text-[#ff7a9a]" : "text-zinc-200")}>{t.label}</div>
+                    <div className="mt-0.5 text-[9.5px] leading-tight text-zinc-500">{t.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Music + Voiceover side by side */}
-          <div className={cn("border-t border-white/[.05] pt-3 grid gap-3", !showAll ? "grid-cols-2" : "grid-cols-1")}>
-            <div className="flex items-center justify-between gap-3">
+          <div className={cn("grid gap-3 border-t border-white/[.05] pt-4", !showAll ? "lg:grid-cols-2" : "grid-cols-1")}>
+            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-white/[.08] bg-white/[.025] p-3.5">
               <div>
                 <div className="text-[12px] font-bold text-zinc-100">Background music</div>
                 <div className="mt-0.5 text-[11px] text-zinc-500">Royalty-free hype/chill track.</div>
@@ -289,11 +412,11 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
                   (config.music ?? true) ? "left-[calc(100%-22px)]" : "left-0.5")} />
               </button>
             </div>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-white/[.08] bg-white/[.025] p-3.5">
               <div>
                 <div className="flex items-center gap-1.5">
                   <div className="text-[12px] font-bold text-zinc-100">AI voiceover</div>
-                  <span className="rounded-full border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-1.5 py-0.5 text-[9.5px] font-bold text-[#ff6c90]">NEW</span>
+                  <span className="rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08] px-1.5 py-0.5 text-[9.5px] font-bold text-[#ff7a9a]">New</span>
                 </div>
                 <div className="mt-0.5 text-[11px] text-zinc-500">Narrator script over clip.</div>
               </div>
@@ -308,12 +431,12 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
           </div>
 
           {/* Output quality */}
-          <div className="border-t border-white/[.05] pt-3">
+          <div className="border-t border-white/[.05] pt-4">
             <label className={labelCls}>Output quality</label>
             <div className="grid grid-cols-4 gap-1.5">
               {(["source","1080p","720p","480p"] as const).map((q) => (
                 <button key={q} type="button" onClick={() => set({ output_quality: q })}
-                  className={cn(chipBase, "text-center py-1.5", config.output_quality === q ? chipOn : chipOff)}>
+                  className={cn("cursor-pointer rounded-[9px] border px-3 py-1.5 text-center text-[12px] font-semibold transition", config.output_quality === q ? chipOn : chipOff)}>
                   {q === "source" ? "Full res" : q}
                 </button>
               ))}
@@ -2544,7 +2667,7 @@ function ResultsView({
 /* ─── Upload wizard stepper ─── */
 const UPLOAD_STEPS = [
   { label: "Source",       sub: "Upload file or YouTube" },
-  { label: "Destinations", sub: "Platforms & format" },
+  { label: "Format",       sub: "Ratio and length" },
   { label: "Clips",        sub: "Length, count, score" },
   { label: "Style",        sub: "AI, captions, quality" },
   { label: "Review",       sub: "Confirm & start" },
@@ -2998,10 +3121,6 @@ export function UploadPage() {
                           <span className="font-semibold text-zinc-200">
                             {source === "file" ? (pendingFile?.name ?? "No file selected") : (urlVal || "No URL entered")}
                           </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-500">Platforms</span>
-                          <span className="font-semibold text-zinc-200">{(clipConfig.platforms ?? []).join(", ") || "None"}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-zinc-500">Clip length</span>
