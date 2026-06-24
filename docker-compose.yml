@@ -105,30 +105,6 @@ services:
 
   # ── API Services ──────────────────────────────────────────────────────────
 
-  migrate:
-    <<: *service-defaults
-    build:
-      context: .
-      dockerfile: services/core/Dockerfile
-    command: alembic upgrade head
-    restart: "no"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  seed:
-    <<: *service-defaults
-    build:
-      context: .
-      dockerfile: services/core/Dockerfile
-    command: python scripts/seed_dev_user.py
-    restart: "no"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-
   core-service:
     <<: *service-defaults
     build:
@@ -139,8 +115,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -172,8 +146,6 @@ services:
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
       - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -194,8 +166,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -216,8 +186,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -238,8 +206,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -288,8 +254,6 @@ services:
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
       - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -323,8 +287,6 @@ services:
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
       - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -358,8 +320,6 @@ services:
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
       - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -394,8 +354,6 @@ services:
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
       - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -418,8 +376,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -442,8 +398,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -466,8 +420,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -490,8 +442,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -516,8 +466,6 @@ services:
     volumes:
       - celery-beat-data:/var/lib/celery
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       redis:
