@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -11,15 +12,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import subprocess, sys
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        capture_output=True, text=True,
+    import sys
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "alembic", "upgrade", "head",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
-    if result.returncode != 0:
-        logger.error("Migration failed:\n%s", result.stderr)
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logger.error("Migration failed:\n%s", stderr.decode())
         raise RuntimeError("Alembic migration failed — aborting startup")
-    logger.info("Migrations applied:\n%s", result.stdout or "(already up to date)")
+    logger.info("Migrations applied:\n%s", stdout.decode() or "(already up to date)")
     yield
 
 
