@@ -253,6 +253,7 @@ export interface ClipApiResponse {
   } | null;
   upload_attempts: number | null;
   upload_error: string | null;
+  upscaled_storage_url: string | null;
   created_at: string;
 }
 
@@ -401,6 +402,8 @@ export const videoApi = {
     videoReq<{ task_id: string; message: string }>("POST", "/clips/merge-ai", { clip_ids: clipIds }),
   retryClipUpload: (clipId: string) =>
     videoReq<ClipApiResponse>("POST", `/clips/${clipId}/retry-upload`),
+  upscaleClip: (clipId: string, targetResolution: "1080p" | "4K" = "4K") =>
+    videoReq<ClipApiResponse>("POST", `/clips/${clipId}/upscale?target_resolution=${targetResolution}`),
   listRanking: (page = 1, per_page = 20) =>
     videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos/ranking?page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),

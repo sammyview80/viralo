@@ -1976,6 +1976,7 @@ function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted = fals
   const [showDl,         setShowDl]         = useState(false);
   const [showPublish,    setShowPublish]    = useState(false);
   const [regenerating,   setRegenerating]   = useState(false);
+  const [upscaling,      setUpscaling]      = useState(false);
   const [localClip,      setLocalClip]      = useState(clip);
 
   const durMs = localClip.duration_ms ?? ((localClip.end_ms ?? 0) - (localClip.start_ms ?? 0));
@@ -1985,6 +1986,18 @@ function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted = fals
   const handleRegen = () => {
     setRegenerating(true);
     setTimeout(() => setRegenerating(false), 2200);
+  };
+
+  const handleUpscale = async () => {
+    setUpscaling(true);
+    try {
+      const updated = await videoApi.upscaleClip(localClip.id, "4K");
+      setLocalClip(updated);
+    } catch {
+      // leave clip unchanged; user can retry
+    } finally {
+      setUpscaling(false);
+    }
   };
 
   const actions: Array<{
@@ -2000,6 +2013,7 @@ function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted = fals
     { id: "edit", label: "Edit", icon: "✎", onClick: () => setShowEditor(true) },
     ...(localClip.caption_srt ? [{ id: "transcript" as ClipCardAction, label: "Transcript", icon: "☷" }] : []),
     { id: "regenerate", label: regenerating ? "Regenerating" : "Regenerate", icon: "✦", disabled: regenerating, onClick: handleRegen },
+    { id: "upscale", label: upscaling ? "Upscaling…" : localClip.upscaled_storage_url ? "Upscaled ✓" : "Upscale 4K", icon: "⬆", disabled: upscaling, onClick: handleUpscale },
     { id: "download", label: "Download", icon: "↓", onClick: () => setShowDl(true) },
   ];
 

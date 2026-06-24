@@ -985,6 +985,89 @@ async def list_clips(
     )
 
 
+@router.post("/clips/{clip_id}/upscale", response_model=ClipResponse)
+async def upscale_clip(
+    clip_id: uuid.UUID,
+    target_resolution: Literal["1080p", "4K"] = Query(default="4K"),
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Upscale clip to 1080p or 4K using FFmpeg lanczos. Runs synchronously — expect 10–60s."""
+    import tempfile
+
+    result = await db.execute(
+        select(Clip).where(Clip.id == clip_id, Clip.tenant_id == uuid.UUID(token.tenant_id), Clip.status != "deleted")
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found.")
+    if not clip.storage_url:
+        raise HTTPException(status_code=422, detail="Clip has no source file.")
+
+    scale_map = {"1080p": "1920:1080", "4K": "3840:2160"}
+    scale = scale_map[target_resolution]
+
+    storage_provider = os.getenv("STORAGE_PROVIDER", "local")
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        src_path = tmp_path / "source.mp4"
+        out_path = tmp_path / f"upscaled_{target_resolution}.mp4"
+
+        # Resolve source — local or remote
+        rel = _storage_url_to_relative_path(clip.storage_url)
+        if rel:
+            storage_root = Path(os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage"))
+            local_src = (storage_root / rel).resolve()
+            if not local_src.exists():
+                raise HTTPException(status_code=422, detail="Clip source file not found on disk.")
+            src_path = local_src
+        else:
+            # Remote URL (Cloudinary etc.) — download to temp
+            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+                async with client.stream("GET", clip.storage_url) as resp:
+                    resp.raise_for_status()
+                    with open(src_path, "wb") as f:
+                        async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                            f.write(chunk)
+
+        cmd = [
+            "ffmpeg", "-y", "-threads", "1", "-i", str(src_path),
+            "-vf", f"scale={scale}:flags=lanczos",
+            "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+            "-threads", "1",
+            "-c:a", "copy",
+            str(out_path),
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"FFmpeg failed: {stderr.decode()[-500:]}")
+
+        # Upload result
+        storage_key = f"clips/{token.tenant_id}/{clip_id}_upscaled_{target_resolution}.mp4"
+        if storage_provider == "cloudinary":
+            import cloudinary as _cld, cloudinary.uploader as _cld_up
+            _cld.config(cloudinary_url=os.getenv("CLOUDINARY_URL", ""))
+            cld_result = _cld_up.upload(
+                str(out_path),
+                public_id=storage_key.replace(".mp4", ""),
+                resource_type="video",
+                overwrite=True,
+            )
+            upscaled_url = cld_result["secure_url"]
+        else:
+            from shared.storage.base import get_storage as _get_storage
+            with open(out_path, "rb") as f:
+                upscaled_url = await _get_storage(storage_provider).upload(f.read(), storage_key, "video/mp4")
+
+    clip.upscaled_storage_url = upscaled_url
+    await db.commit()
+    return ClipResponse.model_validate(clip)
+
+
 @router.post("/clips/download-zip")
 async def download_clips_zip(
     body: ClipZipRequest,

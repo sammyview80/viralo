@@ -22,7 +22,7 @@ const PLATFORM_CFG: Record<string, { color: string; icon: string; label: string 
   linkedin: { color: "#0A66C2", icon: "in", label: "LinkedIn" },
 };
 
-export type ClipCardAction = "publish" | "trim" | "edit" | "transcript" | "download" | "preview" | "regenerate";
+export type ClipCardAction = "publish" | "trim" | "edit" | "transcript" | "download" | "preview" | "regenerate" | "upscale";
 
 type ActionConfig = {
   id: ClipCardAction;
@@ -133,7 +133,7 @@ export function UniversalClipCard({
   }
 
   function defaultIcon(id: ClipCardAction) {
-    return id === "publish" ? "↗" : id === "trim" ? "✂" : id === "edit" ? "✎" : id === "transcript" ? "☷" : id === "download" ? "↓" : id === "regenerate" ? "✦" : "▶";
+    return id === "publish" ? "↗" : id === "trim" ? "✂" : id === "edit" ? "✎" : id === "transcript" ? "☷" : id === "download" ? "↓" : id === "regenerate" ? "✦" : id === "upscale" ? "⬆" : "▶";
   }
 
   const primaryAction = actions.find((a) => a.primary) ?? actions.find((a) => a.id === "publish");
