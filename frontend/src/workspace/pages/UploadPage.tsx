@@ -936,9 +936,9 @@ const PROC_STEPS = [
   { keys: ["download"],                    emoji:"⬇",  label:"Downloading video",       sub:"Fetching from source" },
   { keys: ["upload","uploading"],          emoji:"⬆",  label:"Uploading file",          sub:"Transferring to secure storage" },
   { keys: ["metadata","probe"],            emoji:"🔎", label:"Probing video",           sub:"Reading resolution, duration, codec" },
-  { keys: ["transcribe","speech"],         emoji:"📝", label:"Transcribing speech",     sub:"AI speech-to-text in progress" },
-  { keys: ["scoring","analyze","signal"],  emoji:"⚡", label:"Finding viral moments",   sub:"Step 1: detecting viral signals in transcript" },
-  { keys: ["captions","caption"],          emoji:"💬", label:"Generating captions",     sub:"Building word-level caption timeline" },
+  { keys: ["transcribe","speech","diarization","topic_segmentation","scene_extraction"], emoji:"📝", label:"Transcribing speech", sub:"AI speech-to-text, speaker ID & segmentation" },
+  { keys: ["scoring","analyze","signal","ai_content"], emoji:"⚡", label:"Finding viral moments", sub:"Detecting viral signals & generating AI content" },
+  { keys: ["captions","caption","caption_burn","burn"], emoji:"💬", label:"Generating captions", sub:"Building word-level caption timeline" },
   { keys: ["export","render","encode"],    emoji:"🎬", label:"Rendering clips",         sub:"Cutting, cropping, burning captions" },
   { keys: ["complete","done"],             emoji:"✅", label:"Done",                    sub:"All clips ready" },
 ];
@@ -991,7 +991,7 @@ function SocialConnectBanner() {
 
   if (unconnected.length === 0) {
     return (
-      <div className="mt-6 rounded-[13px] border border-emerald-300/15 bg-emerald-400/[.04] p-4">
+      <div className="rounded-[13px] border border-emerald-300/15 bg-emerald-400/[.04] p-4">
         <div className="flex items-center gap-3">
           <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-emerald-300/25 bg-emerald-400/10 text-emerald-300 text-sm">✓</div>
           <div>
@@ -1016,8 +1016,8 @@ function SocialConnectBanner() {
   }
 
   return (
-    <div className="mt-6 rounded-[13px] border border-[#ff3d6a]/15 bg-[#ff3d6a]/[.04] p-4" style={{ animation: "fadeUp .3s .4s cubic-bezier(.22,.8,.4,1) both" }}>
-      <div className="flex items-start gap-3">
+    <div className="rounded-[13px] border border-[#ff3d6a]/15 bg-[#ff3d6a]/[.04] p-4" style={{ animation: "fadeUp .3s .4s cubic-bezier(.22,.8,.4,1) both" }}>
+      <div className="flex items-center gap-3">
         <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a] text-sm">↗</div>
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-semibold">Connect social accounts while you wait</div>
@@ -1047,7 +1047,7 @@ function SocialConnectBanner() {
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
         {unconnected.map((p) => (
           <a key={p.id} href="/integrations"
             className="inline-flex items-center gap-1.5 rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[11px] font-semibold text-zinc-400 transition hover:border-white/[.12] hover:text-zinc-200">
@@ -1075,7 +1075,9 @@ type LiveEvent = {
 const STEP_ICONS: Record<string, string> = {
   download: "⬇", upload: "⬆", transcribe: "🎙", scoring: "🧠",
   ai_content: "✍", export: "🎞", captions: "💬", saving: "💾",
-  complete: "✅", failed: "✗",
+  metadata: "🔎", diarization: "👥", topic_segmentation: "📑", scene_extraction: "🎥",
+  starting: "🚀", downloading: "⬇", rendering: "🎬", concatenating: "🔗",
+  complete: "✅", failed: "✗", cancelled: "⊘",
 };
 const STEP_COLORS: Record<string, string> = {
   download: "border-blue-400/20 bg-blue-400/10 text-blue-300",
@@ -1086,7 +1088,16 @@ const STEP_COLORS: Record<string, string> = {
   export: "border-orange-400/20 bg-orange-400/10 text-orange-300",
   captions: "border-indigo-400/20 bg-indigo-400/10 text-indigo-300",
   saving: "border-teal-400/20 bg-teal-400/10 text-teal-300",
+  metadata: "border-sky-400/20 bg-sky-400/10 text-sky-300",
+  diarization: "border-violet-400/20 bg-violet-400/10 text-violet-300",
+  topic_segmentation: "border-amber-400/20 bg-amber-400/10 text-amber-300",
+  scene_extraction: "border-rose-400/20 bg-rose-400/10 text-rose-300",
+  starting: "border-blue-400/20 bg-blue-400/10 text-blue-300",
+  downloading: "border-blue-400/20 bg-blue-400/10 text-blue-300",
+  rendering: "border-orange-400/20 bg-orange-400/10 text-orange-300",
+  concatenating: "border-teal-400/20 bg-teal-400/10 text-teal-300",
   complete: "border-emerald-300/20 bg-emerald-400/10 text-emerald-300",
+  cancelled: "border-zinc-400/20 bg-zinc-400/10 text-zinc-400",
 };
 
 function ProcessingView({
@@ -1158,12 +1169,14 @@ function ProcessingView({
 
     const clippingStepLabels: Record<string, string> = {
       download: "Downloading video…", upload: "Uploading to storage…",
+      metadata: "Probing video metadata…", diarization: "Speaker diarization…",
+      topic_segmentation: "Segmenting topics…", scene_extraction: "Extracting scenes…",
       transcribe: "Transcribing speech…", scoring: "Finding viral moments…",
       ai_content: "Generating titles & hashtags…", export: "Rendering clips…",
       captions: "Burning captions…", saving: "Saving clips…", complete: "All done!",
       template: "Applying template…", render: "Rendering with effects…",
       voiceover: "Generating AI voiceover…", audio_mix: "Mixing audio tracks…",
-      enhance: "Enhancing quality…",
+      enhance: "Enhancing quality…", cancelled: "Processing cancelled.",
     };
     const rankingStepLabels: Record<string, string> = {
       starting: "Preparing ranking video…",
@@ -1172,6 +1185,7 @@ function ProcessingView({
       concatenating: "Joining segments into final video…",
       upload: "Uploading to cloud…",
       complete: "Ranking video ready!",
+      cancelled: "Processing cancelled.",
     };
     const stepLabels = isRanking ? rankingStepLabels : clippingStepLabels;
 
@@ -1199,21 +1213,29 @@ function ProcessingView({
               clipCountRef.current += 1;
               pushEvent({ kind: "clip_ready", label: `Clip ${clipCountRef.current} ready`, sub: d.title ?? undefined, thumbnail: d.thumbnail_url ?? undefined });
             }
+            if (d.event === "clip_upload_failed") {
+              pushEvent({ kind: "info", label: `Clip upload failed`, sub: d.clip_id ?? undefined, step: "failed" });
+            }
             if (d.event === "clips_ready") {
-              pushEvent({ kind: "clips_ready", label: `${d.count ?? ""} clips found`, sub: "Uploading to cloud…" });
+              const count = typeof d.count === "number" ? d.count : "";
+              pushEvent({ kind: "clips_ready", label: `${count} clips found`, sub: "Uploading to cloud…" });
             }
           }
 
           if (d.message && d.step && d.step !== "keepalive") {
             const isNewStep = d.step !== lastStepRef.current;
             if (isNewStep) lastStepRef.current = d.step;
-            pushEvent({ kind: "info", label: d.message, pct: d.pct ?? undefined, step: d.step });
+            // Normalize ranking rendered_N steps
+            const normalizedStep = isRanking && d.step?.startsWith("rendered_") ? "rendering" : d.step;
+            pushEvent({ kind: "info", label: d.message, pct: d.pct ?? undefined, step: normalizedStep });
           } else if (d.step && d.step !== "keepalive" && d.step !== lastStepRef.current) {
             lastStepRef.current = d.step;
-            if (stepLabels[d.step]) pushEvent({ kind: "info", label: stepLabels[d.step], step: d.step });
+            const normalizedStep = isRanking && d.step?.startsWith("rendered_") ? "rendering" : d.step;
+            const label = stepLabels[normalizedStep] ?? (isRanking && normalizedStep === "rendering" ? `Rendering segment…` : null);
+            if (label) pushEvent({ kind: "info", label, step: normalizedStep });
           }
 
-          if (d.status === "complete" || d.status === "failed") {
+          if (d.status === "complete" || d.status === "failed" || d.status === "cancelled") {
             es.close();
             esRef.current = null;
             sseActiveRef.current = false;
@@ -1285,8 +1307,50 @@ function ProcessingView({
   const isRankingVideo = current.source_type === "ranking";
   const sourceLabel = isRankingVideo ? "Ranking video" : current.source_type === "youtube_url" ? "YouTube" : "Uploaded file";
 
+  const isDone = current.status === "done" || current.status === "ready" || current.pipeline_step === "complete";
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      {/* Horizontal stepper */}
+      <div className="flex items-start justify-between gap-0 overflow-x-auto pb-1">
+        {PROC_STEPS.filter((_, i) => i < PROC_STEPS.length - 1).map((step, i) => {
+          const done = isDone || i < stepIdx;
+          const active = !isDone && i === stepIdx;
+          return (
+            <div key={step.label} className="flex flex-1 flex-col items-center">
+              <div className="flex w-full items-center">
+                {/* Left line */}
+                <div className={cn("h-[2px] flex-1", i === 0 ? "invisible" : done || active ? "bg-emerald-500" : "bg-white/[.08]")} />
+                {/* Circle */}
+                <div className={cn(
+                  "grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 text-[13px] transition",
+                  done ? "border-emerald-500 bg-emerald-500 text-white"
+                  : active ? "border-white bg-[#080b12] text-white"
+                  : "border-white/[.15] bg-[#080b12] text-zinc-600"
+                )}>
+                  {done ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6 9 17l-5-5"/></svg>
+                  ) : (
+                    <span>{step.emoji}</span>
+                  )}
+                </div>
+                {/* Right line */}
+                <div className={cn("h-[2px] flex-1", i === PROC_STEPS.length - 2 ? "invisible" : done ? "bg-emerald-500" : "bg-white/[.08]")} />
+              </div>
+              <div className="mt-2 flex min-h-[3.5rem] max-w-[90px] flex-col items-center text-center">
+                <div className="text-[9px] font-bold uppercase tracking-[.15em] text-zinc-600">Step {i + 1}</div>
+                <div className={cn("mt-0.5 flex-1 text-[11px] font-semibold leading-tight", done ? "text-emerald-300" : active ? "text-white" : "text-zinc-500")}>{step.label}</div>
+                <div className={cn("mt-1 rounded-full px-1.5 py-px text-[9px] font-bold inline-block",
+                  done ? "bg-emerald-500/20 text-emerald-400" : active ? "bg-amber-400/15 text-amber-300" : "bg-white/[.04] text-zinc-600"
+                )}>
+                  {done ? "Done" : active ? "In Progress" : "Pending"}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="flex items-center gap-3.5 rounded-[13px] border border-white/[.07] bg-[#0e1420] p-4">
         <div className={cn("grid h-12 w-16 flex-none place-items-center overflow-hidden rounded-[9px] bg-gradient-to-br", grad)}>
           <span className="text-xl">{isRankingVideo ? "🏆" : "🎬"}</span>
@@ -1379,65 +1443,9 @@ function ProcessingView({
         </div>
       )}
 
-      <div className="flex gap-4 items-start">
-      <div className="flex-1 space-y-2">
-        {PROC_STEPS.map((step, i) => {
-          const done = overallPct === 100 ? true : i < stepIdx;
-          const active = !done && i === stepIdx;
-          const state = done ? "done" : active ? "active" : "wait";
-          return (
-            <div key={step.keys[0]} 
-              role="status"
-              aria-label={`${step.label}: ${state === "done" ? "Completed" : state === "active" ? "In progress" : "Waiting"}`}
-              className={cn(
-              "flex items-start gap-3.5 rounded-[11px] border p-3.5 transition",
-              state === "done"   ? "border-white/[.05] bg-white/[.015] opacity-70"
-            : state === "active" ? "border-[#ff3d6a]/20 bg-[#ff3d6a]/[.04]"
-            : "border-white/[.04] bg-transparent opacity-40"
-            )}>
-              <div className={cn(
-                "mt-0.5 grid h-8 w-8 flex-none place-items-center rounded-[8px] border text-sm",
-                state === "done"   ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
-              : state === "active" ? "border-[#ff3d6a]/25 bg-[#ff3d6a]/10"
-              : "border-white/[.07] bg-white/[.03] text-zinc-600"
-              )}>
-                {state === "done"   ? "✓"
-               : state === "active" ? <span className="block h-4 w-4 rounded-full border-2 border-[#ff3d6a] border-t-transparent animate-spin" />
-               : <span className="opacity-50">{step.emoji}</span>}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className={cn("text-[13px] font-semibold", state === "done" ? "text-zinc-400" : state === "active" ? "text-white" : "text-zinc-600")}>{step.label}</div>
-                <div className="mt-0.5 text-[11.5px] text-zinc-500">{state === "done" ? "Completed" : state === "active" && step.keys.includes("queued") ? `Queued for ${queuedFor}` : step.sub}</div>
-                {state === "active" && liveMsg && (
-                  <div className="mt-1.5 text-[11px] text-zinc-400 leading-snug">{liveMsg}</div>
-                )}
-                {state === "active" && !liveMsg && current.pipeline_step && (
-                  <div className="mt-1 text-[10.5px] font-mono text-zinc-600">{current.pipeline_step}</div>
-                )}
-              </div>
-              {state === "done" && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />Done
-                </span>
-              )}
-              {state === "active" && (
-                <span 
-                  role="progressbar"
-                  aria-valuenow={overallPct}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  className="inline-flex items-center gap-1 rounded-full border border-yellow-300/20 bg-yellow-400/10 px-2 py-0.5 text-[10px] font-semibold text-yellow-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-yellow-300" />{overallPct}%
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
       {/* Live SSE event feed */}
       {liveEvents.length > 0 && (
-      <div className="w-72 shrink-0">
+      <div className="w-full">
         <div className="overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0a0f1a]">
           {/* Header */}
           <div className="flex items-center gap-2 border-b border-white/[.06] px-3.5 py-2.5">
@@ -1445,11 +1453,11 @@ function ProcessingView({
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff3d6a] opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-[#ff3d6a]" />
             </span>
-            <span className="text-[11px] font-semibold uppercase tracking-[.08em] text-zinc-500">Live</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[.08em] text-zinc-500">Terminal</span>
           </div>
 
           {/* Events list */}
-          <div className="divide-y divide-white/[.04]">
+          <div className="h-[260px] overflow-y-auto divide-y divide-white/[.04]">
             {liveEvents.map((ev) => {
               const stepColor = ev.kind === "clip_ready" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-300"
                 : ev.kind === "clips_ready" ? "border-[#ff3d6a]/20 bg-[#ff3d6a]/10 text-[#ff3d6a]"
@@ -1505,7 +1513,6 @@ function ProcessingView({
         </div>
       </div>
       )}
-      </div>
     </div>
   );
 }
@@ -2755,6 +2762,7 @@ export function UploadPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [loadingVideo, setLoadingVideo] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VideoResponse | null>(null);
   const [clipConfig, setClipConfig] = useState<ClipConfig>(DEFAULT_CONFIG);
@@ -2909,13 +2917,14 @@ export function UploadPage() {
     const pathMatch = window.location.pathname.match(/^\/projects\/([^/]+)$/);
     const videoId = pathMatch?.[1] ?? new URLSearchParams(window.location.search).get("video");
     if (!videoId) return;
-    setView("processing");
+    setLoadingVideo(true);
     videoApi.get(videoId)
       .then(loadVideo)
       .catch((err: unknown) => {
         setUploadError(err instanceof Error ? err.message : "Could not open project");
         setView("upload");
-      });
+      })
+      .finally(() => setLoadingVideo(false));
   }, [loadVideo]);
 
   const handleDelete = useCallback((e: React.MouseEvent, vid: VideoResponse) => {
@@ -2950,8 +2959,9 @@ export function UploadPage() {
         />
       )}
 
-      <div className="flex h-[calc(100vh-116px)] flex-col overflow-hidden">
-        <div className={cn("flex flex-col items-stretch gap-3 border-b border-white/[.06]px-3 py-3 sm:px-5 sm:py-4 lg:flex-row lg:flex-wrap lg:items-center", view === "results" && "hidden")}>
+      <div className="flex h-[calc(100vh-116px)] flex-col overflow-hidden bg-[#080b12]">
+        {/* <div className={cn("sticky top-0 z-10 border-b border-white/[.06] bg-[#080b12] px-3 py-3 sm:px-5 sm:py-4", view === "results" && "hidden")}>
+          <div className="mx-auto flex w-full max-w-[1100px] flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
           <div className="min-w-0 lg:mr-2">
             <div className="flex items-center gap-2">
               {view === "results" && (
@@ -2996,206 +3006,82 @@ export function UploadPage() {
               </button>
             )}
           </div>
-        </div>
+          </div>
+        </div> */}
 
         <div className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-5 sm:py-5">
-          {/* Upload view — stepper wizard */}
-          {view === "upload" && (
-            <div className="flex h-full gap-6 overflow-hidden">
-              {/* Left: vertical stepper */}
-              <div className="hidden flex-none overflow-y-auto pt-1 md:flex">
-                <UploadStepper step={uploadStep} onStep={setUploadStep} />
+          {/* Loading skeleton while fetching project */}
+          {loadingVideo && (
+            <div className="flex h-full flex-col overflow-hidden -mx-3 -my-3 sm:-mx-5 sm:-my-5">
+              {/* Header skeleton */}
+              <div className="border-b border-white/[.06]">
+                <div className="mx-auto flex w-full max-w-[1240px] items-center gap-3 px-3 py-3 sm:px-5 sm:py-4">
+                  <div className="h-7 w-20 animate-pulse rounded-[8px] bg-white/[.07]" />
+                  <div className="h-8 w-8 animate-pulse rounded-[10px] bg-white/[.07]" />
+                  <div className="h-5 w-48 animate-pulse rounded-[6px] bg-white/[.07]" />
+                  <div className="h-6 w-14 animate-pulse rounded-full bg-white/[.05]" />
+                  <div className="h-6 w-16 animate-pulse rounded-full bg-emerald-400/[.12]" />
+                  <div className="ml-auto flex gap-2">
+                    <div className="h-8 w-28 animate-pulse rounded-[10px] bg-white/[.05]" />
+                    <div className="h-8 w-24 animate-pulse rounded-[10px] bg-[#ff3d6a]/20" />
+                  </div>
+                </div>
               </div>
-
-              {/* Divider */}
-              <div className="hidden w-px flex-none bg-white/[.06] md:block" />
-
-              {/* Right: step content */}
-              <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-
-                {/* Step 1: Source */}
-                {uploadStep === 1 && (
-                  <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-white/[.07] bg-white/[.02] p-1">
-                      {(["file", "yt"] as Source[]).map((s) => (
-                        <button key={s} onClick={() => { setSource(s); setUploadError(""); setPendingFile(null); }}
-                          className={cn(
-                            "flex flex-1 items-center justify-center gap-2 rounded-[9px] py-2.5 text-[13px] font-semibold transition",
-                            source === s ? "bg-white/[.08] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
-                          )}>
-                          {s === "file" ? (
-                            <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Upload file</>
-                          ) : (
-                            <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>YouTube URL</>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-
-                    {source === "file" && (
-                      <div
-                        onClick={() => fileInputRef.current?.click()}
-                        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                        onDragLeave={() => setDrag(false)}
-                        onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
-                        className={cn(
-                          "flex flex-1 cursor-pointer flex-col items-center justify-center gap-4 rounded-[18px] border-2 border-dashed p-12 text-center transition",
-                          drag ? "border-[#ff3d6a]/60 bg-[#ff3d6a]/[.06] scale-[1.01]"
-                          : pendingFile ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.04]"
-                          : "border-white/[.09] bg-white/[.015] hover:border-white/20 hover:bg-white/[.03]"
-                        )}
-                      >
-                        <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
-                        {pendingFile ? (
-                          <>
-                            <div className="grid h-16 w-16 place-items-center rounded-[20px] border border-[#ff3d6a]/30 bg-[#ff3d6a]/[.10]">
-                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                            </div>
-                            <div>
-                              <p className="font-display text-[16px] font-bold text-white">{pendingFile.name}</p>
-                              <p className="mt-1 text-[12px] text-zinc-500">{(pendingFile.size / 1024 / 1024).toFixed(1)} MB · click to change</p>
-                            </div>
-                            <button onClick={(e) => { e.stopPropagation(); setUploadStep(2); }}
-                              className="rounded-[11px] bg-[#ff3d6a] px-6 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_16px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f]">
-                              Continue →
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <div className="grid h-16 w-16 place-items-center rounded-[20px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08]">
-                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                            </div>
-                            <div>
-                              <p className="font-display text-2xl font-bold text-white">{drag ? "Drop to upload" : "Drop video here"}</p>
-                              <p className="mt-1.5 text-[13px] text-zinc-500">MP4, MOV, WebM, MKV, AVI · up to 4 GB</p>
-                            </div>
-                            <button className="rounded-[11px] border border-white/[.1] bg-white/[.06] px-6 py-2.5 text-[13px] font-bold text-zinc-200 transition hover:bg-white/[.10] hover:text-white">
-                              Browse files
-                            </button>
-                          </>
-                        )}
+              {/* Filter pills skeleton */}
+              <div className="mx-auto w-full max-w-[1240px] px-3 sm:px-5">
+                <div className="flex gap-2 py-3">
+                  {["w-10", "w-16", "w-16", "w-20"].map((w, i) => (
+                    <div key={i} className={`h-7 ${w} animate-pulse rounded-full bg-white/[.06]`} style={{ animationDelay: `${i * 40}ms` }} />
+                  ))}
+                </div>
+              </div>
+              {/* Cards grid */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="mx-auto w-full max-w-[1240px] px-3 pb-6 sm:px-5">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="overflow-hidden rounded-[16px] border border-white/[.07] bg-white/[.025]" style={{ animationDelay: `${i * 80}ms` }}>
+                      {/* Thumbnail */}
+                      <div className="relative aspect-video w-full animate-pulse bg-white/[.06]">
+                        <div className="absolute bottom-2 left-2 h-5 w-14 rounded-[6px] bg-white/[.12]" />
+                        <div className="absolute bottom-2 right-2 h-5 w-10 rounded-[6px] bg-white/[.12]" />
                       </div>
-                    )}
-
-                    {source === "yt" && (
-                      <div className="flex flex-1 flex-col justify-center rounded-[18px] border border-white/[.08] bg-white/[.02] p-8">
-                        <div className="mb-6 grid h-16 w-16 place-items-center rounded-[20px] border border-red-400/20 bg-red-400/[.08]">
-                          <svg width="28" height="28" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
-                        </div>
-                        <h3 className="font-display text-xl font-bold text-white">Import from YouTube</h3>
-                        <p className="mt-1 text-[13px] text-zinc-500">Paste a public YouTube URL to generate clips from it.</p>
-                        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-                          <input
-                            value={urlVal}
-                            onChange={(e) => setUrlVal(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && urlReady && handleUrlReady()}
-                            placeholder="https://youtube.com/watch?v=…"
-                            className="min-w-0 flex-1 rounded-[11px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
-                          />
-                          <button
-                            disabled={!urlReady}
-                            onClick={handleUrlReady}
-                            className="rounded-[11px] bg-[#ff3d6a] px-6 py-3 text-[13px] font-bold text-white transition hover:bg-[#e8304f] disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Continue →
-                          </button>
-                        </div>
-                        {urlReady && (
-                          <div className="mt-4 flex items-center gap-2.5 rounded-[11px] border border-emerald-300/15 bg-emerald-400/[.08] px-4 py-3 text-[12.5px] font-semibold text-emerald-300">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                            YouTube video detected — ready to continue
+                      {/* Body */}
+                      <div className="space-y-2.5 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 space-y-1.5">
+                            <div className="h-4 w-full animate-pulse rounded bg-white/[.07]" />
+                            <div className="h-4 w-3/4 animate-pulse rounded bg-white/[.07]" />
                           </div>
-                        )}
-                      </div>
-                    )}
-
-                    {uploadError && (
-                      <div className="flex items-center gap-2.5 rounded-[11px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        {uploadError}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Steps 2–4: ClipConfigPanel scoped to that step */}
-                {(uploadStep === 2 || uploadStep === 3 || uploadStep === 4) && (
-                  <div className="flex flex-col gap-6">
-                    <ClipConfigPanel
-                      config={clipConfig}
-                      onChange={setClipConfig}
-                      step={uploadStep === 2 ? 1 : uploadStep === 3 ? 2 : 3}
-                    />
-                    <div className="flex items-center justify-between border-t border-white/[.06] pt-4">
-                      <button onClick={() => setUploadStep((s) => s - 1)}
-                        className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-400 transition hover:text-white">
-                        ← Back
-                      </button>
-                      <button onClick={() => setUploadStep((s) => s + 1)}
-                        className="rounded-[10px] bg-[#ff3d6a] px-5 py-2 text-[13px] font-bold text-white shadow-[0_4px_16px_rgba(255,61,106,.2)] transition hover:bg-[#e8304f]">
-                        Continue →
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 5: Review */}
-                {uploadStep === 5 && (
-                  <div className="flex flex-col gap-5">
-                    <div className="rounded-[14px] border border-white/[.08] bg-white/[.025] p-5">
-                      <h3 className="mb-4 font-display text-[15px] font-bold text-white">Review & start</h3>
-                      <div className="space-y-3 text-[13px]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-500">Source</span>
-                          <span className="font-semibold text-zinc-200">
-                            {source === "file" ? (pendingFile?.name ?? "No file selected") : (urlVal || "No URL entered")}
-                          </span>
+                          <div className="h-5 w-10 animate-pulse rounded-full bg-white/[.06]" />
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-500">Clip length</span>
-                          <span className="font-semibold text-zinc-200">{clipConfig.duration_min}–{clipConfig.duration_max}s</span>
+                        <div className="h-3 w-full animate-pulse rounded bg-white/[.05]" />
+                        <div className="h-3 w-5/6 animate-pulse rounded bg-white/[.05]" />
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {["w-14","w-12","w-16","w-12","w-10"].map((w, j) => (
+                            <div key={j} className={`h-5 ${w} animate-pulse rounded-full bg-white/[.05]`} />
+                          ))}
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-500">Max clips</span>
-                          <span className="font-semibold text-zinc-200">{clipConfig.max_clips}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-500">Captions</span>
-                          <span className="font-semibold text-zinc-200">{clipConfig.add_captions ? `On · ${clipConfig.caption_style}` : "Off"}</span>
+                        <div className="flex items-center gap-2 border-t border-white/[.05] pt-2.5">
+                          <div className="h-8 flex-1 animate-pulse rounded-[9px] bg-[#ff3d6a]/20" />
+                          <div className="h-8 w-8 animate-pulse rounded-[9px] bg-white/[.05]" />
+                          <div className="h-8 w-8 animate-pulse rounded-[9px] bg-white/[.05]" />
+                          <div className="h-8 w-8 animate-pulse rounded-[9px] bg-white/[.05]" />
                         </div>
                       </div>
                     </div>
-
-                    {uploadError && (
-                      <div className="flex items-center gap-2.5 rounded-[11px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        {uploadError}
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <button onClick={() => setUploadStep(4)}
-                        className="rounded-[10px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-400 transition hover:text-white">
-                        ← Back
-                      </button>
-                      <button
-                        disabled={uploading || (source === "file" ? !pendingFile : !urlReady)}
-                        onClick={handleConfirm}
-                        className="flex items-center gap-2 rounded-[10px] bg-[#ff3d6a] px-6 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_20px_rgba(255,61,106,.3)] transition hover:bg-[#e8304f] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {uploading ? <span className="block h-4 w-4 rounded-full border-2 border-white/70 border-t-transparent animate-spin" /> : null}
-                        {uploading ? "Starting…" : "Confirm & start"}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  ))}
+                </div>
+                </div>
               </div>
             </div>
           )}
 
+
           {/* Processing */}
           {view === "processing" && activeVideo && (
             <div className="h-full overflow-y-auto">
+              <div className="mx-auto w-full max-w-[1100px] py-6 pb-10">
               <ProcessingView
                 video={activeVideo}
                 onDone={handleDone}
@@ -3206,6 +3092,7 @@ export function UploadPage() {
                   setClips([]);
                 }}
               />
+              </div>
             </div>
           )}
 
