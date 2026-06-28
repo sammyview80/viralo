@@ -609,7 +609,7 @@ export function StudioPage() {
 
       <div
         {...dragProps}
-        className="flex min-h-full flex-1 flex-col bg-[#0e1420]"
+        className="flex min-h-full flex-1 flex-col bg-[#080b12]"
       >
         {/* ── Hero ── */}
         <div className="relative overflow-hidden">

@@ -19,8 +19,6 @@ export function Pagination({
   const first = total === 0 ? 0 : (page - 1) * perPage + 1;
   const last = Math.min(total, page * perPage);
 
-  if (total <= perPage && page <= 1) return null;
-
   return (
     <div className={cn("flex flex-col gap-3 border-t border-white/[.06] px-4 py-3 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between", className)}>
       <span>

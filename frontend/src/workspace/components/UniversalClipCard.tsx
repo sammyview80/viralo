@@ -151,7 +151,7 @@ export function UniversalClipCard({
       )}
       style={{ animation: `fadeUp .28s ${delay}ms cubic-bezier(.22,.8,.4,1) both` }}
     >
-      <div className="relative aspect-video overflow-hidden bg-black">
+      <div className="relative aspect-[1/0.7] overflow-hidden bg-black">
         {hasVideo ? (
           <video ref={videoRef} src={localClip.storage_url!} poster={localClip.thumbnail_url ?? undefined} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
         ) : localClip.thumbnail_url ? (

@@ -585,7 +585,7 @@ export function ClipsPage() {
   const [minViralityScore, setMinViralityScore] = useState(0);
   const [published, setPublished] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortMode>("newest");
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestResponse | null>(null);
   const [suggestingTags, setSuggestingTags] = useState(false);
   const [tagSuggestError, setTagSuggestError] = useState<string | null>(null);
@@ -594,7 +594,7 @@ export function ClipsPage() {
   const [savedTagClipId, setSavedTagClipId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalClips, setTotalClips] = useState(0);
-  const perPage = 24;
+  const perPage = 9;
   const [editClip, setEditClip] = useState<ClipApiResponse | null>(null);
   const [failedPostBanner, setFailedPostBanner] = useState<string | null>(null);
   const [upscalingId, setUpscalingId] = useState<string | null>(null);
@@ -817,9 +817,9 @@ export function ClipsPage() {
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden bg-[#0e1420]">
+      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col bg-[#080b12]">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
+        <div className="border-b border-white/[.06] bg-[#080b12]/95 px-3 py-3 sm:px-5 sm:py-4">
           <div className="mx-auto flex w-full max-w-[1240px] flex-col px-3 sm:px-4 xl:px-5">
             <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
               <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
@@ -876,7 +876,7 @@ export function ClipsPage() {
 
         {/* Filter bar — collapsed by default to keep the workspace calm */}
         {showFilters && (
-          <div className="border-b border-white/[.06] bg-[#0b1018] px-3 py-3 sm:px-5 sm:py-4">
+          <div className="border-b border-white/[.06] bg-[#080b12] px-3 py-3 sm:px-5 sm:py-4">
             <div className="mx-auto grid w-full max-w-[1240px] gap-5 px-3 sm:px-4 md:grid-cols-2 xl:grid-cols-5 xl:px-5">
               <FilterGroup label="Platform">{PLATFORM_OPTIONS.map((f) => <Chip key={f.id} active={platforms.has(f.id)} onClick={() => setPlatforms((p) => toggle(p, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Status">{STATUS_OPTIONS.map((f) => <Chip key={f.id} active={statuses.has(f.id)} onClick={() => setStatuses((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
@@ -1017,7 +1017,7 @@ export function ClipsPage() {
           </div>
 
           {/* Clip details sidebar */}
-          <div className="hidden border-l border-white/[.07] bg-[#0b101a] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
+          <div className="hidden border-l border-white/[.07] bg-[#080b12] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
             {drawer ? (() => {
               const platformKey = drawer.platform ?? "shorts";
               const platformContent = drawer.clip_metadata?.platforms?.[platformKey] ?? drawer.clip_metadata?.platforms?.shorts ?? null;
@@ -1229,7 +1229,7 @@ export function ClipsPage() {
                     </section>
                   )}
 
-                  <div className="sticky bottom-0 space-y-2 bg-[#0b101a]/95 pt-1 backdrop-blur">
+                  <div className="sticky bottom-0 space-y-2 bg-[#080b12]/95 pt-1 backdrop-blur">
                     <Button className="w-full h-9 bg-[#ff3d6a] hover:bg-[#e8304f] text-white text-[13px] font-semibold" onClick={() => setPublishOpen(true)}>
                       {drawerPosted ? "Publish again" : drawerScheduled ? "Reschedule" : "Publish"}
                     </Button>

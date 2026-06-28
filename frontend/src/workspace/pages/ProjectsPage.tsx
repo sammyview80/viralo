@@ -222,7 +222,7 @@ export function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "ready" | "processing" | "failed">("all");
   const [page, setPage] = useState(1);
   const [totalProjects, setTotalProjects] = useState(0);
-  const perPage = 20;
+  const perPage = 5;
 
   const loadHistory = useCallback(() => {
     setLoading(true);
@@ -420,49 +420,33 @@ export function ProjectsPage() {
             <div className="min-w-0 p-3 sm:p-4 xl:p-5">
               {/* Stats */}
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.018] px-4 py-3.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-emerald-400/10 text-emerald-300">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Ready</div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-emerald-300">{readyCount}</span>
-                      {total > 0 && <span className="text-[11px] text-zinc-600">of {total}</span>}
+                {([
+                  { key: "ready", label: "Ready", count: readyCount, sub: total > 0 ? `of ${total}` : null, subColor: "text-zinc-600", numColor: "text-emerald-300", iconBg: "bg-emerald-400/10 text-emerald-300", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
+                  { key: "processing", label: "Processing", count: processingCount, sub: processingCount > 0 ? "in progress" : null, subColor: "text-amber-400/60", numColor: "text-amber-200", iconBg: "bg-amber-400/10 text-amber-200", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+                  { key: "failed", label: "Failed", count: failedCount, sub: failedCount === 0 ? "none" : null, subColor: "text-zinc-600", numColor: "text-red-300", iconBg: "bg-red-400/10 text-red-300", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> },
+                ] as const).map(({ key, label, count, sub, subColor, numColor, iconBg, icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => setStatusFilter((f) => f === key ? "all" : key)}
+                    className={cn("flex items-center gap-4 rounded-[16px] border px-4 py-3.5 text-left transition cursor-pointer", statusFilter === key ? "border-white/[.12] bg-white/[.035]" : "border-white/[.06] bg-white/[.018] hover:bg-white/[.025]")}
+                  >
+                    <div className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-[10px]", iconBg)}>{icon}</div>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">{label}</div>
+                      <div className="mt-0.5 flex items-baseline gap-1.5">
+                        <span className={cn("text-2xl font-bold", numColor)}>{count}</span>
+                        {sub && <span className={cn("text-[11px]", subColor)}>{sub}</span>}
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.018] px-4 py-3.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-amber-400/10 text-amber-200">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Processing</div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-amber-200">{processingCount}</span>
-                      {processingCount > 0 && <span className="text-[11px] text-amber-400/60">in progress</span>}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.018] px-4 py-3.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-red-400/10 text-red-300">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Failed</div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-red-300">{failedCount}</span>
-                      {failedCount === 0 && <span className="text-[11px] text-zinc-600">none</span>}
-                    </div>
-                  </div>
-                </div>
+                  </button>
+                ))}
               </div>
 
               {loading ? (
                 <div className="grid gap-3">
                   {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-[14px] border border-white/[.06] bg-white/[.025]" />)}
                 </div>
-              ) : filtered.length === 0 ? (
+              ) : displayFiltered.length === 0 ? (
                 <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[20px] border border-dashed border-white/[.09] bg-white/[.015] p-8 text-center">
                   <div className="grid h-14 w-14 place-items-center rounded-[18px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-2xl text-[#ff7a9a]">↥</div>
                   <h3 className="mt-4 font-display text-xl font-bold text-white">{history.length === 0 ? "No projects yet" : "No projects match"}</h3>
@@ -471,7 +455,7 @@ export function ProjectsPage() {
                 </div>
               ) : viewMode === "grid" ? (
                 <VirtualizedGrid
-                  items={filtered}
+                  items={displayFiltered}
                   keyForItem={(v) => v.id}
                   estimateRowHeight={310}
                   columns={[{ minWidth: 768, columns: 2 }, { minWidth: 1536, columns: 3 }]}
@@ -513,7 +497,7 @@ export function ProjectsPage() {
               ) : (
                 <div className="">
                   <VirtualizedList
-                    items={filtered}
+                    items={displayFiltered}
                     keyForItem={(v) => v.id}
                     estimateRowHeight={88}
                     renderItem={(video) => {
