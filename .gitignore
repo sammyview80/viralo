@@ -79,3 +79,10 @@ media/
 .superpowers/
 skills-lock.json
 yt-cookies.txt
+AGENTS.md
+.env.bak
+.gemini
+.agents
+.codex
+.env.bak.*
+yt-cookies.txt

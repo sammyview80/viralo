@@ -60,6 +60,52 @@ function fmt(s: number) {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+function drawTemplateCaption(ctx: CanvasRenderingContext2D, cap: Caption, W: number, H: number, yPos: number) {
+  const text = cap.template === "mr-beast" ? cap.text.toUpperCase() : cap.text;
+  const fontSize = cap.template === "mr-beast" ? Math.max(cap.fontSize, 32) : cap.fontSize;
+  ctx.font = `900 ${fontSize}px sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const metrics = ctx.measureText(text);
+  const boxW = Math.min(W * 0.86, metrics.width + 42);
+  const boxH = fontSize * 1.55;
+  const x = W / 2;
+  const radius = 12;
+
+  function roundRect(fill: string) {
+    ctx.fillStyle = fill;
+    const left = x - boxW / 2;
+    const top = yPos - boxH / 2;
+    ctx.beginPath();
+    ctx.roundRect(left, top, boxW, boxH, radius);
+    ctx.fill();
+  }
+
+  ctx.save();
+  if (cap.template === "modern") {
+    roundRect("rgba(0,0,0,0.92)");
+    ctx.fillStyle = "#ffea00";
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = 6;
+  } else if (cap.template === "bouncy" || cap.template === "default") {
+    roundRect("rgba(255,255,255,0.96)");
+    ctx.fillStyle = cap.template === "bouncy" ? "#7c2dff" : "#111827";
+    ctx.shadowColor = "rgba(0,0,0,0.4)";
+    ctx.shadowBlur = 6;
+  } else if (cap.template === "mr-beast") {
+    roundRect("#ffd21f");
+    ctx.fillStyle = "#00a7b7";
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 4;
+    ctx.strokeText(text, x, yPos);
+  } else {
+    ctx.fillStyle = cap.color;
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = 10;
+  }
+  ctx.fillText(text, x, yPos);
+  ctx.restore();
+}
+
 type EditorTab = "trim" | "captions" | "effects" | "export";
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
@@ -233,13 +279,7 @@ export function VideoEditor({
       for (const cap of captionsRef.current) {
         if (nowSec >= cap.startSec && nowSec <= cap.endSec) {
           const yPos = cap.position === "top" ? H * 0.1 : cap.position === "center" ? H * 0.5 : H * 0.88;
-          ctx.save();
-          ctx.font = `bold ${cap.fontSize}px sans-serif`;
-          ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 8;
-          ctx.fillStyle = cap.color;
-          ctx.fillText(cap.text, W / 2, yPos);
-          ctx.restore();
+          drawTemplateCaption(ctx, cap, W, H, yPos);
         }
       }
       animRef.current = requestAnimationFrame(draw);
@@ -290,7 +330,7 @@ export function VideoEditor({
       if (ed.trim_start_sec !== undefined) setTrimStart(ed.trim_start_sec);
       if (ed.trim_end_sec != null) setTrimEnd(ed.trim_end_sec);
       if (ed.captions?.length) {
-        setCaptions(ed.captions.map((c) => ({ id: c.id, text: c.text, startSec: c.start_sec, endSec: c.end_sec, position: c.position, color: c.color, fontSize: c.font_size })));
+        setCaptions(ed.captions.map((c) => ({ id: c.id, text: c.text, startSec: c.start_sec, endSec: c.end_sec, position: c.position, color: c.color, fontSize: c.font_size, template: c.template ?? "default" })));
       }
       if (ed.markers?.length) {
         setMarkers(ed.markers.map((m) => ({ id: m.id, timeMs: m.time_ms, sound: m.sound, emoji: m.emoji, label: m.label })));
@@ -304,7 +344,7 @@ export function VideoEditor({
     setSaving(true); setSaveStatus("idle");
     const editorData: EditorData = {
       trim_start_sec: trimStart, trim_end_sec: trimEnd || null,
-      captions: captions.map((c) => ({ id: c.id, text: c.text, start_sec: c.startSec, end_sec: c.endSec, position: c.position, color: c.color, font_size: c.fontSize })),
+      captions: captions.map((c) => ({ id: c.id, text: c.text, start_sec: c.startSec, end_sec: c.endSec, position: c.position, color: c.color, font_size: c.fontSize, template: c.template })),
       markers: markers.map((m) => ({ id: m.id, time_ms: m.timeMs, sound: m.sound, emoji: m.emoji, label: m.label })),
     };
     try {

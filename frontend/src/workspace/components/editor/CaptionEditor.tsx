@@ -9,6 +9,7 @@ export interface Caption {
   position: "top" | "center" | "bottom";
   color: string;
   fontSize: number;
+  template: CaptionTemplate;
 }
 
 interface CaptionEditorProps {
@@ -17,8 +18,17 @@ interface CaptionEditorProps {
   onChange: (captions: Caption[]) => void;
 }
 
+export type CaptionTemplate = "default" | "modern" | "bouncy" | "mr-beast" | "business";
+
 const POSITION_OPTS: Caption["position"][] = ["top", "center", "bottom"];
 const PRESET_COLORS = ["#ffffff", "#ffee00", "#ff3d6a", "#00d9ff", "#a855f7", "#22c55e"];
+const CAPTION_TEMPLATES: Array<{ id: CaptionTemplate; label: string; bg: string; fg: string; box?: string; cls: string }> = [
+  { id: "default", label: "Default", bg: "bg-[#34343a]", fg: "text-white", box: "bg-white", cls: "" },
+  { id: "modern", label: "Modern", bg: "bg-gradient-to-b from-orange-700 to-orange-950", fg: "text-yellow-300", box: "bg-black", cls: "" },
+  { id: "bouncy", label: "Bouncy", bg: "bg-gradient-to-b from-violet-500 to-fuchsia-900", fg: "text-white", box: "bg-white", cls: "" },
+  { id: "mr-beast", label: "Mr. Beast", bg: "bg-gradient-to-b from-sky-500 to-blue-900", fg: "text-cyan-500", box: "bg-yellow-400", cls: "uppercase" },
+  { id: "business", label: "Business", bg: "bg-gradient-to-b from-stone-500 to-stone-900", fg: "text-white", cls: "" },
+];
 
 function uid() {
   return Math.random().toString(36).slice(2, 9);
@@ -42,6 +52,7 @@ export function CaptionEditor({ captions, duration, onChange }: CaptionEditorPro
       position: "bottom",
       color: "#ffffff",
       fontSize: 24,
+      template: "default",
     };
     setEditing(cap);
   }
@@ -102,6 +113,31 @@ export function CaptionEditor({ captions, duration, onChange }: CaptionEditorPro
               value={editing.endSec}
               onChange={(e) => setEditing({ ...editing, endSec: parseFloat(e.target.value) || 1 })}
             />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-zinc-600">Template</label>
+          <div className="grid grid-cols-5 gap-2">
+            {CAPTION_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                type="button"
+                onClick={() => setEditing({ ...editing, template: tpl.id })}
+                className={cn(
+                  "rounded-[10px] border p-1.5 text-left transition cursor-pointer",
+                  editing.template === tpl.id ? "border-[#ff3d6a] bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.02] hover:border-white/[.14]"
+                )}
+              >
+                <div className={cn("relative aspect-[9/16] overflow-hidden rounded-[7px]", tpl.bg)}>
+                  <div className="absolute left-1/2 top-[16%] -translate-x-1/2 rounded bg-black/70 px-1.5 py-0.5 text-[8px] font-bold text-white">Your video</div>
+                  <div className={cn("absolute left-2 right-2 top-[68%] rounded px-1 py-1 text-center text-[9px] font-black leading-tight", tpl.box, tpl.fg, tpl.cls)}>
+                    subtitle
+                  </div>
+                </div>
+                <div className={cn("mt-1 truncate text-center text-[10px] font-bold", editing.template === tpl.id ? "text-[#ff7a9a]" : "text-zinc-500")}>{tpl.label}</div>
+              </button>
+            ))}
           </div>
         </div>
 

@@ -106,6 +106,7 @@ class EditorCaption(BaseModel):
     position: Literal["top", "center", "bottom"] = "bottom"
     color: str = "#ffffff"
     font_size: int = Field(default=24, ge=12, le=48)
+    template: Literal["default", "modern", "bouncy", "mr-beast", "business"] = "default"
 
     @field_validator("color")
     @classmethod

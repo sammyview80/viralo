@@ -268,6 +268,7 @@ export interface EditorCaption {
   position: "top" | "center" | "bottom";
   color: string;
   font_size: number;
+  template: "default" | "modern" | "bouncy" | "mr-beast" | "business";
 }
 
 export interface EditorMarker {
@@ -323,6 +324,20 @@ export interface ClipConfig {
 
 export type OutputQuality = "source" | "1080p" | "720p" | "480p" | "360p";
 
+export interface YouTubeInspectResponse {
+  valid: boolean;
+  url: string;
+  video_id?: string | null;
+  title?: string | null;
+  channel?: string | null;
+  duration_sec?: number | null;
+  thumbnail_url?: string | null;
+  view_count?: number | null;
+  upload_date?: string | null;
+  description?: string | null;
+  error?: string | null;
+}
+
 export interface YouTubeFormatInfo {
   height: number;
   fps?: number | null;
@@ -355,6 +370,8 @@ export const videoApi = {
     }),
   youtubeFormats: (url: string) =>
     videoReq<YouTubeFormatsResponse>("POST", "/youtube/formats", { url }),
+  youtubeInspect: (url: string) =>
+    videoReq<YouTubeInspectResponse>("POST", "/youtube/inspect", { url }),
   get:     (id: string) => videoReq<VideoResponse>("GET", `/videos/${id}`),
   list:    (page = 1, per_page = 20) =>
     videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos?page=${page}&per_page=${per_page}`)
@@ -382,6 +399,7 @@ export const videoApi = {
   cancel:  (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/cancel`),
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
+  previewProxy: (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/preview-proxy`),
   downloadZip: async (clipIds: string[], zipName?: string): Promise<Blob> => {
     const base = API_BASES.video;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -420,6 +438,8 @@ export const videoApi = {
       segment_title?: string;
     }>;
   }) => videoReq<{ video_id: string; job_id: string }>("POST", "/ranking", payload),
+  createRankingPreview: (url: string) =>
+    videoReq<{ preview_url: string; quality: string }>("POST", "/ranking/preview-source", { url }),
   suggestRankingTitle: (topic: string, segment_count: number) =>
     videoReq<{ title: string; highlight_words: string[] }>("POST", "/ranking/suggest-title", { topic, segment_count }),
 };

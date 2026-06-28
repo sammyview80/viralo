@@ -20,16 +20,34 @@
     --input: 0 0% 100%;
     --ring: 346 100% 62%;
     --radius: 9px;
+    /* ── Surfaces ── */
     --surface-0: #080b12;
     --surface-1: #0b101a;
     --surface-2: #0e1420;
     --surface-3: #141926;
     --surface-glass: rgba(255, 255, 255, .035);
+
+    /* ── Borders ── */
     --border-subtle: rgba(255, 255, 255, .06);
     --border-strong: rgba(255, 255, 255, .10);
+    --c-border: #1F2937;
+    --c-border-hover: #334155;
+
+    /* ── Text ── */
+    --c-text: #F3F4F6;
+    --c-text-secondary: #A1AAB8;
+    --c-text-muted: #6B7280;
+
+    /* ── Brand ── */
     --brand: #ff3d6a;
+    --brand-hover: #ff5c8a;
     --brand-2: #ff8040;
     --brand-font: "Inter";
+
+    /* ── Status ── */
+    --c-success: #34D399;
+    --c-warning: #FACC15;
+    --c-error: #FB7185;
   }
 
   * {

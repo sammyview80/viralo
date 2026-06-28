@@ -461,13 +461,30 @@ function PlatformCopyCard({ platform, content, pcfg }: {
       {open && (
         <div className="border-t border-white/[.06] px-3 pb-3 pt-2">
           <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                const tags = content.tags?.map((t) => `#${t.replace(/^#+/, "")}`).join(" ") ?? "";
+                navigator.clipboard.writeText([content.description, tags].filter(Boolean).join("\n\n"));
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-white/[.07] bg-white/[.025] py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-white/[.05] hover:text-white"
+            >
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy all
+            </button>
             <div>
-              <p className="mb-1 text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Description</p>
+              <div className="mb-1 flex items-center justify-between">
+                <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Description</p>
+                <button type="button" onClick={() => navigator.clipboard.writeText(content.description)} className="text-[9px] text-zinc-600 hover:text-zinc-400 transition">copy</button>
+              </div>
               <p className="rounded-[8px] bg-white/[.025] p-2 text-[11px] leading-4 text-zinc-300">{content.description}</p>
             </div>
             {content.tags?.length > 0 && (
               <div>
-                <p className="mb-1 text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Tags</p>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Tags</p>
+                  <button type="button" onClick={() => navigator.clipboard.writeText(content.tags.map((t) => `#${t.replace(/^#+/, "")}`).join(" "))} className="text-[9px] text-zinc-600 hover:text-zinc-400 transition">copy</button>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {content.tags.map((tag) => <span key={tag} className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: `${pcfg.color}35`, background: `${pcfg.color}12`, color: pcfg.color }}>#{tag.replace(/^#+/, "")}</span>)}
                 </div>
@@ -581,6 +598,7 @@ export function ClipsPage() {
   const [editClip, setEditClip] = useState<ClipApiResponse | null>(null);
   const [failedPostBanner, setFailedPostBanner] = useState<string | null>(null);
   const [upscalingId, setUpscalingId] = useState<string | null>(null);
+  const [compareView, setCompareView] = useState<string | null>(null); // clip id with compare open
   async function handleSaveAiSuggestions(clip: ClipApiResponse, suggestions: TagSuggestResponse) {
     setSavingTags(true);
     try {
@@ -621,15 +639,31 @@ export function ClipsPage() {
 
 
   // Highlight clip + show banner when navigated from failed post notification
+  // Also handle ?video_id= from Projects "Show clips"
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const clipParam = params.get("clip");
     if (clipParam) {
       setSelectedId(clipParam);
       setFailedPostBanner("This clip failed to post. Check status below and reschedule when ready.");
-      // Clean URL without reload
       const url = new URL(window.location.href);
       url.searchParams.delete("clip");
+      window.history.replaceState({}, "", url.toString());
+    }
+    const vidParam = params.get("video_id");
+    if (vidParam) {
+      setLoading(true);
+      videoApi.clips(vidParam).then((resp) => {
+        const items = Array.isArray(resp.items) ? resp.items : [];
+        setClips(items);
+        setTotalClips(items.length);
+        setSelectedId(items.at(0)?.id ?? null);
+      }).catch(() => {
+        setClips([]);
+        setTotalClips(0);
+      }).finally(() => setLoading(false));
+      const url = new URL(window.location.href);
+      url.searchParams.delete("video_id");
       window.history.replaceState({}, "", url.toString());
     }
   }, []);
@@ -1070,6 +1104,12 @@ export function ClipsPage() {
                             <p className="text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Primary hashtags</p>
                             <div className="flex items-center gap-1.5">
                               {displayPrimaryTags.length > 0 && <span className="text-[10px] text-zinc-600">{displayPrimaryTags.length}</span>}
+                              {displayPrimaryTags.length > 0 && (
+                                <button
+                                  onClick={() => navigator.clipboard.writeText(displayPrimaryTags.map((t) => `#${t}`).join(" "))}
+                                  className="text-[9px] font-semibold text-zinc-600 hover:text-zinc-400 transition"
+                                >copy</button>
+                              )}
                               <button
                                 onClick={() => handleSuggestTags(drawer)}
                                 disabled={isSuggestingThisClip}
@@ -1169,6 +1209,26 @@ export function ClipsPage() {
 
 
 
+                  {compareView === drawer.id && drawer.upscaled_storage_url && drawer.storage_url && (
+                    <section className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
+                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Before / After</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="mb-1 text-center text-[9px] text-zinc-600">Original</p>
+                          <video src={drawer.storage_url} className="w-full rounded-[8px] object-cover" controls muted playsInline preload="metadata" style={{ maxHeight: 140 }} />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-center text-[9px] text-emerald-500">4K Upscaled</p>
+                          <video src={drawer.upscaled_storage_url} className="w-full rounded-[8px] object-cover ring-1 ring-emerald-500/40" controls muted playsInline preload="metadata" style={{ maxHeight: 140 }} />
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <a href={drawer.storage_url} download className="rounded-[8px] border border-white/[.06] bg-white/[.025] py-1 text-center text-[10px] font-semibold text-zinc-400 hover:bg-white/[.05]">↓ Original</a>
+                        <a href={drawer.upscaled_storage_url} download className="rounded-[8px] border border-emerald-500/30 bg-emerald-500/10 py-1 text-center text-[10px] font-semibold text-emerald-400 hover:bg-emerald-500/20">↓ 4K</a>
+                      </div>
+                    </section>
+                  )}
+
                   <div className="sticky bottom-0 space-y-2 bg-[#0b101a]/95 pt-1 backdrop-blur">
                     <Button className="w-full h-9 bg-[#ff3d6a] hover:bg-[#e8304f] text-white text-[13px] font-semibold" onClick={() => setPublishOpen(true)}>
                       {drawerPosted ? "Publish again" : drawerScheduled ? "Reschedule" : "Publish"}
@@ -1188,17 +1248,20 @@ export function ClipsPage() {
                       className="w-full h-8 text-[12px]"
                       variant="secondary"
                       disabled={upscalingId === drawer.id || !drawer.storage_url}
-                      onClick={async () => {
-                        setUpscalingId(drawer.id);
-                        try {
-                          const updated = await videoApi.upscaleClip(drawer.id, "4K");
-                          setClips((prev) => prev.map((c) => c.id === updated.id ? updated : c));
-                        } finally {
-                          setUpscalingId(null);
+                      onClick={() => {
+                        if (drawer.upscaled_storage_url) {
+                          setCompareView((v) => v === drawer.id ? null : drawer.id);
+                          return;
                         }
+                        const clipId = drawer.id;
+                        setUpscalingId(clipId);
+                        videoApi.upscaleClip(clipId, "4K").then((updated) => {
+                          setClips((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+                          setCompareView(clipId);
+                        }).finally(() => setUpscalingId(null));
                       }}
                     >
-                      {upscalingId === drawer.id ? "Upscaling…" : drawer.upscaled_storage_url ? "⬆ Upscaled ✓" : "⬆ Upscale 4K"}
+                      {upscalingId === drawer.id ? "Upscaling…" : drawer.upscaled_storage_url ? "⬆ Upscaled ✓ — Compare" : "⬆ Upscale 4K"}
                     </Button>
                   </div>
                 </div>

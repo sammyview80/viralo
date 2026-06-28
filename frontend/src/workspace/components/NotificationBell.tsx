@@ -159,8 +159,9 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
     if (isUnread) markRead(n.id);
     const url = n.action_url;
     if (url) {
+      setOpen(false);
       if (url.startsWith("http")) window.open(url, "_blank", "noopener,noreferrer");
-      else navigate(url.replace(/^\/workspace/, ""));
+      else setTimeout(() => navigate(url.replace(/^\/workspace/, "")), 0);
     }
   }
 

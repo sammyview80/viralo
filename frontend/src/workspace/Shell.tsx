@@ -31,7 +31,7 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-white/[.055] bg-[#0e1420] transition-[width] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:flex",
+        "fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-white/[.055] bg-[#080b12] transition-[width] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:flex",
         collapsed ? "w-[62px]" : "w-[216px]"
       )}
     >
@@ -41,7 +41,7 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
         {!collapsed && (
           <button
             onClick={onCollapse}
-            className="ml-auto grid h-[26px] w-[26px] flex-none place-items-center rounded-[7px] border border-transparent text-zinc-500 transition-[background,border,color] hover:border-white/[.07] hover:bg-[#141926] hover:text-zinc-200"
+            className="ml-auto grid h-[26px] w-[26px] flex-none place-items-center rounded-[7px] border border-transparent text-zinc-500 transition-[background,border,color] hover:border-white/[.07] hover:bg-surface-3 hover:text-zinc-200"
             title="Collapse sidebar"
           >
             <Icons.ChevronL size={13} />
@@ -59,8 +59,8 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
             "relative mb-0.5 flex items-center overflow-hidden rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-[background,color]",
             collapsed ? "justify-center gap-0" : "gap-2.5",
             active === "dashboard"
-              ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
-              : "text-zinc-300 hover:bg-[#141926] hover:text-white"
+              ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-brand"
+              : "text-zinc-300 hover:bg-surface-3 hover:text-white"
           )}
         >
           <span className={cn("flex-none transition-opacity", active === "dashboard" ? "opacity-100" : "opacity-75")}>
@@ -94,8 +94,8 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
                     "relative mb-0.5 flex items-center overflow-hidden rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-[background,color]",
                     collapsed ? "justify-center gap-0" : "gap-2.5",
                     isActive
-                      ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
-                      : "text-zinc-300 hover:bg-[#141926] hover:text-white"
+                      ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-brand"
+                      : "text-zinc-300 hover:bg-surface-3 hover:text-white"
                   )}
                 >
                   <span className={cn("flex-none transition-opacity", isActive ? "opacity-100" : "opacity-75 group-hover:opacity-100")}>
@@ -109,7 +109,7 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
                       className={cn(
                         "flex-none rounded-full px-1.5 py-0.5 text-[10px] font-bold tracking-[.02em] transition-[opacity,width] duration-300",
                         collapsed ? "w-0 overflow-hidden opacity-0 pointer-events-none" : "opacity-100",
-                        isActive ? "bg-[#ff3d6a]/15 text-[#ff3d6a]" : "bg-white/[.06] text-zinc-400"
+                        isActive ? "bg-brand/15 text-brand" : "bg-white/[.06] text-zinc-400"
                       )}
                     >
                       {item.badge}
@@ -125,7 +125,7 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
         {collapsed && (
           <button
             onClick={onCollapse}
-            className="mt-auto flex items-center justify-center rounded-[8px] px-2.5 py-2 text-zinc-500 transition hover:bg-[#141926] hover:text-zinc-200"
+            className="mt-auto flex items-center justify-center rounded-[8px] px-2.5 py-2 text-zinc-500 transition hover:bg-surface-3 hover:text-zinc-200"
           >
             <Icons.ChevronR size={17} />
           </button>
@@ -138,7 +138,7 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
           <div className="overflow-hidden rounded-[12px] border border-[rgba(255,61,90,.25)] bg-gradient-to-br from-[rgba(255,61,90,.18)] to-[rgba(255,122,61,.08)] p-3.5">
             <h4 className="font-display text-[12.5px] font-semibold">Upgrade to Pro</h4>
             <p className="mt-0.5 text-[11px] leading-5 text-zinc-400">Unlimited videos, voice cloning &amp; agency tools.</p>
-            <button className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[12px] font-semibold text-white shadow-[0_3px_14px_rgba(255,61,106,.2),inset_0_1px_0_rgba(255,255,255,.18)] transition hover:shadow-[0_5px_22px_rgba(255,61,106,.36),inset_0_1px_0_rgba(255,255,255,.18)]">
+            <button className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[9px] bg-brand px-3 py-1.5 text-[12px] font-semibold text-white shadow-[0_3px_14px_rgba(255,61,106,.2),inset_0_1px_0_rgba(255,255,255,.18)] transition hover:shadow-[0_5px_22px_rgba(255,61,106,.36),inset_0_1px_0_rgba(255,255,255,.18)]">
               <Icons.Sparkle size={12} />
               Get Pro
             </button>
@@ -159,7 +159,7 @@ function MobileNav({ active }: { active: ActiveKey }) {
   ];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[.07] bg-[#080b12]/92 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 backdrop-blur-xl lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[.07] bg-surface-0/92 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 backdrop-blur-xl lg:hidden">
       <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1">
         {items.map((item) => {
           const Ico = Icons[item.icon];
@@ -172,7 +172,7 @@ function MobileNav({ active }: { active: ActiveKey }) {
               className={cn(
                 "flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-[12px] px-1 text-[10.5px] font-semibold transition",
                 isActive
-                  ? "bg-[#ff3d6a]/12 text-[#ff7a9a] ring-1 ring-[#ff3d6a]/20"
+                  ? "bg-brand/12 text-[#ff7a9a] ring-1 ring-[#ff3d6a]/20"
                   : "text-zinc-500 hover:bg-white/[.04] hover:text-zinc-200"
               )}
             >
@@ -187,7 +187,7 @@ function MobileNav({ active }: { active: ActiveKey }) {
 }
 
 /* ─── Shell ─── */
-export function Shell({ active, children }: { active: ActiveKey; children: React.ReactNode }) {
+export function Shell({ active, children, fullBleed = false }: { active: ActiveKey; children: React.ReactNode; fullBleed?: boolean }) {
   const [collapsed, setCollapsed] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const { user } = useAuth();
@@ -227,7 +227,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
 
       {/* Topbar */}
       <header
-        className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-white/[.055] bg-[#080b12]/82 px-3 backdrop-blur-xl transition-[padding-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] sm:px-4 lg:pl-[calc(var(--sidebar-width)+28px)] lg:pr-7"
+        className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-white/[.055] bg-surface-0/82 px-3 backdrop-blur-xl transition-[padding-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] sm:px-4 lg:pl-[calc(var(--sidebar-width)+28px)] lg:pr-7"
       >
         <div className="flex min-w-0 items-center gap-2 text-[12px] text-zinc-500 lg:gap-1.5">
           <div className="lg:hidden">
@@ -249,7 +249,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
             className="w-full cursor-pointer rounded-[9px] border border-white/[.07] bg-white/[.04] px-9 py-2 text-[12.5px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition hover:border-white/[.11]"
             placeholder="Search videos, workflows…"
           />
-          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[5px] border border-white/[.07] bg-[#141926] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-500">⌘K</kbd>
+          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[5px] border border-white/[.07] bg-surface-3 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-500">⌘K</kbd>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
@@ -257,7 +257,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
           <div className="relative">
             <div
               onClick={() => setAvatarOpen((v) => !v)}
-              className="flex cursor-pointer items-center gap-2.5 rounded-full border border-white/[.08] bg-[#0e1420] py-1 pl-1 pr-1 transition hover:border-white/[.13] hover:bg-[#141926] sm:pr-2.5"
+              className="flex cursor-pointer items-center gap-2.5 rounded-full border border-white/[.08] bg-surface-2 py-1 pl-1 pr-1 transition hover:border-white/[.13] hover:bg-surface-3 sm:pr-2.5"
             >
               <div className="grid h-7 w-7 flex-none place-items-center rounded-full bg-gradient-to-br from-[#ff4d78] to-[#ff8040] font-display text-[12px] font-bold text-white">{initials}</div>
               <div className="hidden sm:block">
@@ -266,7 +266,7 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
               </div>
             </div>
             {avatarOpen && (
-              <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-44 overflow-hidden rounded-[11px] border border-white/[.10] bg-[#141926] shadow-[0_16px_40px_rgba(0,0,0,.5)]">
+              <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-44 overflow-hidden rounded-[11px] border border-white/[.10] bg-surface-3 shadow-[0_16px_40px_rgba(0,0,0,.5)]">
                 <a href="/settings" onClick={(e) => { e.preventDefault(); setAvatarOpen(false); navigate("/settings"); }}
                   className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] text-zinc-300 transition hover:bg-white/[.05] hover:text-white">
                   ⚙ Settings
@@ -284,9 +284,14 @@ export function Shell({ active, children }: { active: ActiveKey; children: React
 
       {/* Page content */}
       <main
-        className="relative z-[1] flex h-[calc(100vh-3.5rem)] flex-col overflow-y-auto px-3 pb-6 pt-5 transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] sm:px-4 sm:pt-6 lg:ml-[var(--sidebar-width)] lg:pb-6"
+        className={cn(
+          "relative z-[1] flex h-[calc(100vh-3.5rem)] flex-col overflow-y-auto transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
+          fullBleed ? "" : "px-3 pb-6 pt-5 sm:px-4 sm:pt-6 lg:pb-6"
+        )}
       >
-        <div className="mx-auto flex w-full flex-1 flex-col max-w-[1240px] space-y-5 sm:space-y-6">{children}</div>
+        {fullBleed
+          ? <div className="flex w-full flex-1 flex-col">{children}</div>
+          : <div className="mx-auto flex w-full flex-1 flex-col max-w-[1240px] space-y-5 sm:space-y-6">{children}</div>}
       </main>
     </div>
   );

@@ -5,6 +5,8 @@ import json
 import os
 import re
 import subprocess
+import tempfile
+import shutil
 import uuid
 import zipfile
 from pathlib import Path
@@ -16,7 +18,7 @@ import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel as _BaseModel
+from pydantic import BaseModel as _BaseModel, Field, model_validator
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -176,6 +178,28 @@ def _safe_stem(title: str | None, fallback: str) -> str:
     return re.sub(r"[^a-z0-9_\-]", "_", raw, flags=re.IGNORECASE)[:60]
 
 
+def _preview_storage_key(tenant_id: str, video_id: str) -> str:
+    return f"previews/{tenant_id}/{video_id}/preview_360p.mp4"
+
+
+async def _download_preview_source(source_ref: str, out_path: str) -> None:
+    rel = _storage_url_to_relative_path(source_ref)
+    if rel:
+        storage_root = Path(os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage"))
+        local_src = (storage_root / rel).resolve()
+        if not local_src.exists():
+            raise HTTPException(status_code=422, detail="Source file not found on disk.")
+        shutil.copyfile(local_src, out_path)
+        return
+
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+        async with client.stream("GET", source_ref) as resp:
+            resp.raise_for_status()
+            with open(out_path, "wb") as f:
+                async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                    f.write(chunk)
+
+
 # ---------------------------------------------------------------------------
 # Upload & import
 # ---------------------------------------------------------------------------
@@ -187,44 +211,120 @@ async def _oembed_inspect(video_id: str, url: str) -> dict:
 
     def _fetch_sync() -> dict:
         result: dict = {}
-        # Primary: YouTube oEmbed
+        # YouTube oEmbed — single fast request for title/channel/thumbnail.
         try:
             oe_url = f"https://www.youtube.com/oembed?url={_uparse.quote(url, safe='')}&format=json"
-            with _req.urlopen(oe_url, timeout=8) as r:
+            with _req.urlopen(oe_url, timeout=4) as r:
                 d = json.loads(r.read())
             result["title"] = d.get("title") or ""
             result["channel"] = d.get("author_name") or ""
+            # Prefer maxres without a verify round-trip; client falls back on error.
             raw_thumb = d.get("thumbnail_url") or ""
-            # oEmbed gives hqdefault; try maxresdefault first
-            if raw_thumb:
-                maxres = raw_thumb.replace("/hqdefault.jpg", "/maxresdefault.jpg").replace("/hqdefault", "/maxresdefault")
-                try:
-                    with _req.urlopen(maxres, timeout=4) as tr:
-                        if tr.status == 200:
-                            raw_thumb = maxres
-                except Exception:
-                    pass
-            result["thumbnail_url"] = raw_thumb
+            result["thumbnail_url"] = (
+                raw_thumb.replace("/hqdefault", "/maxresdefault") if raw_thumb
+                else f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
+            )
         except Exception:
-            pass
-
-        # Fallback thumbnail from known URL pattern if oEmbed failed
-        if not result.get("thumbnail_url"):
-            result["thumbnail_url"] = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-
-        # noembed for view_count (best-effort, may not have it)
-        try:
-            ne_url = f"https://noembed.com/embed?url={_uparse.quote(url, safe='')}"
-            with _req.urlopen(ne_url, timeout=6) as r:
-                ne = json.loads(r.read())
-            if not result.get("title") and ne.get("title"):
-                result["title"] = ne["title"]
-        except Exception:
-            pass
+            result["thumbnail_url"] = f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
 
         return result
 
     return await _asyncio.get_event_loop().run_in_executor(None, _fetch_sync)
+
+
+async def _scrape_youtube_meta(video_id: str, timeout: int = 5) -> dict:
+    """Scrape duration/views/live-status from the watch page in one HTTP GET.
+
+    Replaces a ~10s yt-dlp subprocess with a sub-second request that parses the
+    fields embedded in the page's ytInitialPlayerResponse. Best-effort: returns
+    {} on any failure so oEmbed still covers title/thumbnail."""
+    import urllib.request as _req, re as _re, html as _html, asyncio as _asyncio
+
+    def _fetch_sync() -> dict:
+        watch = f"https://www.youtube.com/watch?v={video_id}&hl=en"
+        req = _req.Request(watch, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cookie": "CONSENT=YES+1",
+        })
+        try:
+            with _req.urlopen(req, timeout=timeout) as r:
+                body = r.read().decode("utf-8", "ignore")
+        except Exception:
+            return {}
+        res: dict = {}
+        m = _re.search(r'"lengthSeconds":"(\d+)"', body)
+        if m:
+            res["duration"] = int(m.group(1))
+        m = _re.search(r'"viewCount":"(\d+)"', body)
+        if m:
+            res["view_count"] = int(m.group(1))
+        m = _re.search(r'<meta name="title" content="([^"]*)"', body)
+        if m:
+            res["title"] = _html.unescape(m.group(1))
+        # No lengthSeconds + explicit live flag → a live/upcoming stream.
+        if "duration" not in res and '"isLiveContent":true' in body:
+            res["is_live"] = True
+        return res
+
+    return await _asyncio.get_event_loop().run_in_executor(None, _fetch_sync)
+
+
+def _parse_iso8601_duration(iso: str) -> int | None:
+    """PT1H2M3S -> total seconds. Returns None if unparseable / empty (live)."""
+    m = re.match(r"^P(?:\d+D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$", iso or "")
+    if not m:
+        return None
+    h, mi, s = (int(x) if x else 0 for x in m.groups())
+    total = h * 3600 + mi * 60 + s
+    return total or None
+
+
+async def _youtube_data_api(video_id: str, timeout: float = 4.0) -> dict | None:
+    """Fetch metadata via the official YouTube Data API v3 — ~100ms, no scraping.
+
+    Returns dict {title, channel, duration, thumbnail_url, view_count, is_live} or
+    None when no API key is set / the call fails (caller falls back to scrape)."""
+    api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
+    if not api_key:
+        return None
+    params = {
+        "part": "snippet,contentDetails,statistics,liveStreamingDetails",
+        "id": video_id,
+        "key": api_key,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.get("https://www.googleapis.com/youtube/v3/videos", params=params)
+        if r.status_code != 200:
+            return None
+        items = r.json().get("items") or []
+        if not items:
+            return None
+        it = items[0]
+        snip = it.get("snippet", {}) or {}
+        details = it.get("contentDetails", {}) or {}
+        stats = it.get("statistics", {}) or {}
+        # Pick the largest available thumbnail.
+        thumbs = snip.get("thumbnails", {}) or {}
+        best = max(thumbs.values(), key=lambda t: (t.get("width", 0) or 0), default={})
+        return {
+            "title": snip.get("title") or "",
+            "channel": snip.get("channelTitle") or "",
+            "duration": _parse_iso8601_duration(details.get("duration", "")),
+            "thumbnail_url": best.get("url") or f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
+            "view_count": int(stats["viewCount"]) if stats.get("viewCount") else None,
+            "is_live": snip.get("liveBroadcastContent") in ("live", "upcoming"),
+        }
+    except Exception:
+        return None
+
+
+# In-memory inspect cache: video_id -> (expiry_monotonic, YouTubeInspectResponse).
+# Metadata is immutable enough for a short TTL; repeat lookups return in microseconds.
+_INSPECT_CACHE: dict[str, tuple[float, "YouTubeInspectResponse"]] = {}
+_INSPECT_TTL = 3600.0  # 1 hour
 
 
 @router.post("/youtube/inspect", response_model=YouTubeInspectResponse)
@@ -233,6 +333,7 @@ async def inspect_youtube(
     token: TokenPayload = Depends(get_current_user),
 ):
     import re
+    import time as _time
 
     url = body.url.strip()
 
@@ -245,62 +346,58 @@ async def inspect_youtube(
 
     video_id = match.group(1)
 
-    # Primary: oEmbed — fast, no auth, no rate-limit
-    oembed_data = await _oembed_inspect(video_id, url)
+    # Cache hit — instant.
+    cached = _INSPECT_CACHE.get(video_id)
+    if cached and cached[0] > _time.monotonic():
+        return cached[1]
 
-    # Secondary: yt-dlp for duration, view_count, upload_date, description
-    # If YouTube returns 429, skip gracefully — oEmbed data is enough to start
-    ytdlp_data: dict = {}
-    try:
-        ytdlp_data = await asyncio.get_event_loop().run_in_executor(
-            None, functools.partial(_ytdlp_fetch_json, url, 20)
+    # Primary: official YouTube Data API v3 — ~100ms, one request, all fields.
+    api = await _youtube_data_api(video_id)
+    if api is not None:
+        if api.get("is_live"):
+            return YouTubeInspectResponse(
+                valid=False, url=url, video_id=video_id,
+                error="Live and upcoming streams are not supported. Please use a recorded video.",
+            )
+        duration = api.get("duration")
+        title = api.get("title") or ""
+        channel = api.get("channel") or ""
+        view_count = api.get("view_count")
+        thumbnail = api.get("thumbnail_url")
+    else:
+        # Fallback: oEmbed (title/thumb) + watch-page scrape (duration/views/live), in parallel.
+        oembed_data, scrape = await asyncio.gather(
+            _oembed_inspect(video_id, url),
+            _scrape_youtube_meta(video_id),
         )
-    except Exception:
-        pass  # 429 or timeout — non-fatal, oEmbed covers the critical fields
+        if scrape.get("is_live"):
+            return YouTubeInspectResponse(
+                valid=False, url=url, video_id=video_id,
+                error="Live and upcoming streams are not supported. Please use a recorded video.",
+            )
+        duration = scrape.get("duration")
+        title = oembed_data.get("title") or scrape.get("title") or ""
+        channel = oembed_data.get("channel") or ""
+        view_count = scrape.get("view_count")
+        thumbnail = oembed_data.get("thumbnail_url")
 
-    if ytdlp_data.get("is_live") or ytdlp_data.get("live_status") in ("is_live", "is_upcoming"):
-        return YouTubeInspectResponse(
-            valid=False,
-            url=url,
-            video_id=video_id,
-            error="Live and upcoming streams are not supported. Please use a recorded video.",
-        )
-
-    duration = ytdlp_data.get("duration")
-    upload_raw = ytdlp_data.get("upload_date", "")
-    upload_date = (
-        f"{upload_raw[:4]}-{upload_raw[4:6]}-{upload_raw[6:]}"
-        if len(upload_raw) == 8 else upload_raw
-    )
-
-    # yt-dlp thumbnail is higher quality if available
-    thumb_url = oembed_data.get("thumbnail_url") or ""
-    if ytdlp_data.get("thumbnails"):
-        best = max(
-            (t for t in ytdlp_data["thumbnails"] if t.get("url")),
-            key=lambda t: (t.get("width", 0) or 0),
-            default=None,
-        )
-        if best:
-            thumb_url = best["url"]
-    elif ytdlp_data.get("thumbnail"):
-        thumb_url = ytdlp_data["thumbnail"]
-
-    title = ytdlp_data.get("title") or oembed_data.get("title") or ""
-    channel = ytdlp_data.get("uploader") or ytdlp_data.get("channel") or oembed_data.get("channel") or ""
-
-    return YouTubeInspectResponse(
+    resp = YouTubeInspectResponse(
         valid=True,
         url=url,
         video_id=video_id,
         title=title or None,
         channel=channel or None,
         duration_sec=int(duration) if duration else None,
-        thumbnail_url=thumb_url or None,
-        view_count=ytdlp_data.get("view_count"),
-        upload_date=upload_date or None,
-        description=(ytdlp_data.get("description") or "")[:500] or None,
+        thumbnail_url=thumbnail or None,
+        view_count=view_count,
+        upload_date=None,
+        description=None,
     )
+
+    # Only cache complete results (avoid pinning a transient failure for an hour).
+    if resp.title and resp.duration_sec:
+        _INSPECT_CACHE[video_id] = (_time.monotonic() + _INSPECT_TTL, resp)
+    return resp
 
 
 @router.post("/youtube/formats", response_model=YouTubeFormatsResponse)
@@ -698,6 +795,89 @@ async def update_video(
     if body.topic is not None:
         video.topic = body.topic
 
+    await db.commit()
+    return VideoResponse.model_validate(video)
+
+
+@router.post("/videos/{video_id}/preview-proxy", response_model=VideoResponse)
+async def create_video_preview_proxy(
+    video_id: uuid.UUID,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Generate or reuse a low-res preview proxy for trimming UI."""
+    result = await db.execute(
+        select(Video).where(Video.id == video_id, Video.tenant_id == uuid.UUID(token.tenant_id), Video.status != "deleted")
+    )
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found.")
+
+    meta = dict(video.video_metadata or {})
+    existing = meta.get("preview_storage_url")
+    if isinstance(existing, str) and existing:
+        return VideoResponse.model_validate(video)
+
+    source_ref = video.original_storage_key or video.source_url
+    if not source_ref:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No preview source available.")
+
+    storage_provider = os.getenv("STORAGE_PROVIDER", "local")
+    preview_key = _preview_storage_key(str(token.tenant_id), str(video_id))
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        source_path = tmp_path / "source.mp4"
+        out_path = tmp_path / "preview_360p.mp4"
+
+        try:
+            if video.source_type == "youtube_url" and video.source_url:
+                from workers.tasks.video.download import _download_youtube
+                _download_youtube(video.source_url, str(source_path), quality="360p")
+            else:
+                await _download_preview_source(source_ref, str(source_path))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Failed to load preview source: {exc}")
+
+        cmd = [
+            "ffmpeg", "-y", "-threads", "1", "-i", str(source_path),
+            "-vf", "scale=-2:360:flags=lanczos",
+            "-c:v", "libx264", "-crf", "34", "-preset", "veryfast",
+            "-c:a", "aac", "-b:a", "64k", "-ac", "2",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Preview encode failed: {stderr.decode()[-400:]}")
+
+        try:
+            from shared.storage.base import get_storage
+            if storage_provider == "cloudinary":
+                import cloudinary as _cld, cloudinary.uploader as _cld_up
+                _cld.config(cloudinary_url=os.getenv("CLOUDINARY_URL", ""))
+                result = _cld_up.upload(
+                    str(out_path),
+                    public_id=preview_key.replace(".mp4", ""),
+                    resource_type="video",
+                    overwrite=True,
+                )
+                preview_url = result["secure_url"]
+            else:
+                storage = get_storage(storage_provider)
+                with open(out_path, "rb") as f:
+                    preview_url = await storage.upload(f, preview_key, "video/mp4")
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Preview upload failed: {exc}")
+
+    meta["preview_storage_url"] = preview_url
+    meta["preview_quality"] = "360p"
+    video.video_metadata = meta
     await db.commit()
     return VideoResponse.model_validate(video)
 
@@ -1356,9 +1536,15 @@ class RankingSegmentRequest(_BaseModel):
     source_type: str  # "url" or "upload"
     url: str | None = None
     video_id: uuid.UUID | None = None
-    start_sec: float = 0.0
-    end_sec: float = 30.0
+    start_sec: float = Field(default=0.0, ge=0)
+    end_sec: float = Field(default=30.0, gt=0)
     segment_title: str = ""
+
+    @model_validator(mode="after")
+    def validate_trim_window(self):
+        if self.end_sec <= self.start_sec:
+            raise ValueError("end_sec must exceed start_sec")
+        return self
 
 
 class CreateRankingRequest(_BaseModel):
@@ -1368,6 +1554,15 @@ class CreateRankingRequest(_BaseModel):
     template_config: dict | None = None
     order: str = "countdown"  # "countdown" or "ascending"
     segments: list[RankingSegmentRequest]
+
+
+class RankingPreviewSourceRequest(_BaseModel):
+    url: str
+
+
+class RankingPreviewSourceResponse(_BaseModel):
+    preview_url: str
+    quality: str = "360p"
 
 
 class SuggestTitleRequest(_BaseModel):
@@ -1448,6 +1643,67 @@ async def create_ranking(
     return {"video_id": str(video_id), "job_id": job_id}
 
 
+@router.post("/ranking/preview-source", response_model=RankingPreviewSourceResponse)
+async def create_ranking_preview_source(
+    req: RankingPreviewSourceRequest,
+    token: TokenPayload = Depends(get_current_user),
+):
+    try:
+        url = _validate_video_url(req.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    storage_provider = os.getenv("STORAGE_PROVIDER", "local")
+    preview_key = f"previews/{token.tenant_id}/ranking-url/{uuid.uuid4()}/preview_360p.mp4"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        source_path = tmp_path / "source.mp4"
+        out_path = tmp_path / "preview_360p.mp4"
+
+        try:
+            from workers.tasks.video.download import _download_youtube
+            _download_youtube(url, str(source_path), quality="360p")
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Failed to load preview source: {exc}")
+
+        cmd = [
+            "ffmpeg", "-y", "-threads", "1", "-i", str(source_path),
+            "-vf", "scale=-2:360:flags=lanczos",
+            "-c:v", "libx264", "-crf", "35", "-preset", "veryfast",
+            "-c:a", "aac", "-b:a", "56k", "-ac", "2",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Preview encode failed: {stderr.decode()[-400:]}")
+
+        try:
+            from shared.storage.base import get_storage
+            if storage_provider == "cloudinary":
+                import cloudinary as _cld, cloudinary.uploader as _cld_up
+                _cld.config(cloudinary_url=os.getenv("CLOUDINARY_URL", ""))
+                result = _cld_up.upload(
+                    str(out_path),
+                    public_id=preview_key.replace(".mp4", ""),
+                    resource_type="video",
+                    overwrite=True,
+                )
+                preview_url = result["secure_url"]
+            else:
+                storage = get_storage(storage_provider)
+                with open(out_path, "rb") as f:
+                    preview_url = await storage.upload(f, preview_key, "video/mp4")
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Preview upload failed: {exc}")
+
+    return RankingPreviewSourceResponse(preview_url=preview_url)
+
+
 @router.post("/ranking/suggest-title")
 async def suggest_ranking_title(
     req: SuggestTitleRequest,
@@ -1455,5 +1711,3 @@ async def suggest_ranking_title(
 ):
     from workers.tasks.video import _suggest_ranking_title
     return _suggest_ranking_title(req.topic, req.segment_count)
-
-

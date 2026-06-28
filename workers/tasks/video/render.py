@@ -49,6 +49,7 @@ __all__ = [
     '_render_ranking_segment',
     '_suggest_ranking_title',
     '_generate_voiceover_script',
+    '_voiceover_script_to_captions',
     '_synthesize_voiceover',
     '_enhance_clip_quality',
     '_detect_action_centroid',
@@ -788,6 +789,60 @@ Return ONLY valid JSON in this exact shape:
     except Exception as e:
         logging.warning("_generate_voiceover_script failed: %s", e)
         return ""
+
+
+def _media_duration_sec(path: str) -> float:
+    try:
+        r = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if r.returncode == 0:
+            return max(0.0, float((r.stdout or "0").strip() or 0))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _voiceover_script_to_captions(
+    script: str,
+    voice_duration_sec: float,
+    clip_duration_sec: float,
+    max_words: int = 3,
+) -> list[CaptionSegment]:
+    clean_words = [w for w in re.findall(r"[\w'-]+|[^\w\s]", script.strip()) if w.strip()]
+    clean_words = [w for w in clean_words if re.search(r"\w", w)]
+    if not clean_words:
+        return []
+
+    duration = min(max(0.2, voice_duration_sec), max(0.2, clip_duration_sec))
+    per_word = duration / len(clean_words)
+    word_times = [
+        WordTimestamp(
+            word=w,
+            start=round(i * per_word, 3),
+            end=round(min(duration, (i + 1) * per_word), 3),
+        )
+        for i, w in enumerate(clean_words)
+    ]
+
+    captions: list[CaptionSegment] = []
+    for i in range(0, len(word_times), max(1, max_words)):
+        chunk = word_times[i:i + max(1, max_words)]
+        captions.append(CaptionSegment(
+            text=" ".join(w.word for w in chunk),
+            start=chunk[0].start,
+            end=chunk[-1].end,
+            words=chunk,
+        ))
+    return captions
 
 
 def _synthesize_voiceover(script: str, out_path: str) -> bool:
@@ -1544,6 +1599,37 @@ def _export_clip(
     _prog("render", 65, f"Clip {clip_index+1}/{clip_total}: rendering"
           + (f" ({', '.join(render_desc)})" if render_desc else ""))
 
+    want_music = cfg.get("music", True) and tmpl.get("music_track")
+    # Respect the user-facing voiceover toggle. Templates can suggest a style,
+    # but must not force narration when the UI/default config sends false.
+    want_vo = bool(cfg.get("voiceover", False))
+
+    music_path: str | None = None
+    if want_music:
+        track_key = cfg.get("music_track") or tmpl.get("music_track")
+        music_path = MUSIC_TRACKS.get(track_key) if track_key else None
+
+    vo_path: str | None = None
+    vo_script = ""
+    if want_vo:
+        _prog("voiceover", 63, f"Clip {clip_index+1}/{clip_total}: generating AI voiceover…")
+        vo_script = _generate_voiceover_script(clip, viral_type, cfg.get("content_type", "other"))
+        if vo_script:
+            _vo_out = str(work_dir / f"clip_{clip_id}_vo.mp3")
+            if _synthesize_voiceover(vo_script, _vo_out):
+                vo_path = _vo_out
+
+    render_captions = captions
+    if burn_captions and vo_path and vo_script:
+        voice_duration = _media_duration_sec(vo_path) or max(0.2, clip.end - clip.start)
+        words_per_line = 3 if style in CAPCUT_STYLES else 6
+        render_captions = _voiceover_script_to_captions(
+            vo_script,
+            voice_duration_sec=voice_duration,
+            clip_duration_sec=max(0.2, clip.end - clip.start),
+            max_words=words_per_line,
+        ) or captions
+
     if not burn_captions and not needs_template_render:
         # Fast path: stream-copy when no captions and no template overlays
         _render_clip_streamcopy(
@@ -1561,7 +1647,7 @@ def _export_clip(
             source_path=source_path,
             clip=clip,
             output_path=clip_path,
-            captions=captions if burn_captions else [],
+            captions=render_captions if burn_captions else [],
             target_width=target_w,
             target_height=target_h,
             crop_mode=crop_mode,
@@ -1574,25 +1660,6 @@ def _export_clip(
         )
 
     # Post-render: mix background music and/or voiceover if requested
-    want_music = cfg.get("music", True) and tmpl.get("music_track")
-    # Respect the user-facing voiceover toggle. Templates can suggest a style,
-    # but must not force narration when the UI/default config sends false.
-    want_vo = bool(cfg.get("voiceover", False))
-
-    music_path: str | None = None
-    if want_music:
-        track_key = cfg.get("music_track") or tmpl.get("music_track")
-        music_path = MUSIC_TRACKS.get(track_key) if track_key else None
-
-    vo_path: str | None = None
-    if want_vo:
-        _prog("voiceover", 75, f"Clip {clip_index+1}/{clip_total}: generating AI voiceover…")
-        vo_script = _generate_voiceover_script(clip, viral_type, cfg.get("content_type", "other"))
-        if vo_script:
-            _vo_out = str(work_dir / f"clip_{clip_id}_vo.mp3")
-            if _synthesize_voiceover(vo_script, _vo_out):
-                vo_path = _vo_out
-
     if music_path or vo_path:
         audio_desc = []
         if music_path: audio_desc.append("music")
@@ -1621,7 +1688,7 @@ def _export_clip(
 
     thumb_key = f"clips/{tenant_id}/{clip_id}_thumb.jpg"
 
-    srt_content = _generate_srt(captions)
+    srt_content = _generate_srt(render_captions)
 
     ai_title = ai_title[:100].strip()
     clip_meta = {
@@ -1705,16 +1772,32 @@ def _build_caption_filter(captions: list[dict]) -> str:
     parts = []
     pos_map = {"top": "h*0.10", "center": "h*0.50", "bottom": "h*0.88"}
     for cap in captions:
-        text = cap["text"].replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+        template = cap.get("template", "default")
+        raw_text = cap["text"].upper() if template == "mr-beast" else cap["text"]
+        text = raw_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
         y = pos_map.get(cap.get("position", "bottom"), "h*0.88")
         color = cap.get("color", "#ffffff").lstrip("#")
         size = cap.get("font_size", 24)
         t0 = cap["start_sec"]
         t1 = cap["end_sec"]
-        parts.append(
-            f"drawtext=text='{text}':fontsize={size}:fontcolor=0x{color}:"
-            f"x=(w-text_w)/2:y={y}:enable='between(t,{t0},{t1})'"
-        )
+        opts = [
+            f"drawtext=text='{text}'",
+            f"fontsize={size}",
+            f"x=(w-text_w)/2",
+            f"y={y}",
+            f"enable='between(t,{t0},{t1})'",
+        ]
+        if template == "modern":
+            opts += ["fontcolor=0xffea00", "box=1", "boxcolor=0x000000@0.92", "boxborderw=18"]
+        elif template == "bouncy":
+            opts += ["fontcolor=0x7c2dff", "box=1", "boxcolor=0xffffff@0.96", "boxborderw=18"]
+        elif template == "mr-beast":
+            opts += ["fontcolor=0x00a7b7", "box=1", "boxcolor=0xffd21f", "boxborderw=18", "shadowcolor=0x000000", "shadowx=2", "shadowy=2"]
+        elif template == "business":
+            opts += ["fontcolor=0xffffff", "shadowcolor=0x000000", "shadowx=2", "shadowy=2"]
+        else:
+            opts += [f"fontcolor=0x{color}"]
+        parts.append(":".join(opts))
     return ",".join(parts) if parts else ""
 
 
@@ -1751,5 +1834,3 @@ def _mix_sound_markers(
         "-filter_complex", filter_str,
         "-map", "0:v", "-map", "[aout]",
     ] + base_cmd_prefix + [output_path]
-
-

@@ -44,6 +44,7 @@ export function UniversalClipCard({
   posts = [],
   density = "comfortable",
   actions = [],
+  showTags = true,
   onClick,
   onSelect,
   onClipChange,
@@ -58,6 +59,7 @@ export function UniversalClipCard({
   posts?: ScheduledPost[];
   density?: "compact" | "comfortable";
   actions?: ActionConfig[];
+  showTags?: boolean;
   onClick?: (clip: ClipApiResponse) => void;
   onSelect?: (clip: ClipApiResponse) => void;
   onClipChange?: (clip: ClipApiResponse) => void;
@@ -143,7 +145,7 @@ export function UniversalClipCard({
     <article
       onClick={() => onClick?.(localClip)}
       className={cn(
-        "group overflow-hidden rounded-[16px] border bg-[#0e1420] text-left transition hover:-translate-y-0.5 hover:border-white/[.13] hover:shadow-[0_18px_50px_rgba(0,0,0,.32)]",
+        "group overflow-hidden rounded-[16px] border bg-[#0d1117] text-left transition hover:-translate-y-0.5 hover:border-white/[.13] hover:shadow-[0_18px_50px_rgba(0,0,0,.32)]",
         onClick && "cursor-pointer",
         active || selected ? "border-[#ff3d6a]/45 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-white/[.07]"
       )}
@@ -232,9 +234,8 @@ export function UniversalClipCard({
           <span className="rounded-full bg-white/[.035] px-2 py-1">9:16</span>
         </div>
 
-        <div className="h-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
 
-        {(postedPlatforms.length > 0 || tags.length > 0) && (
+        {(postedPlatforms.length > 0 || (showTags && tags.length > 0)) && (
           <div className="space-y-2 border-t border-white/[.06] pt-3">
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -250,7 +251,7 @@ export function UniversalClipCard({
                 })}
               </div>
             )}
-            {tags.length > 0 && (
+            {showTags && tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {tags.slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-white/[.035] px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
                 {tags.length > 2 && <span className="rounded-full bg-white/[.03] px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 2}</span>}
@@ -281,7 +282,7 @@ export function UniversalClipCard({
               <div className="relative">
                 <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className="min-h-8 rounded-[9px] border border-white/[.07] bg-white/[.025] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-white/[.06] hover:text-white">•••</button>
                 {menuOpen && (
-                  <div className="absolute bottom-full right-0 z-30 mb-2 w-40 overflow-hidden rounded-[10px] border border-white/[.08] bg-[#0d1420] shadow-2xl">
+                  <div className="absolute bottom-full right-0 z-30 mb-2 w-40 overflow-hidden rounded-[10px] border border-white/[.08] bg-[#0d1117] shadow-[0_8px_32px_rgba(0,0,0,.6)]">
                     {secondaryActions.slice(2).map((action) => (
                       <button key={action.id} onClick={(e) => runAction(action, e)} disabled={action.disabled} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 hover:bg-white/[.05] hover:text-white disabled:opacity-50">
                         <span>{action.icon ?? defaultIcon(action.id)}</span>{action.label ?? action.id}

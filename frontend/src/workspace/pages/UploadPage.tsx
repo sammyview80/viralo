@@ -4,6 +4,7 @@ import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
 import { VirtualizedGrid } from "../components/VirtualizedCollection";
 import { videoApi, platformApi, token as authToken, API_BASES, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount, type ScheduledPost } from "@/lib/api";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const VIDEO_SSE_BASE = API_BASES.video;
 
@@ -1604,7 +1605,7 @@ function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClose, onP
     >
       {/* Shell: 2-col grid, fixed height */}
       <div
-        className="w-full overflow-hidden rounded-[22px] border border-white/[.09] bg-[#090d16] shadow-[0_48px_120px_rgba(0,0,0,.85)]"
+        className="w-full overflow-hidden rounded-[22px] border border-white/[.09] bg-[#080b12] shadow-[0_48px_120px_rgba(0,0,0,.85)]"
         style={{
           maxWidth: 860,
           height: "min(88vh, 580px)",
@@ -2032,6 +2033,7 @@ function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted = fals
           isPosted={isPosted}
           isScheduled={isScheduled}
           posts={posts}
+          showTags={false}
         />
         {regenerating && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[16px] bg-black/45 backdrop-blur-[1px]">
@@ -2429,10 +2431,12 @@ function ResultsView({
   video,
   clips,
   onBack,
+  onNewUpload,
 }: {
   video: VideoResponse;
   clips: ClipApiResponse[];
   onBack: () => void;
+  onNewUpload?: () => void;
 }) {
   const grad = gradFromId(video.id);
   const [regenModal, setRegenModal] = useState(false);
@@ -2500,7 +2504,7 @@ function ResultsView({
   ];
 
   return (
-    <div>
+    <div className="mx-auto max-w-[1240px] px-3 sm:px-5">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <button onClick={onBack}
           className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white">
@@ -2516,31 +2520,42 @@ function ResultsView({
           : <><span className="inline-flex items-center gap-1 rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-0.5 text-[11px] font-semibold text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Failed</span>
             <RetryVideoButton videoId={video.id} onRetried={onBack} /></>}
         <div className="ml-auto flex shrink-0 gap-2">
+          {onNewUpload && (
+            <button
+              onClick={onNewUpload}
+              className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white"
+            >
+              + New upload
+            </button>
+          )}
           <button
             onClick={() => { selectAll(); setBulkModal(true); }}
             className="flex items-center gap-1.5 rounded-[8px] bg-[#ff3d6a] px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.3)] transition hover:bg-[#ff3d6a]/85"
           >
             ↗ Publish all
           </button>
-          {video.source_type !== "ranking" && (
-            <button onClick={() => setRegenModal(true)}
-              className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:text-white">
-              ✦ Regenerate all
-            </button>
-          )}
-          {video.source_type !== "ranking" && video.storage_url && (
-            <button
-              onClick={() => void downloadUrl(video.storage_url!, safeFilename(video.title, "mp4"))}
-              className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white"
-            >
-              ↓ Source video
-            </button>
-          )}
-          <button
-            onClick={() => setZipModal(true)}
-            className="flex items-center gap-1.5 rounded-[8px] bg-[#ff3d6a] px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.3)] transition hover:bg-[#ff3d6a]/85">
-            ↓ Download all
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12.5px] font-medium text-zinc-300 transition hover:bg-white/[.07] hover:text-white">
+                ···
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {video.source_type !== "ranking" && (
+                <DropdownMenuItem onClick={() => setRegenModal(true)}>
+                  ✦ Regenerate all
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => setZipModal(true)}>
+                ↓ Download all
+              </DropdownMenuItem>
+              {video.source_type !== "ranking" && video.storage_url && (
+                <DropdownMenuItem onClick={() => void downloadUrl(video.storage_url!, safeFilename(video.title, "mp4"))}>
+                  ↓ Source video
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {selected.size > 0 && (
@@ -2935,8 +2950,8 @@ export function UploadPage() {
         />
       )}
 
-      <div className="flex h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
-        <div className="flex flex-col items-stretch gap-3 border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4 lg:flex-row lg:flex-wrap lg:items-center">
+      <div className="flex h-[calc(100vh-116px)] flex-col overflow-hidden">
+        <div className={cn("flex flex-col items-stretch gap-3 border-b border-white/[.06]px-3 py-3 sm:px-5 sm:py-4 lg:flex-row lg:flex-wrap lg:items-center", view === "results" && "hidden")}>
           <div className="min-w-0 lg:mr-2">
             <div className="flex items-center gap-2">
               {view === "results" && (
@@ -3201,6 +3216,7 @@ export function UploadPage() {
                 video={activeVideo}
                 clips={clips}
                 onBack={() => navigate("/projects")}
+                onNewUpload={() => navigate("/studio")}
               />
             </div>
           )}

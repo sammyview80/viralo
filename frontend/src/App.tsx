@@ -58,12 +58,12 @@ export default function App() {
   }
 
   /* ── Workspace pages ── */
-  if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage page="billing" />;
-  if (path === "/notifications") return <WorkspacePage page="notifications" />;
-  if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage page="upload" />;
+  if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage key="billing" page="billing" />;
+  if (path === "/notifications") return <WorkspacePage key="notifications" page="notifications" />;
+  if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage key={path} page="upload" />;
 
   const page = routeToPage(path);
-  if (page) return <WorkspacePage page={page} />;
+  if (page) return <WorkspacePage key={page} page={page} />;
 
   /* ── Dashboard (Home) ── */
   if (path === "/") {

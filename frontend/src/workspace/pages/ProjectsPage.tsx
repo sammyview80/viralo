@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { navigate } from "@/lib/router";
+import { navigate, useSearchParams } from "@/lib/router";
 import { videoApi, token as authToken, API_BASES, type VideoResponse } from "@/lib/api";
 import { Pagination } from "../components/Pagination";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
@@ -206,10 +206,20 @@ export function ProjectsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VideoResponse | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clipping" | "ranking">("clipping");
+  const [searchParams, setSearchParam] = useSearchParams();
+  const tabQuery = searchParams.get("tab");
+  const tab = tabQuery === "ranking" ? "ranking" : "clipping";
+
+  const setTab = (t: "clipping" | "ranking") => {
+    setSearchParam("tab", t);
+    setSearch("");
+    setSelectedId(null);
+    setPage(1);
+  };
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [statusFilter, setStatusFilter] = useState<"all" | "ready" | "processing" | "failed">("all");
   const [page, setPage] = useState(1);
   const [totalProjects, setTotalProjects] = useState(0);
   const perPage = 20;
@@ -298,6 +308,13 @@ export function ProjectsPage() {
   const failedCount = filtered.filter((v) => v.status === "failed").length;
   const total = filtered.length;
 
+  const displayFiltered = useMemo(() => {
+    if (statusFilter === "ready") return filtered.filter((v) => isTerminalStatus(v) && v.status !== "failed");
+    if (statusFilter === "processing") return filtered.filter((v) => !isTerminalStatus(v));
+    if (statusFilter === "failed") return filtered.filter((v) => v.status === "failed");
+    return filtered;
+  }, [filtered, statusFilter]);
+
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
     const video = deleteTarget;
@@ -318,57 +335,79 @@ export function ProjectsPage() {
     <>
       {deleteTarget && <DeleteModal video={deleteTarget} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
 
-      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
+      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden bg-[#080b12]">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
-          <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
-            <div className="min-w-0 lg:mr-2 lg:min-w-[150px]">
-              <div className="flex items-center gap-2">
-                <h1 className="font-display text-[20px] font-bold tracking-[-.02em] text-white">Projects</h1>
-                <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">
-                  {loading ? "…" : `${filtered.length}${totalProjects !== history.length ? `/${totalProjects}` : ""}`}
-                </span>
+        <div className="flex flex-col border-b border-white/[.05]">
+          {/* Tabs + Filtering + New upload */}
+          <div className="">
+            <div className="mx-auto flex w-full max-w-[1240px] flex-col items-stretch justify-between gap-4 px-3 sm:px-4 py-1 lg:flex-row lg:items-center xl:px-5">
+              {/* Noticeable tabs */}
+              <div className="flex gap-8">
+                {(["clipping", "ranking"] as const).map((t) => {
+                  const active = tab === t;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setTab(t)}
+                      className={cn(
+                        "relative py-3.5 text-[14px] font-bold tracking-tight transition-all focus:outline-none flex items-center gap-2",
+                        active ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                      )}
+                    >
+                      {t === "clipping" ? (
+                        <>
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4" />
+                          </svg>
+                          <span>Clips</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 21h18M5 17V9M10 17V5M15 17v-7M20 17v-5" />
+                          </svg>
+                          <span>Video Ranking</span>
+                        </>
+                      )}
+                      {active && (
+                        <div className="absolute bottom-0 left-0 right-0 h-[3px] rounded-t-full bg-[#ff3d6a] shadow-[0_-2px_10px_rgba(255,61,106,0.6)]" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <p className="mt-1 text-[11px] text-zinc-600">Upload history and generated clip workspaces.</p>
-            </div>
 
-            {/* Tabs */}
-            <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
-              {(["clipping", "ranking"] as const).map((t) => (
+              {/* Filtering / Search panel */}
+              <div className="flex flex-wrap items-center gap-3 pb-3 lg:pb-0">
+                <div className="relative min-w-0 flex-1 sm:max-w-[320px] lg:w-[240px]">
+                  <svg className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  <input className="h-9 w-full rounded-[9px] border border-white/[.07] bg-white/[.03] pl-9 pr-8 text-xs text-zinc-100 placeholder:text-zinc-600 transition focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20" placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                  {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 transition hover:text-zinc-300"><svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+                </div>
+
+                <div className="flex rounded-[9px] border border-white/[.07] bg-white/[.02] p-0.5">
+                  {(["grid", "list"] as const).map((v) => (
+                    <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-[11px] font-semibold capitalize transition", viewMode === v ? "bg-white/[.07] text-white" : "text-zinc-500 hover:text-zinc-300")}>{v}</button>
+                  ))}
+                </div>
+
+                <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-9 rounded-[9px] border border-white/[.07] bg-white/[.02] px-2.5 text-[11px] font-semibold text-zinc-400 transition focus:outline-none cursor-pointer">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="title">Title A-Z</option>
+                  <option value="status">Status</option>
+                </select>
+
                 <button
-                  key={t}
-                  onClick={() => { setTab(t); setSearch(""); setSelectedId(null); setPage(1); }}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-xs font-semibold capitalize transition",
-                    tab === t ? "bg-[#ff3d6a] text-white" : "text-zinc-500 hover:text-zinc-300"
-                  )}
+                  onClick={loadHistory}
+                  className="flex h-9 items-center gap-1.5 rounded-[9px] border border-white/[.07] bg-white/[.02] px-3 text-xs font-semibold text-zinc-400 transition hover:bg-white/[.05] hover:text-zinc-200"
                 >
-                  {t === "clipping" ? "Clipping" : "Ranking"}
+                  <svg className={cn("h-3.5 w-3.5", loading ? "animate-spin" : "")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                 </button>
-              ))}
+                <button onClick={() => navigate("/studio")} className="h-9 rounded-[9px] bg-[#ff3d6a] px-3.5 text-xs font-bold text-white shadow-[0_6px_18px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f] whitespace-nowrap">+ New upload</button>
+              </div>
             </div>
-
-            <div className="relative min-w-0 flex-1 lg:min-w-[240px] lg:max-w-[520px]">
-              <svg className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 transition focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20" placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} />
-              {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 transition hover:text-zinc-300"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
-            </div>
-
-            <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
-              {(["grid", "list"] as const).map((v) => (
-                <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition", viewMode === v ? "bg-white/[.07] text-white" : "text-zinc-500 hover:text-zinc-300")}>{v}</button>
-              ))}
-            </div>
-
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 transition focus:outline-none">
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="title">Title A-Z</option>
-              <option value="status">Status</option>
-            </select>
-
-            <button onClick={loadHistory} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 transition hover:text-zinc-200">Refresh</button>
-            <button onClick={() => navigate("/studio")} className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f] lg:ml-auto">+ New upload</button>
           </div>
         </div>
 
@@ -377,11 +416,11 @@ export function ProjectsPage() {
         )}
 
         {/* Body */}
-        <div className={cn("grid flex-1", selected ? "xl:grid-cols-[minmax(0,1fr)_400px]" : "grid-cols-1")} style={{ alignItems: "start" }}>
+        <div className={cn("mx-auto grid w-full max-w-[1240px] flex-1", selected ? "xl:grid-cols-[minmax(0,1fr)_400px]" : "grid-cols-1")} style={{ alignItems: "start" }}>
             <div className="min-w-0 p-3 sm:p-4 xl:p-5">
               {/* Stats */}
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
+                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.018] px-4 py-3.5">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-emerald-400/10 text-emerald-300">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                   </div>
@@ -393,7 +432,7 @@ export function ProjectsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
+                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.018] px-4 py-3.5">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-amber-400/10 text-amber-200">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   </div>
@@ -405,7 +444,7 @@ export function ProjectsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
+                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.018] px-4 py-3.5">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-red-400/10 text-red-300">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                   </div>
@@ -472,7 +511,7 @@ export function ProjectsPage() {
                   }}
                 />
               ) : (
-                <div className="rounded-[16px] border border-white/[.06] bg-white/[.012]">
+                <div className="">
                   <VirtualizedList
                     items={filtered}
                     keyForItem={(v) => v.id}
