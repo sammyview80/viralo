@@ -31,7 +31,7 @@ export const DEFAULT_CONFIG: ClipConfig = {
   platforms: ["tiktok","reels","shorts"],
   topic_focus: null,
   add_captions: false,
-  caption_style: "capcut",
+  caption_style: null,
   aspect_ratio: "9:16",
   duration_min: 20,
   duration_max: 60,
@@ -43,10 +43,16 @@ export const DEFAULT_CONFIG: ClipConfig = {
   occasion: null,
 };
 
-export const CAPTION_STYLES = [
-  { id:"capcut",      label:"CapCut",       desc:"Bold word-by-word, colored highlight" },
+export const CAPTION_STYLES: { id: string | null; label: string; desc: string }[] = [
+  { id:null,          label:"Auto",         desc:"Matched to the selected template" },
+  { id:"capcut",      label:"CapCut",       desc:"Word pills, yellow highlight" },
   { id:"capcut-bold", label:"CapCut Bold",  desc:"Thicker strokes, high contrast" },
+  { id:"hormozi",     label:"Hormozi",      desc:"Bold word pills, green highlight" },
+  { id:"beast",       label:"Beast",        desc:"Big bold pills, red highlight" },
+  { id:"neon",        label:"Neon",         desc:"Cyan highlight on dark band" },
+  { id:"karaoke",     label:"Karaoke",      desc:"Full line, word-by-word color" },
   { id:"classic",     label:"Classic",      desc:"White subtitles, black outline" },
+  { id:"impact",      label:"Impact",       desc:"Huge meme-style outlined caps" },
   { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline" },
 ];
 
@@ -196,13 +202,16 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
 
         {s2 && config.add_captions && (
           <div className="border-t border-[#ff3d6a]/15 pt-5">
-            <label className={labelCls}>Caption style</label>
+            <div className="flex items-center gap-2">
+              <label className={labelCls}>Caption style</label>
+              {!config.caption_style && <span className="mb-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
+            </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {CAPTION_STYLES.map((s) => (
-                <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
+                <button key={String(s.id)} type="button" onClick={() => set({ caption_style: s.id })}
                   className={cn("rounded-[11px] border px-3 py-2.5 text-left transition",
-                    config.caption_style === s.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
-                  <div className={cn("text-[12px] font-bold", config.caption_style === s.id ? "text-[#ff5f86]" : "text-zinc-200")}>{s.label}</div>
+                    (config.caption_style ?? null) === s.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
+                  <div className={cn("text-[12px] font-bold", (config.caption_style ?? null) === s.id ? "text-[#ff5f86]" : "text-zinc-200")}>{s.label}</div>
                   <div className="mt-0.5 text-[10.5px] leading-4 text-zinc-500">{s.desc}</div>
                 </button>
               ))}
@@ -3145,7 +3154,7 @@ export function UploadPage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-zinc-500">Captions</span>
-                          <span className="font-semibold text-zinc-200">{clipConfig.add_captions ? `On · ${clipConfig.caption_style}` : "Off"}</span>
+                          <span className="font-semibold text-zinc-200">{clipConfig.add_captions ? `On · ${clipConfig.caption_style ?? "auto"}` : "Off"}</span>
                         </div>
                       </div>
                     </div>

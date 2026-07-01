@@ -311,7 +311,7 @@ export interface ClipConfig {
   platforms?: string[];
   topic_focus?: string | null;
   add_captions?: boolean;
-  caption_style?: string;
+  caption_style?: string | null;
   aspect_ratio?: string;
   duration_max?: number;
   duration_min?: number;

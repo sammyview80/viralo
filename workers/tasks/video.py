@@ -97,12 +97,31 @@ QUALITY_CAP = {
 
 CAPTION_STYLE_CFG = {
     # style: (text_rgba, highlight_rgba, context_alpha, font_size, bg_rgba)
+    # highlight_rgba drives the active-word pill fill for word-by-word styles
     "capcut":      ((255, 255, 255, 255), (245, 197, 24, 255),  0.45, 62, (0, 0, 0, 160)),
-    "capcut-bold": ((255, 230, 0, 255),   (255, 255, 255, 255), 0.40, 68, (0, 0, 0, 0)),
+    "capcut-bold": ((255, 230, 0, 255),   (245, 197, 24, 255),  0.40, 68, (0, 0, 0, 0)),
+    "hormozi":     ((255, 255, 255, 255), (57, 255, 20, 255),   0.40, 66, (0, 0, 0, 0)),
+    "beast":       ((255, 255, 255, 255), (255, 45, 45, 255),   0.40, 70, (0, 0, 0, 0)),
+    "neon":        ((255, 255, 255, 255), (0, 229, 255, 255),   0.45, 62, (0, 0, 0, 140)),
+    "karaoke":     ((255, 255, 255, 255), (245, 197, 24, 255),  1.0,  56, (0, 0, 0, 150)),
     "classic":     ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  52, (0, 0, 0, 140)),
+    "impact":      ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  72, (0, 0, 0, 0)),
     "minimal":     ((200, 200, 200, 255), (255, 255, 255, 255), 0.8,  44, (0, 0, 0, 0)),
 }
-CAPCUT_STYLES = {"capcut", "capcut-bold"}
+# Styles rendered word-by-word (need word-level caption timeline)
+CAPCUT_STYLES = {"capcut", "capcut-bold", "hormozi", "beast", "neon", "karaoke"}
+# Word-pill styles drawn with the larger highlight font
+BOLD_PILL_STYLES = {"capcut-bold", "hormozi", "beast"}
+
+
+def _effective_caption_style(cfg: dict) -> str:
+    """Resolve the caption style: explicit user choice wins, unset = auto from template."""
+    style = cfg.get("caption_style")
+    if not style:
+        from workers.tasks.templates import resolve_template
+        tmpl = resolve_template(cfg.get("occasion"), cfg.get("template_id"))
+        style = tmpl.get("caption_style", "capcut")
+    return style if style in CAPTION_STYLE_CFG else "capcut"
 
 FONT_PATHS = [
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -1677,6 +1696,10 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         MARGIN = int(width * 0.04)  # 4% side margin so pills never touch edges
         MAX_W = width - MARGIN * 2
         font = font_highlight if bold else font_main
+        pill_fill = (*highlight_color[:3], 240)
+        # Black text on bright pills, white on dark ones (perceived luminance)
+        lum = 0.299 * highlight_color[0] + 0.587 * highlight_color[1] + 0.114 * highlight_color[2]
+        pill_txt = (0, 0, 0, 255) if lum > 140 else (255, 255, 255, 255)
         word_sizes = []
         for w in words:
             bb = draw.textbbox((0, 0), w, font=font)
@@ -1711,8 +1734,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
 
                 if i == act_idx:
                     draw.rounded_rectangle([x, pill_y, x + pw, pill_y + pill_h],
-                                           radius=RADIUS, fill=(245, 197, 24, 240))
-                    txt_color = (0, 0, 0, 255)
+                                           radius=RADIUS, fill=pill_fill)
+                    txt_color = pill_txt
                 else:
                     txt_color = (255, 255, 255, 230)
 
@@ -1723,16 +1746,46 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                 draw.text((wx, wy), w, font=font, fill=txt_color)
                 x += pw + GAP
 
-    if style == "classic":
-        ctx_text, _ = entry
+    def draw_karaoke_line(words: list, active_idx: int, y: int):
+        """Full line with outline; the active word is tinted with the highlight color."""
+        GAP = 12
+        sizes = []
+        for w in words:
+            bb = draw.textbbox((0, 0), w, font=font_main)
+            sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
+        total_w = sum(s[0] for s in sizes) + GAP * (len(words) - 1)
+        th = max((s[1] for s in sizes), default=font_size)
+        x = (width - total_w) // 2
+        if bg_color[3] > 0:
+            draw.rounded_rectangle([x - 16, y - 8, x + total_w + 16, y + th + 8],
+                                   radius=8, fill=bg_color)
+        for i, (w, (tw, _)) in enumerate(zip(words, sizes)):
+            color = highlight_color if i == active_idx else text_color
+            for dx in range(-3, 4):
+                for dy in range(-3, 4):
+                    if dx == 0 and dy == 0:
+                        continue
+                    draw.text((x + dx, y + dy), w, font=font_main, fill=(0, 0, 0, 255))
+            draw.text((x, y), w, font=font_main, fill=color)
+            x += tw + GAP
+
+    if style in ("classic", "impact"):
+        ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
+        if style == "impact":
+            ctx_text = ctx_text.upper()
         ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
-        draw_centered_outline(ctx_text, y_base, font_main, ctx_color, stroke_width=4,
+        draw_centered_outline(ctx_text, y_base, font_main, ctx_color,
+                              stroke_width=6 if style == "impact" else 4,
                               bg=bg_color if bg_color[3] > 0 else None)
 
-    elif style == "capcut-bold":
+    elif style == "karaoke" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_karaoke_line(words, active_idx, y_base)
+
+    elif style in CAPCUT_STYLES and style != "capcut":
         if isinstance(entry[0], list):
             words, active_idx = entry
-            draw_capcut_inline(words, active_idx, y_base, bold=True)
+            draw_capcut_inline(words, active_idx, y_base, bold=style in BOLD_PILL_STYLES)
         else:
             ctx_text, _ = entry
             ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
@@ -3246,13 +3299,8 @@ def _export_clip(
           + (f" (blur-fill bg, {tmpl.get('background_style','center_crop')})" if tmpl.get("background_style") == "blur_fill" else ""))
 
     burn_captions = cfg.get("add_captions", False)
-    # Let automatic templates supply their own caption style when the request is
-    # still on the default CapCut style; non-default user choices keep priority.
-    requested_style = cfg.get("caption_style") or "capcut"
-    if requested_style == "capcut" and tmpl.get("caption_style"):
-        style = tmpl.get("caption_style", "capcut")
-    else:
-        style = requested_style
+    # Explicit user selection always wins; unset (None) = auto from template.
+    style = cfg.get("caption_style") or tmpl.get("caption_style") or "capcut"
     if style not in CAPTION_STYLE_CFG:
         style = "capcut"
 
@@ -4154,7 +4202,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
 
     # Step 4: Captions (60%)
     _publish_progress(job_id, "captions", 60, "processing", "Generating captions...")
-    style = cfg.get("caption_style", "capcut")
+    style = _effective_caption_style(cfg)
     words_per_line = 3 if style in CAPCUT_STYLES else 6
     all_captions: dict[int, list[CaptionSegment]] = {}
     for idx, clip in enumerate(clips):
@@ -4325,7 +4373,7 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
     topic_focus = cfg.get("topic_focus") or ""
     platforms   = cfg.get("platforms") or ["tiktok", "reels", "shorts"]
     language    = cfg.get("language", "en")
-    style       = cfg.get("caption_style", "capcut")
+    style       = _effective_caption_style(cfg)
     precision_mode_gvc = cfg.get("precision_mode", False)
     yt_engagement_gvc: dict | None = None
 
