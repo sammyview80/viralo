@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { PaletteItem } from "./SoundEffectPalette";
 
@@ -17,6 +17,7 @@ interface TimelineProps {
   selectedEffect: PaletteItem;
   trimStart?: number;
   trimEnd?: number;
+  videoSrc?: string;
   onSeek: (timeSec: number) => void;
   onAddMarker: (timeMs: number) => void;
   onRemoveMarker: (id: string) => void;
@@ -35,11 +36,53 @@ export function Timeline({
   selectedEffect,
   trimStart,
   trimEnd,
+  videoSrc,
   onSeek,
   onAddMarker,
   onRemoveMarker,
 }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const waveformRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!videoSrc) return;
+    const canvas = waveformRef.current;
+    if (!canvas) return;
+    let cancelled = false;
+    fetch(videoSrc)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => {
+        if (cancelled) return;
+        const actx = new AudioContext();
+        return actx.decodeAudioData(buf).then((audioBuffer) => {
+          actx.close();
+          return audioBuffer;
+        });
+      })
+      .then((audioBuffer) => {
+        if (cancelled || !audioBuffer) return;
+        const data = audioBuffer.getChannelData(0);
+        const c = waveformRef.current;
+        if (!c) return;
+        const ctx = c.getContext("2d")!;
+        const W = c.width;
+        const H = c.height;
+        const step = Math.ceil(data.length / W);
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = "rgba(255,61,106,0.30)";
+        for (let i = 0; i < W; i++) {
+          let peak = 0;
+          for (let j = 0; j < step; j++) {
+            const v = Math.abs(data[i * step + j] ?? 0);
+            if (v > peak) peak = v;
+          }
+          const h = Math.max(1, peak * H * 0.9);
+          ctx.fillRect(i, (H - h) / 2, 1, h);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [videoSrc]);
 
   const progress = duration > 0 ? currentTime / duration : 0;
   const ticks = duration > 0 ? Math.min(20, Math.floor(duration) + 1) : 0;
@@ -121,6 +164,14 @@ export function Timeline({
             style={{ width: `${100 - trimEndPct}%` }}
           />
         )}
+
+        {/* Waveform */}
+        <canvas
+          ref={waveformRef}
+          width={800}
+          height={64}
+          className="absolute inset-0 h-full w-full pointer-events-none opacity-70"
+        />
 
         {/* Elapsed fill */}
         <div

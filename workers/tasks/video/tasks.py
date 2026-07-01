@@ -245,19 +245,28 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         else:
             raise FileNotFoundError("No source file available. Re-upload the video.")
 
-        # Enforce max duration before running the full pipeline
+        # Trim to max duration instead of failing, then notify user
         try:
             probe = _probe_video(source)
             if probe.duration > MAX_VIDEO_DURATION_SEC and not _is_unlimited(tenant_id):
-                mins = int(probe.duration // 60)
-                raise ValueError(
-                    f"Video is {mins} minutes long. Maximum supported length is "
-                    f"{MAX_VIDEO_DURATION_SEC // 60} minutes."
+                mins = probe.duration / 60
+                _publish_progress(job_id, "upload", 10, "processing",
+                                   f"Video is {mins:.0f} min long, trimming to "
+                                   f"{MAX_VIDEO_DURATION_SEC // 60} min...")
+                trimmed_path = str(Path(source).with_name(f"{video_id}_trimmed.mp4"))
+                has_audio = _media_has_audio_stream(source)
+                cmd = _build_precise_trim_command(
+                    source, trimmed_path, 0.0, float(MAX_VIDEO_DURATION_SEC), has_audio
                 )
-        except ValueError:
-            raise
+                subprocess.run(cmd, check=True, capture_output=True, timeout=300)
+                os.replace(trimmed_path, source)  # keep original filename so downstream cleanup still finds it
+                _notify_video(
+                    tenant_id, video_id, "video_trimmed", "Video trimmed",
+                    f"Your video was {mins:.0f} minutes long. We trimmed it to the first "
+                    f"{MAX_VIDEO_DURATION_SEC // 60} minutes (max supported length)."
+                )
         except Exception:
-            pass  # probe failure is non-fatal; pipeline will probe again
+            pass  # probe/trim failure is non-fatal; pipeline will probe again
 
         run_video_pipeline(tenant_id, video_id, source, job_id, cfg)
     except SoftTimeLimitExceeded:

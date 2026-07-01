@@ -243,6 +243,21 @@ export function CaptionEditor({ captions, duration, onChange }: CaptionEditorPro
         </button>
       </div>
 
+      {captions.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-c-text-muted shrink-0">Style all</p>
+          {CAPTION_TEMPLATES.slice(0, 6).map((tpl) => (
+            <button
+              key={tpl.id}
+              onClick={() => onChange(captions.map(c => ({ ...c, template: tpl.id })))}
+              className="rounded-[6px] border border-c-border bg-surface-1 px-2 py-0.5 text-[10px] font-semibold text-c-text-secondary hover:bg-surface-2 transition cursor-pointer"
+            >
+              {tpl.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {captions.length === 0 ? (
         <div className="py-8 text-center">
           <div className="text-3xl opacity-20 mb-2">💬</div>

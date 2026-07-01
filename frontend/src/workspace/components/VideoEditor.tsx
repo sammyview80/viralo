@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { type ClipApiResponse, type EditorData, videoApi } from "@/lib/api";
 import { Timeline, type EffectMarker } from "./editor/Timeline";
 import { TrimBar } from "./editor/TrimBar";
-import { CaptionEditor, type Caption } from "./editor/CaptionEditor";
+import { CaptionEditor, type Caption, type CaptionTemplate } from "./editor/CaptionEditor";
 import { SoundEffectPalette, PALETTE, type PaletteItem, type SoundType } from "./editor/SoundEffectPalette";
 import { RenderPanel } from "./editor/RenderPanel";
 
@@ -121,6 +121,29 @@ function drawTemplateCaption(ctx: CanvasRenderingContext2D, cap: Caption, W: num
   }
   ctx.fillText(text, x, yPos);
   ctx.restore();
+}
+
+function parseSRT(srt: string, defaultTemplate: CaptionTemplate = "default"): Caption[] {
+  const blocks = srt.trim().split(/\n\s*\n/);
+  const captions: Caption[] = [];
+  blocks.forEach((block, index) => {
+    const lines = block.trim().split("\n");
+    if (lines.length < 2) return;
+    const timeLine = lines.find((l) => l.includes("-->"));
+    if (!timeLine) return;
+    const match = timeLine.match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
+    if (!match) return;
+    const toSec = (h: string, m: string, s: string, ms: string) =>
+      parseInt(h) * 3600 + parseInt(m) * 60 + parseInt(s) + parseInt(ms) / 1000;
+    const startSec = toSec(match[1], match[2], match[3], match[4]);
+    const endSec = toSec(match[5], match[6], match[7], match[8]);
+    const timeLineIdx = lines.indexOf(timeLine);
+    const textLines = lines.slice(timeLineIdx + 1).filter((l) => l.trim() && !l.match(/^\d+$/));
+    const text = textLines.join(" ").trim();
+    if (!text) return;
+    captions.push({ id: `${Date.now() + index}`, text, startSec, endSec, position: "bottom", color: "#ffffff", fontSize: 24, template: defaultTemplate });
+  });
+  return captions;
 }
 
 type EditorTab = "trim" | "captions" | "effects" | "export";
@@ -262,7 +285,6 @@ export function VideoEditor({
     function draw() {
       ctx.clearRect(0, 0, W, H);
       const video = videoRef.current;
-      if (video && video.readyState >= 2) ctx.drawImage(video, 0, 0, W, H);
       const nowMs = (video?.currentTime ?? 0) * 1000;
       for (const m of markersRef.current) {
         if (!triggeredRef.current.has(m.id) && nowMs >= m.timeMs && nowMs < m.timeMs + 200) {
@@ -348,6 +370,9 @@ export function VideoEditor({
       if (ed.trim_end_sec != null) setTrimEnd(ed.trim_end_sec);
       if (ed.captions?.length) {
         setCaptions(ed.captions.map((c) => ({ id: c.id, text: c.text, startSec: c.start_sec, endSec: c.end_sec, position: c.position, color: c.color, fontSize: c.font_size, template: c.template ?? "default" })));
+      } else if (clip.caption_srt) {
+        const parsed = parseSRT(clip.caption_srt);
+        if (parsed.length) setCaptions(parsed);
       }
       if (ed.markers?.length) {
         setMarkers(ed.markers.map((m) => ({ id: m.id, timeMs: m.time_ms, sound: m.sound, emoji: m.emoji, label: m.label })));
@@ -508,7 +533,7 @@ export function VideoEditor({
                   crossOrigin="anonymous"
                   playsInline
                   preload="metadata"
-                  className="absolute inset-0 h-full w-full object-cover opacity-0 pointer-events-none"
+                  className="absolute inset-0 h-full w-full object-cover pointer-events-none"
                   onTimeUpdate={(e) => setCurrentTime((e.target as HTMLVideoElement).currentTime)}
                   onEnded={() => setPlaying(false)}
                   onLoadedMetadata={(e) => {
@@ -794,6 +819,7 @@ export function VideoEditor({
           selectedEffect={selected}
           trimStart={trimStart}
           trimEnd={trimEnd || duration}
+          videoSrc={clip.storage_url ?? undefined}
           onSeek={(t) => { const v = videoRef.current; if (v) { v.currentTime = t; triggeredRef.current.clear(); } }}
           onAddMarker={addMarker}
           onRemoveMarker={removeMarker}
