@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -3515,6 +3516,10 @@ def _get_youtube_duration(url: str) -> float | None:
     return _get_youtube_info(url).get("duration")
 
 
+_last_good_proxy_lock = threading.Lock()
+_LAST_GOOD_PROXY: str | None = None  # most recent proxy to win the Phase 1 race — tried first next time
+
+
 def _ytdlp_proxies() -> list[str]:
     """Read proxies from YTDLP_PROXY_LIST env var only. No fetching, no TCP tests."""
     import re as _re
@@ -3541,7 +3546,14 @@ def _ytdlp_proxies() -> list[str]:
 
 
 def _ytdlp_proxies_with_refresh() -> list[str]:
-    return _ytdlp_proxies()
+    proxies = _ytdlp_proxies()
+    with _last_good_proxy_lock:
+        good = _LAST_GOOD_PROXY
+    if good and good in proxies:
+        proxies.remove(good)
+        proxies.insert(0, good)
+        logging.info("Trying last known-good proxy first: %s", good)
+    return proxies
 
 
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> list[str]:
@@ -3716,6 +3728,9 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                 import shutil as _sh
                                 _sh.move(tmp_path, out_path)
                                 moved.set()
+                                global _LAST_GOOD_PROXY
+                                with _last_good_proxy_lock:
+                                    _LAST_GOOD_PROXY = proxy
                                 logging.info("Proxy race won by %s client=%s", proxy, client)
                                 return True
                     stderr = "\n".join(stderr_lines[-10:])
@@ -3725,6 +3740,14 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: {reason}: {stderr[:150]}")
                     if _is_429(stderr) or _is_bot_blocked(stderr):
                         break  # same proxy, different clients won't help if IP is blocked
+                except subprocess.TimeoutExpired:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    logging.warning("Proxy[%d] %s client=%s → timeout", idx, proxy, client)
+                    with proxy_errors_lock:
+                        proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: timeout")
                 except Exception as e:
                     logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, proxy, client, e)
                     with proxy_errors_lock:
