@@ -100,6 +100,8 @@ CAPTION_STYLE_CFG = {
     # highlight_rgba drives the active-word pill fill for word-by-word styles
     "capcut":      ((255, 255, 255, 255), (245, 197, 24, 255),  0.45, 62, (0, 0, 0, 160)),
     "capcut-bold": ((255, 230, 0, 255),   (245, 197, 24, 255),  0.40, 68, (0, 0, 0, 0)),
+    "tiktok":      ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  56, (0, 0, 0, 170)),
+    "word-pop":    ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  84, (0, 0, 0, 0)),
     "hormozi":     ((255, 255, 255, 255), (57, 255, 20, 255),   0.40, 66, (0, 0, 0, 0)),
     "beast":       ((255, 255, 255, 255), (255, 45, 45, 255),   0.40, 70, (0, 0, 0, 0)),
     "neon":        ((255, 255, 255, 255), (0, 229, 255, 255),   0.45, 62, (0, 0, 0, 140)),
@@ -109,9 +111,11 @@ CAPTION_STYLE_CFG = {
     "minimal":     ((200, 200, 200, 255), (255, 255, 255, 255), 0.8,  44, (0, 0, 0, 0)),
 }
 # Styles rendered word-by-word (need word-level caption timeline)
-CAPCUT_STYLES = {"capcut", "capcut-bold", "hormozi", "beast", "neon", "karaoke"}
+CAPCUT_STYLES = {"capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke"}
 # Word-pill styles drawn with the larger highlight font
 BOLD_PILL_STYLES = {"capcut-bold", "hormozi", "beast"}
+# Pill styles drawn in ALL CAPS (their signature look)
+UPPERCASE_PILL_STYLES = {"hormozi", "beast"}
 
 
 def _effective_caption_style(cfg: dict) -> str:
@@ -1593,6 +1597,14 @@ def _load_font(size: int):
     return ImageFont.load_default()
 
 
+from functools import lru_cache as _lru_cache
+
+
+@_lru_cache(maxsize=64)
+def _load_font_cached(size: int):
+    return _load_font(size)
+
+
 def _build_caption_timeline(segments: list[CaptionSegment], style: str) -> dict:
     """
     Build a centisecond-keyed lookup table used by _draw_caption.
@@ -1670,12 +1682,29 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
 
     if style == "minimal":
         y_base = int(height * (0.88 if is_vertical else 0.90))
+    elif style == "word-pop":
+        y_base = int(height * 0.48)  # one big word, centered like TikTok word-pop edits
     else:
         y_base = int(height * (0.76 if is_vertical else 0.80))
 
     draw = ImageDraw.Draw(img)
 
+    def fit_font(text: str, font, max_w: int):
+        """Step the font size down until the text fits max_w (captions must never overflow the frame)."""
+        bb = draw.textbbox((0, 0), text, font=font)
+        if bb[2] - bb[0] <= max_w:
+            return font
+        size = int(getattr(font, "size", font_size))
+        while size > 24:
+            size = int(size * 0.9)
+            f = _load_font_cached(size)
+            bb = draw.textbbox((0, 0), text, font=f)
+            if bb[2] - bb[0] <= max_w:
+                return f
+        return _load_font_cached(24)
+
     def draw_centered_outline(text, y, font, color, stroke_width=4, stroke_color=(0, 0, 0, 255), bg=None, pad=16):
+        font = fit_font(text, font, int(width * 0.92))
         bbox = draw.textbbox((0, 0), text, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x = (width - tw) // 2
@@ -1696,29 +1725,37 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         MARGIN = int(width * 0.04)  # 4% side margin so pills never touch edges
         MAX_W = width - MARGIN * 2
         font = font_highlight if bold else font_main
+        if words:
+            font = fit_font(max(words, key=len), font, MAX_W - PAD_X * 2)
         pill_fill = (*highlight_color[:3], 240)
         # Black text on bright pills, white on dark ones (perceived luminance)
         lum = 0.299 * highlight_color[0] + 0.587 * highlight_color[1] + 0.114 * highlight_color[2]
         pill_txt = (0, 0, 0, 255) if lum > 140 else (255, 255, 255, 255)
-        word_sizes = []
-        for w in words:
-            bb = draw.textbbox((0, 0), w, font=font)
-            word_sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
-
         def _pill_w(tw): return tw + PAD_X * 2
 
-        total_w = sum(_pill_w(ws[0]) for ws in word_sizes) + GAP * (len(words) - 1)
-
-        # Split into two rows if overflow
-        if total_w > MAX_W and len(words) > 1:
-            split = max(1, len(words) // 2)
-            rows = [list(zip(words[:split], word_sizes[:split])),
-                    list(zip(words[split:], word_sizes[split:]))]
-            active_rows = [(active_idx if active_idx < split else -1),
-                           (active_idx - split if active_idx >= split else -1)]
-        else:
-            rows = [list(zip(words, word_sizes))]
-            active_rows = [active_idx]
+        # Width-aware greedy packing into at most 2 rows; shrink font until it fits
+        size = int(getattr(font, "size", font_size))
+        while True:
+            word_sizes = []
+            for w in words:
+                bb = draw.textbbox((0, 0), w, font=font)
+                word_sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
+            rows_idx: list[list[int]] = [[]]
+            row_w = 0
+            for i, (tw, _) in enumerate(word_sizes):
+                pw = _pill_w(tw) + (GAP if rows_idx[-1] else 0)
+                if row_w + pw > MAX_W and rows_idx[-1]:
+                    rows_idx.append([i])
+                    row_w = _pill_w(tw)
+                else:
+                    rows_idx[-1].append(i)
+                    row_w += pw
+            if len(rows_idx) <= 2 or size <= 24:
+                break
+            size = int(size * 0.9)
+            font = _load_font_cached(size)
+        rows = [[(words[i], word_sizes[i]) for i in r] for r in rows_idx]
+        active_rows = [r.index(active_idx) if active_idx in r else -1 for r in rows_idx]
 
         row_h_base = max(ws[1] for ws in word_sizes) if word_sizes else font_size
         pill_h = row_h_base + PAD_Y * 2
@@ -1749,9 +1786,10 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     def draw_karaoke_line(words: list, active_idx: int, y: int):
         """Full line with outline; the active word is tinted with the highlight color."""
         GAP = 12
+        font = fit_font(" ".join(words), font_main, int(width * 0.88) - GAP * (len(words) - 1))
         sizes = []
         for w in words:
-            bb = draw.textbbox((0, 0), w, font=font_main)
+            bb = draw.textbbox((0, 0), w, font=font)
             sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
         total_w = sum(s[0] for s in sizes) + GAP * (len(words) - 1)
         th = max((s[1] for s in sizes), default=font_size)
@@ -1765,9 +1803,41 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                 for dy in range(-3, 4):
                     if dx == 0 and dy == 0:
                         continue
-                    draw.text((x + dx, y + dy), w, font=font_main, fill=(0, 0, 0, 255))
-            draw.text((x, y), w, font=font_main, fill=color)
+                    draw.text((x + dx, y + dy), w, font=font, fill=(0, 0, 0, 255))
+            draw.text((x, y), w, font=font, fill=color)
             x += tw + GAP
+
+    def draw_tiktok_reveal(words: list, active_idx: int, y: int):
+        """TikTok native auto-caption look: words appear as spoken, each line on
+        a rounded translucent dark box hugging the text width."""
+        PAD_X, PAD_Y = 16, 9
+        LINE_GAP = 6
+        MAX_W = width - int(width * 0.08) - PAD_X * 2
+        shown = words[:active_idx + 1]
+        lines: list[str] = []
+        cur = ""
+        for w in shown:
+            cand = (cur + " " + w).strip()
+            bb = draw.textbbox((0, 0), cand, font=font_main)
+            if bb[2] - bb[0] > MAX_W and cur:
+                lines.append(cur)
+                cur = w
+            else:
+                cur = cand
+        if cur:
+            lines.append(cur)
+        lines = lines[-2:]  # keep at most the 2 latest lines
+        metrics = []
+        for ln in lines:
+            bb = draw.textbbox((0, 0), ln, font=font_main)
+            metrics.append((ln, bb[2] - bb[0], bb[3] - bb[1]))
+        line_h = max((m[2] for m in metrics), default=font_size) + PAD_Y * 2
+        for i, (ln, tw, th) in enumerate(metrics):
+            x = (width - tw) // 2
+            ly = y + i * (line_h + LINE_GAP)
+            draw.rounded_rectangle([x - PAD_X, ly - PAD_Y, x + tw + PAD_X, ly + th + PAD_Y],
+                                   radius=12, fill=bg_color)
+            draw.text((x, ly), ln, font=font_main, fill=text_color)
 
     if style in ("classic", "impact"):
         ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
@@ -1778,6 +1848,15 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                               stroke_width=6 if style == "impact" else 4,
                               bg=bg_color if bg_color[3] > 0 else None)
 
+    elif style == "tiktok" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_tiktok_reveal(words, active_idx, y_base)
+
+    elif style == "word-pop" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_centered_outline(words[active_idx].upper(), y_base, font_highlight,
+                              text_color, stroke_width=6)
+
     elif style == "karaoke" and isinstance(entry[0], list):
         words, active_idx = entry
         draw_karaoke_line(words, active_idx, y_base)
@@ -1785,6 +1864,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     elif style in CAPCUT_STYLES and style != "capcut":
         if isinstance(entry[0], list):
             words, active_idx = entry
+            if style in UPPERCASE_PILL_STYLES:
+                words = [w.upper() for w in words]
             draw_capcut_inline(words, active_idx, y_base, bold=style in BOLD_PILL_STYLES)
         else:
             ctx_text, _ = entry
@@ -1794,11 +1875,12 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     elif style == "minimal":
         ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
         ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
-        bbox = draw.textbbox((0, 0), ctx_text, font=font_main)
+        font = fit_font(ctx_text, font_main, int(width * 0.92))
+        bbox = draw.textbbox((0, 0), ctx_text, font=font)
         tw = bbox[2] - bbox[0]
         x = (width - tw) // 2
-        draw.text((x + 2, y_base + 2), ctx_text, font=font_main, fill=(0, 0, 0, 100))
-        draw.text((x, y_base), ctx_text, font=font_main, fill=ctx_color)
+        draw.text((x + 2, y_base + 2), ctx_text, font=font, fill=(0, 0, 0, 100))
+        draw.text((x, y_base), ctx_text, font=font, fill=ctx_color)
 
     else:  # capcut default
         if isinstance(entry[0], list):
@@ -1807,14 +1889,15 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         else:
             ctx_text, _ = entry
             ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
-            bbox = draw.textbbox((0, 0), ctx_text, font=font_main)
+            font = fit_font(ctx_text, font_main, int(width * 0.92))
+            bbox = draw.textbbox((0, 0), ctx_text, font=font)
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
             x = (width - tw) // 2
             if bg_color[3] > 0:
                 draw.rounded_rectangle([x - 16, y_base - 8, x + tw + 16, y_base + th + 8],
                                        radius=8, fill=bg_color)
-            draw.text((x + 3, y_base + 3), ctx_text, font=font_main, fill=(0, 0, 0, 170))
-            draw.text((x, y_base), ctx_text, font=font_main, fill=ctx_color)
+            draw.text((x + 3, y_base + 3), ctx_text, font=font, fill=(0, 0, 0, 170))
+            draw.text((x, y_base), ctx_text, font=font, fill=ctx_color)
 
     return img
 
@@ -4203,7 +4286,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     # Step 4: Captions (60%)
     _publish_progress(job_id, "captions", 60, "processing", "Generating captions...")
     style = _effective_caption_style(cfg)
-    words_per_line = 3 if style in CAPCUT_STYLES else 6
+    words_per_line = 5 if style == "tiktok" else (3 if style in CAPCUT_STYLES else 6)
     all_captions: dict[int, list[CaptionSegment]] = {}
     for idx, clip in enumerate(clips):
         segs = _generate_captions(words, clip, max_words=words_per_line)
@@ -4541,7 +4624,7 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
                       f"Found {len(clips)} viral clips (source={transcript_source})")
 
     # ── Step 3: Captions per clip ──────────────────────────────────────────────
-    words_per_line = 3 if style in CAPCUT_STYLES else 6
+    words_per_line = 5 if style == "tiktok" else (3 if style in CAPCUT_STYLES else 6)
     all_captions: dict[int, list[CaptionSegment]] = {}
     for idx, clip in enumerate(clips):
         all_captions[idx] = _generate_captions(words, clip, max_words=words_per_line)

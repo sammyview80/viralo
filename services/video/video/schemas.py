@@ -24,7 +24,7 @@ class ClipConfig(BaseModel):
     # Captions
     add_captions: bool = Field(default=True, description="Burn captions into clip")
     caption_style: Literal[
-        "capcut", "capcut-bold", "hormozi", "beast", "neon", "karaoke", "classic", "impact", "minimal"
+        "capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke", "classic", "impact", "minimal"
     ] | None = Field(
         default=None, description="Caption visual style (None = auto from template)"
     )

@@ -45,6 +45,8 @@ export const DEFAULT_CONFIG: ClipConfig = {
 
 export const CAPTION_STYLES: { id: string | null; label: string; desc: string }[] = [
   { id:null,          label:"Auto",         desc:"Matched to the selected template" },
+  { id:"tiktok",      label:"TikTok",       desc:"Words appear as spoken, dark box" },
+  { id:"word-pop",    label:"Word Pop",     desc:"One big word at a time, centered" },
   { id:"capcut",      label:"CapCut",       desc:"Word pills, yellow highlight" },
   { id:"capcut-bold", label:"CapCut Bold",  desc:"Thicker strokes, high contrast" },
   { id:"hormozi",     label:"Hormozi",      desc:"Bold word pills, green highlight" },
