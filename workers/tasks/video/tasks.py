@@ -731,8 +731,13 @@ Every clip index must appear in exactly one group. Use a group of [N] for clips 
                 out_path = str(tmp_dir / f"{new_id}.mp4")
 
                 result = subprocess.run(
-                    ["ffmpeg", "-y", "-ss", str(merged_start), "-i", source_path,
-                     "-t", str(merged_dur), "-c", "copy", "-movflags", "+faststart", out_path],
+                    _build_precise_trim_command(
+                        source_path=source_path,
+                        output_path=out_path,
+                        start_sec=merged_start,
+                        end_sec=merged_end,
+                        has_audio=_media_has_audio_stream(source_path),
+                    ),
                     capture_output=True, text=True, timeout=300,
                 )
                 if result.returncode != 0:
@@ -1029,11 +1034,14 @@ def render_clip_with_edits(
             final = os.path.join(tmp, f"render_{render_id}.mp4")
 
             # ── Step 1: Trim ──────────────────────────────────────────
-            trim_cmd = ["ffmpeg", "-y", "-threads", "2"]
-            trim_cmd += ["-ss", str(trim_start_sec)]
-            if trim_end_sec:
-                trim_cmd += ["-to", str(trim_end_sec)]
-            trim_cmd += ["-i", source_path, "-c", "copy", trimmed]
+            trimmed_has_audio = _media_has_audio_stream(source_path)
+            trim_cmd = _build_precise_trim_command(
+                source_path=source_path,
+                output_path=trimmed,
+                start_sec=trim_start_sec,
+                end_sec=trim_end_sec,
+                has_audio=trimmed_has_audio,
+            )
             r = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=300)
             if r.returncode != 0:
                 raise RuntimeError(f"Trim failed: {r.stderr[-300:]}")
@@ -1041,7 +1049,13 @@ def render_clip_with_edits(
             _update_meta(conn, "processing", 30)
 
             # ── Step 2: Caption filter ────────────────────────────────
-            caption_filter = _build_caption_filter(captions)
+            render_captions, render_markers = _normalize_editor_timeline(
+                captions,
+                markers,
+                trim_start_sec,
+                trim_end_sec,
+            )
+            caption_filter = _build_caption_filter(render_captions)
             quality_flags = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["1080p"])
 
             # ── Step 3: Build + run encode command ────────────────────
@@ -1056,7 +1070,13 @@ def render_clip_with_edits(
                 vf_filters.append(caption_filter)
             combined_vf = ",".join(vf_filters) if vf_filters else None
 
-            sound_cmd = _mix_sound_markers(trimmed, markers, final, qf)
+            sound_cmd = _mix_sound_markers(
+                trimmed,
+                render_markers,
+                final,
+                qf,
+                source_has_audio=trimmed_has_audio,
+            )
 
             if sound_cmd:
                 # Has sound markers — build combined command

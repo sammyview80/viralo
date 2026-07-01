@@ -114,6 +114,32 @@ class TestEditorDataRequest:
         assert cap.font_size == 32
         assert cap.position == "top"
 
+    def test_caption_accepts_extended_templates(self):
+        templates = [
+            "clean",
+            "neon",
+            "podcast",
+            "cinematic",
+            "gaming",
+            "news",
+            "luxury",
+            "karaoke",
+            "meme",
+            "documentary",
+            "sports",
+            "soft",
+        ]
+        for template in templates:
+            cap = EditorCaption(
+                id=f"x-{template}",
+                text="hi",
+                start_sec=0,
+                end_sec=5,
+                color="#ff0000",
+                template=template,
+            )
+            assert cap.template == template
+
     def test_caption_font_size_bounds(self):
         from pydantic import ValidationError
         with pytest.raises(ValidationError):

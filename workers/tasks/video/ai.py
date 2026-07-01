@@ -791,6 +791,7 @@ def _multi_agent_clip_content(
     platforms: list[str],
     content_type: str,
     topic_focus: str | None = None,
+    language: str = "en",
 ) -> dict:
     """Generate viral description, trending hashtags and an optimized title.
 
@@ -801,11 +802,12 @@ def _multi_agent_clip_content(
     """
     topic_ctx = f"Topic: {topic_focus}\n" if topic_focus else ""
     clip_ctx = f"Clip reason: {clip.reason}\nClip title hint: {clip.title}"
+    lang_instruction = f"IMPORTANT: Generate ALL content (title, descriptions, CTAs) in the same language as the transcript. The detected language is: {language}.\n" if language and language != "en" else ""
 
     prompt = f"""You are a viral social media expert for {content_type} content. For this clip,
 produce THREE things in one JSON object: platform descriptions, trending hashtags, and the best title.
 
-{topic_ctx}{clip_ctx}
+{lang_instruction}{topic_ctx}{clip_ctx}
 Transcript excerpt:
 {transcript_snippet[:3000]}
 
@@ -916,6 +918,7 @@ def _ai_generate_clip_content(
     transcript_snippet: str,
     platforms: list[str],
     captions_srt: str = "",
+    language: str = "en",
 ) -> dict:
     """Return {title, description, tags} per platform using Groq LLM."""
     # Caption SRT is the primary source — it contains exactly what's spoken in the clip
@@ -924,7 +927,10 @@ def _ai_generate_clip_content(
         caption_text = f"[Hook: {clip.reason}]" if clip.reason else "[no transcript]"
 
     platforms_str = ", ".join(platforms) if platforms else "tiktok, reels, shorts"
+    lang_instruction = f"IMPORTANT: Generate ALL content (title, descriptions) in the same language as the transcript. Detected language: {language}.\n\n" if language and language != "en" else ""
     prompt = f"""You are a viral social media content strategist. Generate platform-optimized content for this video clip.
+
+{lang_instruction}
 
 Clip hook: {clip.reason or clip.title}
 Caption text (exact words spoken in this clip):
@@ -1026,6 +1032,7 @@ def _batch_ai_content(
     platforms: list[str],
     content_type: str = "other",
     topic_focus: str | None = None,
+    language: str = "en",
 ) -> dict[int, dict]:
     """Generate AI title/description/tags for all clips in parallel. Returns {clip_index: content}."""
     def _gen_one(idx_clip: tuple[int, ClipResult]) -> tuple[int, dict]:
@@ -1041,10 +1048,11 @@ def _batch_ai_content(
                 platforms=platforms,
                 content_type=content_type,
                 topic_focus=topic_focus,
+                language=language,
             )
         except Exception as e:
             logging.warning("_multi_agent_clip_content failed for clip %s: %s — falling back", clip.start, e)
-            content = _ai_generate_clip_content(clip, snippet, platforms, captions_srt=srt)
+            content = _ai_generate_clip_content(clip, snippet, platforms, captions_srt=srt, language=language)
         return idx, content
 
     results: dict[int, dict] = {}

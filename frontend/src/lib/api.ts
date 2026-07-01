@@ -260,6 +260,25 @@ export interface ClipApiResponse {
 export type ClipListResponse = PaginatedResponse<ClipApiResponse>;
 
 /* ─── Editor types ─── */
+export type EditorCaptionTemplate =
+  | "default"
+  | "modern"
+  | "bouncy"
+  | "mr-beast"
+  | "business"
+  | "clean"
+  | "neon"
+  | "podcast"
+  | "cinematic"
+  | "gaming"
+  | "news"
+  | "luxury"
+  | "karaoke"
+  | "meme"
+  | "documentary"
+  | "sports"
+  | "soft";
+
 export interface EditorCaption {
   id: string;
   text: string;
@@ -268,7 +287,7 @@ export interface EditorCaption {
   position: "top" | "center" | "bottom";
   color: string;
   font_size: number;
-  template: "default" | "modern" | "bouncy" | "mr-beast" | "business";
+  template: EditorCaptionTemplate;
 }
 
 export interface EditorMarker {

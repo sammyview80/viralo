@@ -194,6 +194,31 @@ class TestMixAudioTracks:
             result = _mix_audio_tracks(clip, str(tmp_path / "out.mp4"), music_path=music)
         assert result == clip
 
+    def test_voiceover_mix_pads_audio_to_video_duration(self, tmp_path):
+        clip = str(tmp_path / "clip.mp4")
+        voiceover = str(tmp_path / "voiceover.mp3")
+        out = str(tmp_path / "out.mp4")
+        Path(clip).write_bytes(b"\x00" * 200)
+        Path(voiceover).write_bytes(b"\x00" * 200)
+
+        commands = []
+
+        def fake_run(cmd, *args, **kwargs):
+            commands.append(cmd)
+            Path(out).write_bytes(b"\x00" * 2048)
+            return MagicMock(returncode=0, stderr=b"")
+
+        with patch("workers.tasks.video.render._media_has_audio_stream", return_value=True), \
+             patch("workers.tasks.video.render._media_duration_sec", return_value=8.0), \
+             patch("subprocess.run", side_effect=fake_run):
+            result = _mix_audio_tracks(clip, out, music_path=None, vo_path=voiceover)
+
+        assert result == out
+        filt = commands[0][commands[0].index("-filter_complex") + 1]
+        assert "duration=shortest" not in filt
+        assert "duration=longest" in filt
+        assert "apad,atrim=0:8.0,asetpts=PTS-STARTPTS[aout]" in filt
+
 
 @video_only
 class TestSynthesizeVoiceover:

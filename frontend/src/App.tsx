@@ -13,7 +13,7 @@ import { Shell } from "@/workspace/Shell";
 const AUTH_ROUTES = ["/login", "/register"];
 
 const Splash = () => (
-  <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#080b12]">
+  <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background">
     <ViraloIcon size={40} />
     <div className="h-5 w-5 rounded-full border-2 border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
   </div>

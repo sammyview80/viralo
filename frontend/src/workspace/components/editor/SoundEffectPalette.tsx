@@ -31,10 +31,10 @@ interface SoundEffectPaletteProps {
 export function SoundEffectPalette({ selected, onSelect }: SoundEffectPaletteProps) {
   return (
     <div className="space-y-3">
-      <p className="text-[10px] font-bold uppercase tracking-[.12em] text-zinc-600">
+      <p className="text-[10px] font-bold uppercase tracking-[.12em] text-c-text-muted">
         Sound Effects
       </p>
-      <p className="text-[11px] text-zinc-500">Select an effect, then click the timeline to place it.</p>
+      <p className="text-[11px] text-c-text-muted">Select an effect, then click the timeline to place it.</p>
       <div className="grid grid-cols-3 gap-1.5">
         {PALETTE.map((p) => {
           const active = selected.emoji === p.emoji && selected.label === p.label;
@@ -46,7 +46,7 @@ export function SoundEffectPalette({ selected, onSelect }: SoundEffectPalettePro
                 "flex flex-col items-center gap-1 rounded-[10px] border px-2 py-2.5 text-[11px] font-semibold transition cursor-pointer",
                 active
                   ? "border-[#ff3d6a]/50 bg-[#ff3d6a]/15 text-rose-200 shadow-[0_0_0_1px_rgba(255,61,106,.2)]"
-                  : "border-white/[.06] bg-white/[.02] text-zinc-400 hover:bg-white/[.05] hover:text-zinc-200"
+                  : "border-c-border bg-surface-1 text-c-text-secondary hover:bg-surface-2 hover:text-c-text"
               )}
             >
               <span className="text-2xl leading-none">{p.emoji}</span>

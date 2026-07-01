@@ -44,33 +44,33 @@ function fmt(n: number): string {
 
 function StatCard({ icon, label, value, sub }: { icon: string; label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-[14px] border border-white/[.07] bg-[#111827] p-5">
+    <div className="rounded-[14px] border border-c-border bg-surface-2 p-5">
       <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#ff3d6a]/10 text-lg">
         {icon}
       </div>
       <div className="font-display text-2xl font-bold tracking-[-0.02em]">{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-zinc-500">{sub}</div>}
-      <div className="mt-1 text-xs font-medium text-zinc-400">{label}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-c-text-muted">{sub}</div>}
+      <div className="mt-1 text-xs font-medium text-c-text-muted">{label}</div>
     </div>
   );
 }
 
 function SkeletonCard() {
   return (
-    <div className="rounded-[14px] border border-white/[.07] bg-[#111827] p-5 animate-pulse">
-      <div className="mb-3 h-9 w-9 rounded-[10px] bg-white/[.06]" />
-      <div className="h-7 w-24 rounded bg-white/[.06]" />
-      <div className="mt-2 h-3 w-16 rounded bg-white/[.04]" />
+    <div className="rounded-[14px] border border-c-border bg-surface-2 p-5 animate-pulse">
+      <div className="mb-3 h-9 w-9 rounded-[10px] bg-surface-glass" />
+      <div className="h-7 w-24 rounded bg-surface-glass" />
+      <div className="mt-2 h-3 w-16 rounded bg-surface-glass" />
     </div>
   );
 }
 
 function SkeletonRow() {
   return (
-    <tr className="border-b border-white/[.05]">
+    <tr className="border-b border-c-border">
       {Array.from({ length: 7 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
-          <div className="h-3.5 rounded bg-white/[.06] animate-pulse" style={{ width: `${50 + (i * 13) % 40}%` }} />
+          <div className="h-3.5 rounded bg-surface-glass animate-pulse" style={{ width: `${50 + (i * 13) % 40}%` }} />
         </td>
       ))}
     </tr>
@@ -105,7 +105,7 @@ export function AnalyticsPage() {
         {/* Header + period selector */}
         <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
           <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Analytics</h1>
-          <div className="grid grid-cols-3 rounded-[10px] border border-white/[.07] bg-[#0e1420] p-1 gap-1 sm:flex">
+          <div className="grid grid-cols-3 rounded-[10px] border border-c-border bg-surface-1 p-1 gap-1 sm:flex">
             {(["7d", "30d", "90d"] as Period[]).map((p) => (
               <button
                 key={p}
@@ -113,7 +113,7 @@ export function AnalyticsPage() {
                 className={`rounded-[7px] px-4 py-1.5 text-xs font-semibold transition-colors ${
                   period === p
                     ? "bg-[#ff3d6a] text-white"
-                    : "text-zinc-500 hover:text-zinc-200"
+                    : "text-c-text-muted hover:text-c-text"
                 }`}
               >
                 {p}
@@ -147,11 +147,11 @@ export function AnalyticsPage() {
         )}
 
         {/* Per-post table */}
-        <div className="overflow-hidden rounded-[14px] border border-white/[.07] bg-[#0e1420]">
-          <div className="flex flex-col gap-1 border-b border-white/[.07] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="overflow-hidden rounded-[14px] border border-c-border bg-surface-1">
+          <div className="flex flex-col gap-1 border-b border-c-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <span className="font-display text-[15px] font-bold">Post Performance</span>
             {total > 0 && (
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-c-text-muted">
                 {total} post{total !== 1 ? "s" : ""}
               </span>
             )}
@@ -162,20 +162,20 @@ export function AnalyticsPage() {
           ) : isEmpty ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
               <div className="text-4xl">📊</div>
-              <p className="font-semibold text-zinc-300">No analytics yet.</p>
-              <p className="text-sm text-zinc-500">Post your first clip to see data here.</p>
+              <p className="font-semibold text-c-text-secondary">No analytics yet.</p>
+              <p className="text-sm text-c-text-muted">Post your first clip to see data here.</p>
             </div>
           ) : (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-white/[.05] text-left">
+                    <tr className="border-b border-c-border text-left">
                       {["Platform", "Post ID", "Views", "Likes", "Engagement", "Virality", "Fetched At"].map(
                         (h) => (
                           <th
                             key={h}
-                            className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-600"
+                            className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[.06em] text-c-text-muted"
                           >
                             {h}
                           </th>
@@ -189,7 +189,7 @@ export function AnalyticsPage() {
                       : posts.map((p) => (
                           <tr
                             key={p.scheduled_post_id}
-                            className="border-b border-white/[.04] transition-colors hover:bg-white/[.015]"
+                            className="border-b border-c-border transition-colors hover:bg-surface-glass"
                           >
                             <td className="px-4 py-3">
                               <span
@@ -199,14 +199,14 @@ export function AnalyticsPage() {
                                 {platformLabel(p.platform)}
                               </span>
                             </td>
-                            <td className="px-4 py-3 font-mono text-[11px] text-zinc-500">
+                            <td className="px-4 py-3 font-mono text-[11px] text-c-text-muted">
                               {p.platform_post_id.length > 14
                                 ? `${p.platform_post_id.slice(0, 14)}…`
                                 : p.platform_post_id}
                             </td>
                             <td className="px-4 py-3 font-semibold">{fmt(p.views)}</td>
                             <td className="px-4 py-3 font-semibold">{fmt(p.likes)}</td>
-                            <td className="px-4 py-3 text-zinc-300">
+                            <td className="px-4 py-3 text-c-text-secondary">
                               {p.engagement_rate.toFixed(2)}%
                             </td>
                             <td className="px-4 py-3">
@@ -217,7 +217,7 @@ export function AnalyticsPage() {
                                 {p.virality_score !== null ? p.virality_score.toFixed(0) : "—"}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-[11px] text-zinc-500">
+                            <td className="px-4 py-3 text-[11px] text-c-text-muted">
                               {new Date(p.fetched_at).toLocaleDateString("en-US", {
                                 month: "short",
                                 day: "numeric",

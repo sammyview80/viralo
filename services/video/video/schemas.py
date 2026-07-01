@@ -5,6 +5,26 @@ from datetime import datetime
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+EditorCaptionTemplate = Literal[
+    "default",
+    "modern",
+    "bouncy",
+    "mr-beast",
+    "business",
+    "clean",
+    "neon",
+    "podcast",
+    "cinematic",
+    "gaming",
+    "news",
+    "luxury",
+    "karaoke",
+    "meme",
+    "documentary",
+    "sports",
+    "soft",
+]
+
 
 class ClipConfig(BaseModel):
     # Clip boundaries
@@ -106,7 +126,7 @@ class EditorCaption(BaseModel):
     position: Literal["top", "center", "bottom"] = "bottom"
     color: str = "#ffffff"
     font_size: int = Field(default=24, ge=12, le=48)
-    template: Literal["default", "modern", "bouncy", "mr-beast", "business"] = "default"
+    template: EditorCaptionTemplate = "default"
 
     @field_validator("color")
     @classmethod

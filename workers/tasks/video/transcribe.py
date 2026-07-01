@@ -172,7 +172,9 @@ def _parse_words(response, offset: float) -> list[WordTimestamp]:
     return words
 
 
-def _transcribe_chunk(groq_client, audio_bytes: bytes, filename: str, offset: float, language: str) -> list[WordTimestamp]:
+def _transcribe_chunk(groq_client, audio_bytes: bytes, filename: str, offset: float, language: str) -> tuple[list[WordTimestamp], str]:
+    """Returns (words, detected_language). detected_language is ISO 639-1 or empty string."""
+    detected_lang = ""
     try:
         response = groq_client.audio.transcriptions.create(
             file=(filename, audio_bytes),
@@ -181,6 +183,7 @@ def _transcribe_chunk(groq_client, audio_bytes: bytes, filename: str, offset: fl
             response_format="verbose_json",
             timestamp_granularities=["word", "segment"],
         )
+        detected_lang = getattr(response, "language", "") or ""
     except Exception:
         try:
             response = groq_client.audio.transcriptions.create(
@@ -191,20 +194,20 @@ def _transcribe_chunk(groq_client, audio_bytes: bytes, filename: str, offset: fl
             )
             text_val = (getattr(response, "text", "") or "").strip()
             if not text_val:
-                return []
+                return [], ""
             tokens = text_val.split()
             dpw = max(0.3, 30.0 / max(len(tokens), 1))
             return [
                 WordTimestamp(word=t, start=round(i * dpw + offset, 3), end=round((i + 1) * dpw + offset, 3))
                 for i, t in enumerate(tokens)
-            ]
+            ], ""
         except Exception:
-            return []
-    return _parse_words(response, offset)
+            return [], ""
+    return _parse_words(response, offset), detected_lang
 
 
-def _transcribe(source_path: str, duration: float, language: str = "en") -> list[WordTimestamp]:
-    # Collect all GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, … in order
+def _transcribe(source_path: str, duration: float, language: str = "auto") -> tuple[list[WordTimestamp], str]:
+    """Returns (words, detected_language). detected_language is ISO 639-1 from Whisper or empty string."""
     from groq import Groq, RateLimitError as GroqRateLimitError
 
     groq_keys: list[str] = []
@@ -214,7 +217,7 @@ def _transcribe(source_path: str, duration: float, language: str = "en") -> list
             groq_keys.append(k)
 
     if not groq_keys:
-        return []
+        return [], ""
 
     audio_chunks = _prepare_audio_chunks(source_path, duration)
     last_exc: Exception | None = None
@@ -224,10 +227,14 @@ def _transcribe(source_path: str, duration: float, language: str = "en") -> list
         label = "GROQ_API_KEY" if key_idx == 0 else f"GROQ_API_KEY_{key_idx + 1}"
         try:
             all_words: list[WordTimestamp] = []
+            detected_lang = ""
             for i, (audio_bytes, offset) in enumerate(audio_chunks):
                 fname = f"audio_chunk_{i}.mp3"
-                words = _transcribe_chunk(client, audio_bytes, fname, offset, language)
+                words, chunk_lang = _transcribe_chunk(client, audio_bytes, fname, offset, language)
                 all_words.extend(words)
+                # Use first chunk's detected language (most reliable — full audio context)
+                if not detected_lang and chunk_lang:
+                    detected_lang = chunk_lang
 
             # Deduplicate overlapping chunk boundaries
             if len(audio_chunks) > 1:
@@ -240,8 +247,8 @@ def _transcribe(source_path: str, duration: float, language: str = "en") -> list
                         seen.add(k)
                 all_words = deduped
 
-            logging.info(f"[Whisper] Transcribed {len(all_words)} words via {label}")
-            return all_words
+            logging.info(f"[Whisper] Transcribed {len(all_words)} words via {label} (language={detected_lang or 'unknown'})")
+            return all_words, detected_lang
 
         except GroqRateLimitError as e:
             logging.warning(f"[Whisper] {label} rate-limited — trying next key: {str(e)[:120]}")
@@ -250,10 +257,10 @@ def _transcribe(source_path: str, duration: float, language: str = "en") -> list
         except Exception as e:
             logging.warning(f"[Whisper] {label} failed: {str(e)[:120]}")
             last_exc = e
-            break  # non-rate-limit errors won't be fixed by switching keys
+            break
 
     logging.error(f"[Whisper] All Groq keys exhausted. Last error: {last_exc}")
-    return []
+    return [], ""
 
 
 # ── LLM helpers: multi-provider fallback ─────────────────────────────────────

@@ -61,7 +61,8 @@ function fmt(s: number) {
 }
 
 function drawTemplateCaption(ctx: CanvasRenderingContext2D, cap: Caption, W: number, H: number, yPos: number) {
-  const text = cap.template === "mr-beast" ? cap.text.toUpperCase() : cap.text;
+  const uppercaseTemplates = new Set(["mr-beast", "news", "meme", "sports"]);
+  const text = uppercaseTemplates.has(cap.template) ? cap.text.toUpperCase() : cap.text;
   const fontSize = cap.template === "mr-beast" ? Math.max(cap.fontSize, 32) : cap.fontSize;
   ctx.font = `900 ${fontSize}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -81,26 +82,42 @@ function drawTemplateCaption(ctx: CanvasRenderingContext2D, cap: Caption, W: num
   }
 
   ctx.save();
-  if (cap.template === "modern") {
-    roundRect("rgba(0,0,0,0.92)");
-    ctx.fillStyle = "#ffea00";
-    ctx.shadowColor = "rgba(0,0,0,0.9)";
+  const boxed: Partial<Record<Caption["template"], { bg: string; fg: string; stroke?: string }>> = {
+    default: { bg: "rgba(255,255,255,0.96)", fg: "#111827" },
+    modern: { bg: "rgba(0,0,0,0.92)", fg: "#ffea00" },
+    bouncy: { bg: "rgba(255,255,255,0.96)", fg: "#7c2dff" },
+    "mr-beast": { bg: "#ffd21f", fg: "#00a7b7", stroke: "rgba(0,0,0,0.35)" },
+    neon: { bg: "rgba(16,16,38,0.84)", fg: "#39ff14", stroke: "rgba(255,0,255,0.35)" },
+    podcast: { bg: "rgba(17,24,39,0.88)", fg: "#ffffff" },
+    gaming: { bg: "rgba(76,29,149,0.86)", fg: "#00e5ff" },
+    news: { bg: "rgba(225,29,72,0.92)", fg: "#ffffff" },
+    luxury: { bg: "rgba(5,5,5,0.8)", fg: "#d4af37" },
+    karaoke: { bg: "rgba(29,78,216,0.86)", fg: "#fff2a8" },
+    meme: { bg: "rgba(0,0,0,0.7)", fg: "#ffffff", stroke: "rgba(0,0,0,0.7)" },
+    documentary: { bg: "rgba(0,0,0,0.58)", fg: "#f5f5dc" },
+    sports: { bg: "rgba(17,17,17,0.86)", fg: "#ccff00" },
+    soft: { bg: "rgba(49,46,129,0.58)", fg: "#ffc7d8" },
+  };
+  const style = boxed[cap.template];
+  if (style) {
+    roundRect(style.bg);
+    ctx.fillStyle = style.fg;
+    if (style.stroke) {
+      ctx.strokeStyle = style.stroke;
+      ctx.lineWidth = 4;
+      ctx.strokeText(text, x, yPos);
+    }
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
     ctx.shadowBlur = 6;
-  } else if (cap.template === "bouncy" || cap.template === "default") {
-    roundRect("rgba(255,255,255,0.96)");
-    ctx.fillStyle = cap.template === "bouncy" ? "#7c2dff" : "#111827";
-    ctx.shadowColor = "rgba(0,0,0,0.4)";
-    ctx.shadowBlur = 6;
-  } else if (cap.template === "mr-beast") {
-    roundRect("#ffd21f");
-    ctx.fillStyle = "#00a7b7";
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.lineWidth = 4;
-    ctx.strokeText(text, x, yPos);
   } else {
-    ctx.fillStyle = cap.color;
+    const plainColors: Partial<Record<Caption["template"], string>> = {
+      business: "#ffffff",
+      clean: "#ffffff",
+      cinematic: "#f5d76e",
+    };
+    ctx.fillStyle = plainColors[cap.template] ?? cap.color;
     ctx.shadowColor = "rgba(0,0,0,0.9)";
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = cap.template === "clean" ? 4 : 10;
   }
   ctx.fillText(text, x, yPos);
   ctx.restore();

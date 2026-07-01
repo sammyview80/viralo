@@ -69,21 +69,21 @@ function Toast({ id, notification }: { id: string; notification: Notification })
     <div
       onClick={handleClick}
       className={cn(
-        "flex w-[320px] cursor-pointer items-start gap-3 rounded-[12px] border border-white/[.10] bg-[#0e1420] p-3.5 shadow-[0_12px_40px_rgba(0,0,0,.55)] transition-[opacity,transform] duration-300",
+        "flex w-[320px] cursor-pointer items-start gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5 shadow-[0_12px_40px_rgba(0,0,0,.25)] dark:shadow-[0_12px_40px_rgba(0,0,0,.55)] transition-[opacity,transform] duration-300",
         visible ? "translate-x-0 opacity-100" : "translate-x-4 opacity-0"
       )}
     >
       <span className="mt-[3px] h-[8px] w-[8px] flex-none rounded-full bg-[#ff3d6a] shadow-[0_0_8px_rgba(255,61,106,.7)]" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[12.5px] font-semibold text-zinc-100">{notification.title}</p>
+        <p className="truncate text-[12.5px] font-semibold text-c-text">{notification.title}</p>
         {notification.body && (
-          <p className="truncate text-[11.5px] leading-4 text-zinc-400">{notification.body}</p>
+          <p className="truncate text-[11.5px] leading-4 text-c-text-secondary">{notification.body}</p>
         )}
-        <span className="text-[10.5px] text-zinc-600">{timeAgo(notification.created_at)}</span>
+        <span className="text-[10.5px] text-c-text-muted">{timeAgo(notification.created_at)}</span>
       </div>
       <button
         onClick={handleDismiss}
-        className="flex-none text-zinc-600 transition hover:text-zinc-300"
+        className="flex-none text-c-text-muted transition hover:text-c-text-secondary"
       >
         <XIcon size={14} />
       </button>

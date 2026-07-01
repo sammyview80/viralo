@@ -163,7 +163,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     work_dir = Path(VIDEO_TEMP_DIR) / video_id
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    language = cfg.get("language", "en")
+    language = cfg.get("language", "auto")
     num_clips = cfg.get("max_clips", 10)
     min_dur = cfg.get("duration_min", 15)
     max_dur = cfg.get("duration_max", 60)
@@ -256,15 +256,21 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             else:
                 _publish_progress(job_id, "transcribe", 20, "processing",
                                   "Transcribing with Groq Whisper for precise caption sync...")
-                words = _transcribe(source_path, meta.duration, language)
+                words, whisper_lang = _transcribe(source_path, meta.duration, language)
+                if whisper_lang and language == "auto":
+                    language = whisper_lang
+                    logging.info("[Whisper] Auto-detected language: %s", language)
                 _publish_progress(job_id, "transcribe", 35, "processing",
-                                  f"Transcribed {len(words)} words via Whisper")
+                                  f"Transcribed {len(words)} words via Whisper (lang={language})")
         else:
             _publish_progress(job_id, "transcribe", 20, "processing",
                               "Extracting audio + transcribing with Groq Whisper...")
-            words = _transcribe(source_path, meta.duration, language)
+            words, whisper_lang = _transcribe(source_path, meta.duration, language)
+            if whisper_lang and language == "auto":
+                language = whisper_lang
+                logging.info("[Whisper] Auto-detected language: %s", language)
             _publish_progress(job_id, "transcribe", 35, "processing",
-                              f"Transcribed {len(words)} words")
+                              f"Transcribed {len(words)} words (lang={language})")
 
         if words:
             _save_transcript(tenant_id, video_id, words)
@@ -290,6 +296,11 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             if vid_meta:
                 _update_video(tenant_id, video_id, metadata=json.dumps(vid_meta))
                 _save_step_artifact(tenant_id, video_id, "video_metadata", vid_meta)
+                # Auto-detect language from metadata when user didn't set one explicitly
+                detected_lang = vid_meta.get("language_detected", "")
+                if detected_lang and cfg.get("language") is None:
+                    language = detected_lang
+                    logging.info("Language auto-detected from transcript: %s", language)
 
     if _check_cancelled(tenant_id, video_id):
         return
@@ -377,7 +388,8 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     # Generate AI content for all clips in parallel before export
     _publish_progress(job_id, "ai_content", 58, "processing", f"Generating AI content for {len(clips)} clips...")
     all_ai_content = _batch_ai_content(clips, words, all_captions, platforms,
-                                       content_type=_content_type, topic_focus=topic_focus)
+                                       content_type=_content_type, topic_focus=topic_focus,
+                                       language=language)
 
     # Step 5: Export clips in parallel (60→95%)
     if output_quality == "source":
@@ -519,7 +531,7 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
     min_score   = float(cfg.get("min_score", 0.5))
     topic_focus = cfg.get("topic_focus") or ""
     platforms   = cfg.get("platforms") or ["tiktok", "reels", "shorts"]
-    language    = cfg.get("language", "en")
+    language    = cfg.get("language", "auto")
     style       = cfg.get("caption_style", "capcut")
     precision_mode_gvc = cfg.get("precision_mode", False)
     yt_engagement_gvc: dict | None = None
@@ -620,10 +632,13 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
             _publish_progress(job_id, "transcribe", 15, "processing",
                               "Transcribing with Groq Whisper...")
             meta = _probe_video(source_path)
-            words = _transcribe(source_path, meta.duration, language)
+            words, whisper_lang = _transcribe(source_path, meta.duration, language)
+            if whisper_lang and language == "auto":
+                language = whisper_lang
+                logging.info("[Whisper/_gvc] Auto-detected language: %s", language)
             transcript_source = "whisper"
             _publish_progress(job_id, "transcribe", 30, "processing",
-                              f"Transcribed {len(words)} words via Whisper")
+                              f"Transcribed {len(words)} words via Whisper (lang={language})")
 
         if words:
             _save_transcript(tenant_id, video_id, words)
@@ -653,6 +668,11 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
         try:
             _meta = vid_row.metadata if isinstance(vid_row.metadata, dict) else json.loads(vid_row.metadata)
             _gvc_content_type = _meta.get("content_type", "other") or "other"
+            # Use language from stored metadata when user didn't set one explicitly
+            detected_lang = _meta.get("language_detected", "")
+            if detected_lang and cfg.get("language") is None:
+                language = detected_lang
+                logging.info("_gvc_inner: language from stored metadata: %s", language)
         except Exception:
             pass
     clips = _ai_score_clips(
@@ -704,7 +724,8 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
     _publish_progress(job_id, "ai_content", 65, "processing",
                       f"Generating social content for {len(clips)} clips across {len(platforms)} platforms...")
     all_ai_content = _batch_ai_content(clips, words, all_captions, platforms,
-                                       content_type="other", topic_focus=topic_focus)
+                                       content_type=_gvc_content_type, topic_focus=topic_focus,
+                                       language=language)
 
     # ── Step 5: Persist clips ─────────────────────────────────────────────────
     _publish_progress(job_id, "saving", 90, "processing", f"Saving {len(clips)} clips...")
@@ -803,10 +824,14 @@ def _reexport_clip_from_source(clip_id: str, tenant_id: str, out_path: str) -> N
     storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
     asyncio.run(storage.download(storage_key, source_path))
 
-    duration = end_sec - start_sec
     subprocess.run(
-        ["ffmpeg", "-y", "-ss", str(start_sec), "-i", source_path,
-         "-t", str(duration), "-c", "copy", out_path],
+        _build_precise_trim_command(
+            source_path=source_path,
+            output_path=out_path,
+            start_sec=float(start_sec),
+            end_sec=float(end_sec),
+            has_audio=_media_has_audio_stream(source_path),
+        ),
         check=True, capture_output=True,
     )
 
@@ -825,5 +850,4 @@ def _download_stored_video(video_id: str, tenant_id: str, out_path: str) -> None
     asyncio.run(storage.download(row[0], out_path))
     if not Path(out_path).exists() or Path(out_path).stat().st_size == 0:
         raise RuntimeError(f"Downloaded source for video {video_id} is empty")
-
 

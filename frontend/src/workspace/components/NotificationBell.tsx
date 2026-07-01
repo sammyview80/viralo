@@ -130,8 +130,8 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
 
 const DEFAULT_CONFIG: TypeConfig = {
   icon: <BellIcon size={14} />,
-  accent: "text-zinc-400",
-  bg: "bg-white/[.06]",
+  accent: "text-c-text-secondary",
+  bg: "bg-surface-2",
   label: "Notification",
 };
 
@@ -170,8 +170,8 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
       onClick={handleClick}
       className={cn(
         "group relative flex w-full items-start gap-3 px-3.5 py-3 text-left transition",
-        "hover:bg-[#141926]",
-        isUnread && "bg-white/[.015]"
+        "hover:bg-surface-1",
+        isUnread && "bg-surface-glass"
       )}
     >
       {/* Unread left bar */}
@@ -193,16 +193,16 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
           <span className={cn("text-[10px] font-bold uppercase tracking-[.1em]", cfg.accent)}>
             {cfg.label}
           </span>
-          <span className="text-[10px] text-zinc-600">{timeAgo(n.created_at)}</span>
+          <span className="text-[10px] text-c-text-muted">{timeAgo(n.created_at)}</span>
         </div>
         <p className={cn(
           "text-[12.5px] font-medium leading-[1.4]",
-          isUnread ? "text-zinc-100" : "text-zinc-400"
+          isUnread ? "text-c-text" : "text-c-text-secondary"
         )}>
           {n.title}
         </p>
         {n.body && (
-          <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-[1.4] text-zinc-500">{n.body}</p>
+          <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-[1.4] text-c-text-muted">{n.body}</p>
         )}
         {n.action_url && (
           <span className="mt-1 inline-block text-[11px] font-medium text-[#ff5f86] opacity-0 transition group-hover:opacity-100">
@@ -236,7 +236,7 @@ export function NotificationBell() {
       {/* Bell button */}
       <button
         onClick={() => setOpen(!open)}
-        className="relative grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-white/[.08] text-zinc-400 transition hover:border-white/[.13] hover:bg-[#141926] hover:text-zinc-200"
+        className="relative grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-c-border text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-1 hover:text-c-text"
       >
         <BellIcon size={15} />
         {unreadCount > 0 && (
@@ -247,12 +247,12 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[340px] overflow-hidden rounded-[14px] border border-white/[.10] bg-[#0e1420] shadow-[0_20px_60px_rgba(0,0,0,.65)]">
+        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[340px] overflow-hidden rounded-[14px] border border-c-border bg-surface-1 shadow-[0_20px_60px_rgba(0,0,0,.25)] dark:shadow-[0_20px_60px_rgba(0,0,0,.65)]">
 
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/[.07] px-4 py-3">
+          <div className="flex items-center justify-between border-b border-c-border px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="text-[13px] font-semibold text-white">Notifications</span>
+              <span className="text-[13px] font-semibold text-c-text">Notifications</span>
               {unreadCount > 0 && (
                 <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#ff3d6a]/20 px-1.5 text-[10px] font-bold text-[#ff5f86]">
                   {unreadCount}
@@ -262,7 +262,7 @@ export function NotificationBell() {
             {unreadCount > 0 && (
               <button
                 onClick={() => markAllRead()}
-                className="flex items-center gap-1 text-[11px] text-zinc-500 transition hover:text-zinc-200"
+                className="flex items-center gap-1 text-[11px] text-c-text-muted transition hover:text-c-text"
               >
                 <CheckAllIcon />
                 Mark all read
@@ -271,12 +271,12 @@ export function NotificationBell() {
           </div>
 
           {/* List */}
-          <div className="max-h-[420px] overflow-y-auto divide-y divide-white/[.04]">
+          <div className="max-h-[420px] overflow-y-auto divide-y divide-c-border">
             {notifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-zinc-600">
+              <div className="flex flex-col items-center justify-center py-12 text-c-text-muted">
                 <BellIcon size={24} className="mb-3 opacity-30" />
                 <span className="text-[12.5px] font-medium">All caught up</span>
-                <span className="mt-1 text-[11.5px] text-zinc-700">No notifications yet</span>
+                <span className="mt-1 text-[11.5px] text-c-text-muted">No notifications yet</span>
               </div>
             ) : (
               notifications.slice(0, 8).map((n) => (
@@ -286,10 +286,10 @@ export function NotificationBell() {
           </div>
 
           {/* Footer */}
-          <div className="border-t border-white/[.07] px-4 py-2.5">
+          <div className="border-t border-c-border px-4 py-2.5">
             <button
               onClick={() => { setOpen(false); navigate("/notifications"); }}
-              className="text-[11.5px] text-zinc-500 transition hover:text-zinc-200"
+              className="text-[11.5px] text-c-text-muted transition hover:text-c-text"
             >
               See all notifications →
             </button>

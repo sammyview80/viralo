@@ -61,6 +61,9 @@ __all__ = [
     '_export_clip',
     'SOUNDS_DIR',
     'QUALITY_PRESETS',
+    '_media_has_audio_stream',
+    '_build_precise_trim_command',
+    '_normalize_editor_timeline',
     '_build_caption_filter',
     '_mix_sound_markers',
 ]
@@ -811,6 +814,70 @@ def _media_duration_sec(path: str) -> float:
     return 0.0
 
 
+def _media_has_audio_stream(path: str) -> bool:
+    try:
+        r = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=codec_type",
+                "-of", "csv=p=0",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return r.returncode == 0 and "audio" in (r.stdout or "")
+    except Exception:
+        return False
+
+
+def _build_precise_trim_command(
+    source_path: str,
+    output_path: str,
+    start_sec: float,
+    end_sec: float | None,
+    has_audio: bool,
+) -> list[str]:
+    start = max(0.0, float(start_sec or 0.0))
+    end = float(end_sec) if end_sec is not None else None
+    duration = (end - start) if end is not None and end > start else None
+    seek_start = max(0.0, start - 2.0)
+    seek_offset = start - seek_start
+
+    duration_expr = f":duration={duration}" if duration is not None else ""
+    v_chain = f"[0:v:0]trim=start={seek_offset}{duration_expr},setpts=PTS-STARTPTS[vout]"
+    if has_audio:
+        filter_complex = (
+            f"{v_chain};"
+            f"[0:a:0]atrim=start={seek_offset}{duration_expr},asetpts=PTS-STARTPTS[aout]"
+        )
+        maps = ["-map", "[vout]", "-map", "[aout]"]
+        audio_flags = ["-c:a", "aac", "-b:a", "256k"]
+    else:
+        filter_complex = v_chain
+        maps = ["-map", "[vout]"]
+        audio_flags = []
+
+    return [
+        "ffmpeg", "-y", "-threads", "2",
+        "-ss", str(seek_start),
+        "-i", source_path,
+        "-filter_complex", filter_complex,
+        *maps,
+        "-c:v", "libx264",
+        "-crf", "22",
+        "-preset", "veryfast",
+        "-profile:v", "high",
+        "-pix_fmt", "yuv420p",
+        *audio_flags,
+        "-avoid_negative_ts", "make_zero",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+
+
 def _voiceover_script_to_captions(
     script: str,
     voice_duration_sec: float,
@@ -961,25 +1028,8 @@ def _mix_audio_tracks(clip_path: str, out_path: str, music_path: str | None = No
     if not has_music and not has_vo:
         return clip_path
 
-    def _has_audio_stream(path: str) -> bool:
-        try:
-            r = subprocess.run(
-                [
-                    "ffprobe", "-v", "error",
-                    "-select_streams", "a:0",
-                    "-show_entries", "stream=codec_type",
-                    "-of", "csv=p=0",
-                    path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            return r.returncode == 0 and "audio" in (r.stdout or "")
-        except Exception:
-            return False
-
-    has_orig_audio = _has_audio_stream(clip_path)
+    has_orig_audio = _media_has_audio_stream(clip_path)
+    clip_duration = _media_duration_sec(clip_path)
     inputs: list[str] = ["-i", clip_path]
     filter_parts: list[str] = []
     stream_idx = 1
@@ -1011,7 +1061,11 @@ def _mix_audio_tracks(clip_path: str, out_path: str, music_path: str | None = No
         n += 1
     if n == 0:
         return clip_path
-    filter_parts.append(f"{mix_inputs}amix=inputs={n}:duration=shortest:dropout_transition=0:normalize=0[aout]")
+    filter_parts.append(f"{mix_inputs}amix=inputs={n}:duration=longest:dropout_transition=0:normalize=0[mixed]")
+    if clip_duration > 0:
+        filter_parts.append(f"[mixed]apad,atrim=0:{clip_duration},asetpts=PTS-STARTPTS[aout]")
+    else:
+        filter_parts.append("[mixed]apad[aout]")
 
     filter_complex = ";".join(filter_parts)
 
@@ -1766,6 +1820,114 @@ QUALITY_PRESETS = {
     "1080p":  ["-crf", "22", "-preset", "fast", "-vf", "scale=-2:1080"],
 }
 
+EDITOR_CAPTION_TEMPLATES = {
+    "modern": ["fontcolor=0xffea00", "box=1", "boxcolor=0x000000@0.92", "boxborderw=18"],
+    "bouncy": ["fontcolor=0x7c2dff", "box=1", "boxcolor=0xffffff@0.96", "boxborderw=18"],
+    "mr-beast": [
+        "fontcolor=0x00a7b7",
+        "box=1",
+        "boxcolor=0xffd21f",
+        "boxborderw=18",
+        "shadowcolor=0x000000",
+        "shadowx=2",
+        "shadowy=2",
+    ],
+    "business": ["fontcolor=0xffffff", "shadowcolor=0x000000", "shadowx=2", "shadowy=2"],
+    "clean": ["fontcolor=0xffffff", "shadowcolor=0x000000", "shadowx=1", "shadowy=1"],
+    "neon": [
+        "fontcolor=0x39ff14",
+        "box=1",
+        "boxcolor=0x101026@0.84",
+        "boxborderw=16",
+        "shadowcolor=0xff00ff",
+        "shadowx=2",
+        "shadowy=2",
+    ],
+    "podcast": ["fontcolor=0xffffff", "box=1", "boxcolor=0x111827@0.88", "boxborderw=14"],
+    "cinematic": ["fontcolor=0xf5d76e", "shadowcolor=0x000000", "shadowx=2", "shadowy=2"],
+    "gaming": [
+        "fontcolor=0x00e5ff",
+        "box=1",
+        "boxcolor=0x4c1d95@0.86",
+        "boxborderw=16",
+        "shadowcolor=0x000000",
+        "shadowx=2",
+        "shadowy=2",
+    ],
+    "news": ["fontcolor=0xffffff", "box=1", "boxcolor=0xe11d48@0.92", "boxborderw=14"],
+    "luxury": ["fontcolor=0xd4af37", "box=1", "boxcolor=0x050505@0.80", "boxborderw=18"],
+    "karaoke": ["fontcolor=0xfff2a8", "box=1", "boxcolor=0x1d4ed8@0.86", "boxborderw=14"],
+    "meme": [
+        "fontcolor=0xffffff",
+        "box=1",
+        "boxcolor=0x000000@0.70",
+        "boxborderw=12",
+        "shadowcolor=0x000000",
+        "shadowx=3",
+        "shadowy=3",
+    ],
+    "documentary": ["fontcolor=0xf5f5dc", "box=1", "boxcolor=0x000000@0.58", "boxborderw=12"],
+    "sports": [
+        "fontcolor=0xccff00",
+        "box=1",
+        "boxcolor=0x111111@0.86",
+        "boxborderw=16",
+        "shadowcolor=0x000000",
+        "shadowx=2",
+        "shadowy=2",
+    ],
+    "soft": ["fontcolor=0xffc7d8", "box=1", "boxcolor=0x312e81@0.58", "boxborderw=14"],
+}
+EDITOR_CAPTION_UPPERCASE_TEMPLATES = {"mr-beast", "news", "meme", "sports"}
+
+
+def _normalize_editor_timeline(
+    captions: list[dict],
+    markers: list[dict],
+    trim_start_sec: float,
+    trim_end_sec: float | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Shift editor source-timeline overlays onto the rendered trim timeline."""
+    trim_start = max(0.0, float(trim_start_sec or 0.0))
+    trim_end = float(trim_end_sec) if trim_end_sec is not None else None
+    if trim_end is not None and trim_end <= trim_start:
+        trim_end = None
+
+    normalized_captions: list[dict] = []
+    for cap in captions or []:
+        try:
+            start = float(cap["start_sec"])
+            end = float(cap["end_sec"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if end <= trim_start or (trim_end is not None and start >= trim_end):
+            continue
+
+        shifted = dict(cap)
+        shifted["start_sec"] = round(max(0.0, start - trim_start), 3)
+        shifted["end_sec"] = round(max(shifted["start_sec"], end - trim_start), 3)
+        if trim_end is not None:
+            shifted["end_sec"] = min(shifted["end_sec"], round(trim_end - trim_start, 3))
+        if shifted["end_sec"] > shifted["start_sec"]:
+            normalized_captions.append(shifted)
+
+    normalized_markers: list[dict] = []
+    trim_start_ms = int(round(trim_start * 1000))
+    trim_end_ms = int(round(trim_end * 1000)) if trim_end is not None else None
+    for marker in markers or []:
+        try:
+            marker_ms = int(marker["time_ms"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if marker_ms < trim_start_ms or (trim_end_ms is not None and marker_ms > trim_end_ms):
+            continue
+
+        shifted = dict(marker)
+        shifted["time_ms"] = max(0, marker_ms - trim_start_ms)
+        normalized_markers.append(shifted)
+
+    return normalized_captions, normalized_markers
+
 
 def _build_caption_filter(captions: list[dict]) -> str:
     """Build ffmpeg drawtext filter chain for captions."""
@@ -1773,7 +1935,7 @@ def _build_caption_filter(captions: list[dict]) -> str:
     pos_map = {"top": "h*0.10", "center": "h*0.50", "bottom": "h*0.88"}
     for cap in captions:
         template = cap.get("template", "default")
-        raw_text = cap["text"].upper() if template == "mr-beast" else cap["text"]
+        raw_text = cap["text"].upper() if template in EDITOR_CAPTION_UPPERCASE_TEMPLATES else cap["text"]
         text = raw_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
         y = pos_map.get(cap.get("position", "bottom"), "h*0.88")
         color = cap.get("color", "#ffffff").lstrip("#")
@@ -1787,14 +1949,8 @@ def _build_caption_filter(captions: list[dict]) -> str:
             f"y={y}",
             f"enable='between(t,{t0},{t1})'",
         ]
-        if template == "modern":
-            opts += ["fontcolor=0xffea00", "box=1", "boxcolor=0x000000@0.92", "boxborderw=18"]
-        elif template == "bouncy":
-            opts += ["fontcolor=0x7c2dff", "box=1", "boxcolor=0xffffff@0.96", "boxborderw=18"]
-        elif template == "mr-beast":
-            opts += ["fontcolor=0x00a7b7", "box=1", "boxcolor=0xffd21f", "boxborderw=18", "shadowcolor=0x000000", "shadowx=2", "shadowy=2"]
-        elif template == "business":
-            opts += ["fontcolor=0xffffff", "shadowcolor=0x000000", "shadowx=2", "shadowy=2"]
+        if template in EDITOR_CAPTION_TEMPLATES:
+            opts += EDITOR_CAPTION_TEMPLATES[template]
         else:
             opts += [f"fontcolor=0x{color}"]
         parts.append(":".join(opts))
@@ -1806,6 +1962,7 @@ def _mix_sound_markers(
     markers: list[dict],
     output_path: str,
     base_cmd_prefix: list[str],
+    source_has_audio: bool | None = None,
 ) -> list[str]:
     """
     Build ffmpeg command that mixes source video with sound WAV files.
@@ -1814,6 +1971,7 @@ def _mix_sound_markers(
     valid = [m for m in markers if (SOUNDS_DIR / f"{m['sound']}.wav").exists()]
     if not valid:
         return []
+    has_source_audio = _media_has_audio_stream(source_path) if source_has_audio is None else source_has_audio
 
     inputs = ["-i", source_path]
     for m in valid:
@@ -1827,7 +1985,10 @@ def _mix_sound_markers(
         filter_parts.append(f"[{i+1}:a]adelay={delay_ms}|{delay_ms}[sfx{i}]")
 
     sfx_labels = "".join(f"[sfx{i}]" for i in range(n_audio))
-    filter_parts.append(f"[0:a]{sfx_labels}amix=inputs={n_audio+1}:normalize=0[aout]")
+    if has_source_audio:
+        filter_parts.append(f"[0:a]{sfx_labels}amix=inputs={n_audio+1}:normalize=0[aout]")
+    else:
+        filter_parts.append(f"{sfx_labels}amix=inputs={n_audio}:normalize=0[aout]")
     filter_str = ";".join(filter_parts)
 
     return inputs + [
