@@ -2246,6 +2246,7 @@ def _detect_action_centroid(source_path: str, start: float, end: float, n_frames
     """
     try:
         import cv2
+        import numpy as np
         cap = cv2.VideoCapture(source_path)
         if not cap.isOpened():
             return 0.5, 0.45
@@ -2276,7 +2277,6 @@ def _detect_action_centroid(source_path: str, start: float, end: float, n_frames
         if total < 1e-6:
             return 0.5, 0.45
 
-        import numpy as np
         ys, xs = np.mgrid[0:motion.shape[0], 0:motion.shape[1]]
         cx = float((xs * motion).sum() / total) / motion.shape[1]
         cy = float((ys * motion).sum() / total) / motion.shape[0]
@@ -3666,14 +3666,15 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             t_out = threading.Thread(target=_drain_stdout, daemon=True)
             t_err = threading.Thread(target=_drain_stderr, daemon=True)
             t_out.start(); t_err.start()
-            t_out.join(timeout=310); t_err.join(timeout=310)
             proc.wait(timeout=300)
+            t_out.join(timeout=5); t_err.join(timeout=5)
             if proc.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
                 return True, ""
             return False, "\n".join(stderr_lines[-20:])
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
+                proc.wait(timeout=5)
             except Exception:
                 pass
             return False, "timeout"
@@ -3743,6 +3744,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 except subprocess.TimeoutExpired:
                     try:
                         proc.kill()
+                        proc.wait(timeout=5)
                     except Exception:
                         pass
                     logging.warning("Proxy[%d] %s client=%s → timeout", idx, proxy, client)
