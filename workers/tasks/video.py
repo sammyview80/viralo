@@ -3892,7 +3892,6 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         break  # same proxy, different clients won't help if IP is blocked
                 except subprocess.TimeoutExpired:
                     try:
-                        proc.kill()
                         proc.wait(timeout=5)
                     except Exception:
                         pass
