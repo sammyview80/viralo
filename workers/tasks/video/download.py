@@ -366,14 +366,15 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             t_out = threading.Thread(target=_drain_stdout, daemon=True)
             t_err = threading.Thread(target=_drain_stderr, daemon=True)
             t_out.start(); t_err.start()
-            t_out.join(timeout=310); t_err.join(timeout=310)
             proc.wait(timeout=300)
+            t_out.join(timeout=5); t_err.join(timeout=5)
             if proc.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
                 return True, ""
             return False, "\n".join(stderr_lines[-20:])
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
+                proc.wait(timeout=5)
             except Exception:
                 pass
             return False, "timeout"
@@ -461,6 +462,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                 _sh.move(produced, out_path)
                                 moved.set()
                                 winner["client"] = client
+                                _record_good_proxy(proxy)
                                 logging.info("Proxy race won by %s client=%s", proxy, client)
                                 return True
                     # Find the actual ERROR line. Skip [debug]/[download]/[info] progress
@@ -508,6 +510,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                         _sh.move(produced2, out_path)
                                         moved.set()
                                         winner["client"] = client
+                                        _record_good_proxy(proxy)
                                         logging.info("Proxy race won by %s client=%s fmt=permissive", proxy, client)
                                         return True
                             logging.warning("Proxy[%d] %s client=%s fmt-fallback found no a/v formats either",
@@ -521,6 +524,15 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                     Path(_f).unlink(missing_ok=True)
                                 except Exception:
                                     pass
+                except subprocess.TimeoutExpired:
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=5)
+                    except Exception:
+                        pass
+                    logging.warning("Proxy[%d] %s client=%s → timeout", idx, proxy, client)
+                    with proxy_errors_lock:
+                        proxy_errors.append(f"proxy[{idx}] {proxy} [{client}]: timeout")
                 except Exception as e:
                     logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, proxy, client, e)
                     with proxy_errors_lock:

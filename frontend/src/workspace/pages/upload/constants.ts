@@ -1,4 +1,4 @@
-import type { ClipConfig } from "@/lib/api";
+import type { ClipConfig, CaptionStyleInfo } from "@/lib/api";
 
 export const ASPECT_OPTIONS = ["9:16","1:1","16:9"];
 
@@ -20,7 +20,7 @@ export const DEFAULT_CONFIG: ClipConfig = {
   min_score: 0.5,
   topic_focus: null,
   add_captions: false,
-  caption_style: "capcut",
+  caption_style: null,
   aspect_ratio: "9:16",
   duration_min: 20,
   duration_max: 60,
@@ -32,11 +32,26 @@ export const DEFAULT_CONFIG: ClipConfig = {
   occasion: null,
 };
 
-export const CAPTION_STYLES = [
-  { id:"capcut",      label:"CapCut",       desc:"Bold word-by-word, colored highlight" },
-  { id:"capcut-bold", label:"CapCut Bold",  desc:"Thicker strokes, high contrast" },
-  { id:"classic",     label:"Classic",      desc:"White subtitles, black outline" },
-  { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline" },
+export type CaptionStyleOption = {
+  id: string | null; label: string; desc: string;
+  family?: CaptionStyleInfo["family"]; highlight?: string; uppercase?: boolean;
+};
+
+// Static fallback — the picker refreshes this from GET /caption-styles so the
+// list always matches what the backend can actually render.
+export const CAPTION_STYLES: CaptionStyleOption[] = [
+  { id:null,          label:"Auto",         desc:"Matched to the selected template" },
+  { id:"tiktok",      label:"TikTok",       desc:"Words appear as spoken, dark box", family:"reveal",  highlight:"#ffffff" },
+  { id:"word-pop",    label:"Word Pop",     desc:"One big word at a time, centered", family:"pop",     highlight:"#ffffff", uppercase:true },
+  { id:"capcut",      label:"CapCut",       desc:"Word pills, yellow highlight",     family:"pill",    highlight:"#f5c518" },
+  { id:"capcut-bold", label:"CapCut Bold",  desc:"Thicker strokes, high contrast",   family:"pill",    highlight:"#f5c518" },
+  { id:"hormozi",     label:"Hormozi",      desc:"Bold caps pills, green highlight", family:"pill",    highlight:"#39ff14", uppercase:true },
+  { id:"beast",       label:"Beast",        desc:"Big bold caps, red highlight",     family:"pill",    highlight:"#ff2d2d", uppercase:true },
+  { id:"neon",        label:"Neon",         desc:"Cyan highlight on dark band",      family:"pill",    highlight:"#00e5ff" },
+  { id:"karaoke",     label:"Karaoke",      desc:"Full line, word-by-word color",    family:"karaoke", highlight:"#f5c518" },
+  { id:"classic",     label:"Classic",      desc:"White subtitles, black outline",   family:"outline", highlight:"#ffffff" },
+  { id:"impact",      label:"Impact",       desc:"Huge meme-style outlined caps",    family:"outline", highlight:"#ffffff", uppercase:true },
+  { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline",    family:"minimal", highlight:"#ffffff" },
 ];
 
 /* ─── Pipeline step label mapping ─── */

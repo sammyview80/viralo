@@ -162,6 +162,15 @@ def _load_font(size: int):
     return ImageFont.load_default()
 
 
+from functools import lru_cache as _lru_cache
+
+
+@_lru_cache(maxsize=64)
+def _load_font_cached(size: int):
+    return _load_font(size)
+
+
+
 def _build_caption_timeline(segments: list[CaptionSegment], style: str) -> dict:
     """
     Build a centisecond-keyed lookup table used by _draw_caption.
@@ -239,12 +248,29 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
 
     if style == "minimal":
         y_base = int(height * (0.88 if is_vertical else 0.90))
+    elif style == "word-pop":
+        y_base = int(height * 0.48)  # one big word, centered like TikTok word-pop edits
     else:
         y_base = int(height * (0.76 if is_vertical else 0.80))
 
     draw = ImageDraw.Draw(img)
 
+    def fit_font(text: str, font, max_w: int):
+        """Step the font size down until the text fits max_w (captions must never overflow the frame)."""
+        bb = draw.textbbox((0, 0), text, font=font)
+        if bb[2] - bb[0] <= max_w:
+            return font
+        size = int(getattr(font, "size", font_size))
+        while size > 24:
+            size = int(size * 0.9)
+            f = _load_font_cached(size)
+            bb = draw.textbbox((0, 0), text, font=f)
+            if bb[2] - bb[0] <= max_w:
+                return f
+        return _load_font_cached(24)
+
     def draw_centered_outline(text, y, font, color, stroke_width=4, stroke_color=(0, 0, 0, 255), bg=None, pad=16):
+        font = fit_font(text, font, int(width * 0.92))
         bbox = draw.textbbox((0, 0), text, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x = (width - tw) // 2
@@ -265,25 +291,37 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         MARGIN = int(width * 0.04)  # 4% side margin so pills never touch edges
         MAX_W = width - MARGIN * 2
         font = font_highlight if bold else font_main
-        word_sizes = []
-        for w in words:
-            bb = draw.textbbox((0, 0), w, font=font)
-            word_sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
-
+        if words:
+            font = fit_font(max(words, key=len), font, MAX_W - PAD_X * 2)
+        pill_fill = (*highlight_color[:3], 240)
+        # Black text on bright pills, white on dark ones (perceived luminance)
+        lum = 0.299 * highlight_color[0] + 0.587 * highlight_color[1] + 0.114 * highlight_color[2]
+        pill_txt = (0, 0, 0, 255) if lum > 140 else (255, 255, 255, 255)
         def _pill_w(tw): return tw + PAD_X * 2
 
-        total_w = sum(_pill_w(ws[0]) for ws in word_sizes) + GAP * (len(words) - 1)
-
-        # Split into two rows if overflow
-        if total_w > MAX_W and len(words) > 1:
-            split = max(1, len(words) // 2)
-            rows = [list(zip(words[:split], word_sizes[:split])),
-                    list(zip(words[split:], word_sizes[split:]))]
-            active_rows = [(active_idx if active_idx < split else -1),
-                           (active_idx - split if active_idx >= split else -1)]
-        else:
-            rows = [list(zip(words, word_sizes))]
-            active_rows = [active_idx]
+        # Width-aware greedy packing into at most 2 rows; shrink font until it fits
+        size = int(getattr(font, "size", font_size))
+        while True:
+            word_sizes = []
+            for w in words:
+                bb = draw.textbbox((0, 0), w, font=font)
+                word_sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
+            rows_idx: list[list[int]] = [[]]
+            row_w = 0
+            for i, (tw, _) in enumerate(word_sizes):
+                pw = _pill_w(tw) + (GAP if rows_idx[-1] else 0)
+                if row_w + pw > MAX_W and rows_idx[-1]:
+                    rows_idx.append([i])
+                    row_w = _pill_w(tw)
+                else:
+                    rows_idx[-1].append(i)
+                    row_w += pw
+            if len(rows_idx) <= 2 or size <= 24:
+                break
+            size = int(size * 0.9)
+            font = _load_font_cached(size)
+        rows = [[(words[i], word_sizes[i]) for i in r] for r in rows_idx]
+        active_rows = [r.index(active_idx) if active_idx in r else -1 for r in rows_idx]
 
         row_h_base = max(ws[1] for ws in word_sizes) if word_sizes else font_size
         pill_h = row_h_base + PAD_Y * 2
@@ -299,8 +337,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
 
                 if i == act_idx:
                     draw.rounded_rectangle([x, pill_y, x + pw, pill_y + pill_h],
-                                           radius=RADIUS, fill=(245, 197, 24, 240))
-                    txt_color = (0, 0, 0, 255)
+                                           radius=RADIUS, fill=pill_fill)
+                    txt_color = pill_txt
                 else:
                     txt_color = (255, 255, 255, 230)
 
@@ -311,16 +349,90 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                 draw.text((wx, wy), w, font=font, fill=txt_color)
                 x += pw + GAP
 
-    if style == "classic":
-        ctx_text, _ = entry
+    def draw_karaoke_line(words: list, active_idx: int, y: int):
+        """Full line with outline; the active word is tinted with the highlight color."""
+        GAP = 12
+        font = fit_font(" ".join(words), font_main, int(width * 0.88) - GAP * (len(words) - 1))
+        sizes = []
+        for w in words:
+            bb = draw.textbbox((0, 0), w, font=font)
+            sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
+        total_w = sum(s[0] for s in sizes) + GAP * (len(words) - 1)
+        th = max((s[1] for s in sizes), default=font_size)
+        x = (width - total_w) // 2
+        if bg_color[3] > 0:
+            draw.rounded_rectangle([x - 16, y - 8, x + total_w + 16, y + th + 8],
+                                   radius=8, fill=bg_color)
+        for i, (w, (tw, _)) in enumerate(zip(words, sizes)):
+            color = highlight_color if i == active_idx else text_color
+            for dx in range(-3, 4):
+                for dy in range(-3, 4):
+                    if dx == 0 and dy == 0:
+                        continue
+                    draw.text((x + dx, y + dy), w, font=font, fill=(0, 0, 0, 255))
+            draw.text((x, y), w, font=font, fill=color)
+            x += tw + GAP
+
+    def draw_tiktok_reveal(words: list, active_idx: int, y: int):
+        """TikTok native auto-caption look: words appear as spoken, each line on
+        a rounded translucent dark box hugging the text width."""
+        PAD_X, PAD_Y = 16, 9
+        LINE_GAP = 6
+        MAX_W = width - int(width * 0.08) - PAD_X * 2
+        shown = words[:active_idx + 1]
+        lines: list[str] = []
+        cur = ""
+        for w in shown:
+            cand = (cur + " " + w).strip()
+            bb = draw.textbbox((0, 0), cand, font=font_main)
+            if bb[2] - bb[0] > MAX_W and cur:
+                lines.append(cur)
+                cur = w
+            else:
+                cur = cand
+        if cur:
+            lines.append(cur)
+        lines = lines[-2:]  # keep at most the 2 latest lines
+        metrics = []
+        for ln in lines:
+            bb = draw.textbbox((0, 0), ln, font=font_main)
+            metrics.append((ln, bb[2] - bb[0], bb[3] - bb[1]))
+        line_h = max((m[2] for m in metrics), default=font_size) + PAD_Y * 2
+        for i, (ln, tw, th) in enumerate(metrics):
+            x = (width - tw) // 2
+            ly = y + i * (line_h + LINE_GAP)
+            draw.rounded_rectangle([x - PAD_X, ly - PAD_Y, x + tw + PAD_X, ly + th + PAD_Y],
+                                   radius=12, fill=bg_color)
+            draw.text((x, ly), ln, font=font_main, fill=text_color)
+
+    if style in ("classic", "impact"):
+        ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
+        if style == "impact":
+            ctx_text = ctx_text.upper()
         ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
-        draw_centered_outline(ctx_text, y_base, font_main, ctx_color, stroke_width=4,
+        draw_centered_outline(ctx_text, y_base, font_main, ctx_color,
+                              stroke_width=6 if style == "impact" else 4,
                               bg=bg_color if bg_color[3] > 0 else None)
 
-    elif style == "capcut-bold":
+    elif style == "tiktok" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_tiktok_reveal(words, active_idx, y_base)
+
+    elif style == "word-pop" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_centered_outline(words[active_idx].upper(), y_base, font_highlight,
+                              text_color, stroke_width=6)
+
+    elif style == "karaoke" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_karaoke_line(words, active_idx, y_base)
+
+    elif style in CAPCUT_STYLES and style != "capcut":
         if isinstance(entry[0], list):
             words, active_idx = entry
-            draw_capcut_inline(words, active_idx, y_base, bold=True)
+            if style in UPPERCASE_PILL_STYLES:
+                words = [w.upper() for w in words]
+            draw_capcut_inline(words, active_idx, y_base, bold=style in BOLD_PILL_STYLES)
         else:
             ctx_text, _ = entry
             ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
@@ -329,11 +441,12 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     elif style == "minimal":
         ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
         ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
-        bbox = draw.textbbox((0, 0), ctx_text, font=font_main)
+        font = fit_font(ctx_text, font_main, int(width * 0.92))
+        bbox = draw.textbbox((0, 0), ctx_text, font=font)
         tw = bbox[2] - bbox[0]
         x = (width - tw) // 2
-        draw.text((x + 2, y_base + 2), ctx_text, font=font_main, fill=(0, 0, 0, 100))
-        draw.text((x, y_base), ctx_text, font=font_main, fill=ctx_color)
+        draw.text((x + 2, y_base + 2), ctx_text, font=font, fill=(0, 0, 0, 100))
+        draw.text((x, y_base), ctx_text, font=font, fill=ctx_color)
 
     else:  # capcut default
         if isinstance(entry[0], list):
@@ -342,14 +455,15 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         else:
             ctx_text, _ = entry
             ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
-            bbox = draw.textbbox((0, 0), ctx_text, font=font_main)
+            font = fit_font(ctx_text, font_main, int(width * 0.92))
+            bbox = draw.textbbox((0, 0), ctx_text, font=font)
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
             x = (width - tw) // 2
             if bg_color[3] > 0:
                 draw.rounded_rectangle([x - 16, y_base - 8, x + tw + 16, y_base + th + 8],
                                        radius=8, fill=bg_color)
-            draw.text((x + 3, y_base + 3), ctx_text, font=font_main, fill=(0, 0, 0, 170))
-            draw.text((x, y_base), ctx_text, font=font_main, fill=ctx_color)
+            draw.text((x + 3, y_base + 3), ctx_text, font=font, fill=(0, 0, 0, 170))
+            draw.text((x, y_base), ctx_text, font=font, fill=ctx_color)
 
     return img
 
@@ -975,6 +1089,7 @@ def _detect_action_centroid(source_path: str, start: float, end: float, n_frames
     """
     try:
         import cv2
+        import numpy as np
         cap = cv2.VideoCapture(source_path)
         if not cap.isOpened():
             return 0.5, 0.45
@@ -1005,7 +1120,6 @@ def _detect_action_centroid(source_path: str, start: float, end: float, n_frames
         if total < 1e-6:
             return 0.5, 0.45
 
-        import numpy as np
         ys, xs = np.mgrid[0:motion.shape[0], 0:motion.shape[1]]
         cx = float((xs * motion).sum() / total) / motion.shape[1]
         cy = float((ys * motion).sum() / total) / motion.shape[0]
@@ -1425,11 +1539,14 @@ def _render_clip(
     caption_timeline = _build_caption_timeline(captions, style) if use_captions else {}
 
     fps = meta.fps
-    last_vpts = -1
+    # Round, never truncate: int(29.97) = 29 stretched video ~3.3% vs the
+    # source-clock-anchored audio — progressive A/V and caption drift.
+    fps_int = max(1, int(round(fps)))
+    last_video_pts = -1
     audio_sample_idx = 0
 
     with av.open(output_path, "w", format="mp4") as dst:
-        out_v = dst.add_stream("h264", rate=int(fps))
+        out_v = dst.add_stream("h264", rate=fps_int)
         out_v.width = target_width
         out_v.height = target_height
         out_v.pix_fmt = "yuv420p"
@@ -1441,15 +1558,21 @@ def _render_clip(
             "movflags": "+faststart", # web-optimized: moov atom at front for streaming
         }
 
-        out_a = None
-        if meta.has_audio:
-            ch_layout = "stereo" if meta.audio_channels >= 2 else "mono"
-            out_a = dst.add_stream("aac", rate=meta.audio_sample_rate, layout=ch_layout)
-            out_a.bit_rate = AUDIO_BITRATE
-
         with av.open(source_path) as src:
             v_stream = next((s for s in src.streams if s.type == "video"), None)
-            a_stream = next((s for s in src.streams if s.type == "audio"), None) if out_a else None
+            a_stream = next((s for s in src.streams if s.type == "audio"), None) if meta.has_audio else None
+
+            out_a = None
+            audio_rate = meta.audio_sample_rate
+            if a_stream is not None:
+                # Use the stream's real rate/channels — meta defaults (44100/stereo)
+                # desync audio when the source is e.g. 48 kHz (ffmpeg intermediates).
+                audio_rate = a_stream.sample_rate or meta.audio_sample_rate
+                src_channels = getattr(a_stream.codec_context, "channels", 0) or meta.audio_channels
+                ch_layout = "stereo" if src_channels >= 2 else "mono"
+                out_a = dst.add_stream("aac", rate=audio_rate, layout=ch_layout)
+                out_a.bit_rate = AUDIO_BITRATE
+
             decode_streams = [s for s in [v_stream, a_stream] if s is not None]
 
             src.seek(int(clip.start * 1_000_000))
@@ -1474,12 +1597,19 @@ def _render_clip(
                     if t > clip.end + 0.05:
                         video_done = True
                         continue
-                    if t < clip.start - 0.05:
-                        continue
+                    # NOTE: packets before clip.start still go to the decoder —
+                    # inter-coded frames need them as references. Gate on frame time.
                     for frame in packet.decode():
                         t_frame = float(frame.pts * v_stream.time_base) if frame.pts is not None else t
+                        if t_frame < clip.start - 0.005:
+                            continue
                         if first_video_t is None:
                             first_video_t = t_frame
+                        # Lock output PTS to source time so video can't drift from
+                        # the source-clock-anchored audio; drop duplicate-slot frames.
+                        out_pts = int(round((t_frame - first_video_t) * fps_int))
+                        if out_pts <= last_video_pts:
+                            continue
                         t_in_clip = t_frame - clip.start
 
                         needs_pil = bool(crop_mode or caption_timeline or (hook_text and hook_duration_sec > 0))
@@ -1505,17 +1635,9 @@ def _render_clip(
                                 format="yuv420p",
                             )
 
-                        # Place the frame at its REAL elapsed time from the same origin
-                        # the audio is anchored to (first_video_t) — NOT a uniform frame
-                        # counter. A uniform counter assumes the source is perfectly CFR at
-                        # meta.fps; when it isn't (VFR, 29.97 vs 30, or a dropped frame) the
-                        # video drifts away from the time-anchored audio and lip-sync breaks.
-                        vpts = int(round((t_frame - first_video_t) * fps))
-                        if vpts <= last_vpts:
-                            vpts = last_vpts + 1  # keep strictly monotonic for the encoder
-                        last_vpts = vpts
-                        new_frame.pts = vpts
-                        new_frame.time_base = Fraction(1, int(fps))
+                        new_frame.pts = out_pts
+                        new_frame.time_base = Fraction(1, fps_int)
+                        last_video_pts = out_pts
                         for pkt in out_v.encode(new_frame):
                             dst.mux(pkt)
                         del new_frame  # release frame buffer before next decode
@@ -1533,12 +1655,14 @@ def _render_clip(
                         t_frame = float(frame.pts * a_stream.time_base) if frame.pts is not None else t
                         # Align audio origin to first video frame so A/V stays in sync
                         anchor = first_video_t if first_video_t is not None else clip.start
-                        pts_samples = max(0, int((t_frame - anchor) * meta.audio_sample_rate))
+                        if t_frame + frame.samples / audio_rate <= anchor:
+                            continue  # frame ends before the first video frame
+                        pts_samples = max(0, int((t_frame - anchor) * audio_rate))
                         if audio_sample_idx == 0 and pts_samples > 0:
                             audio_sample_idx = pts_samples
                         frame.pts = audio_sample_idx
                         frame.dts = audio_sample_idx
-                        frame.time_base = Fraction(1, meta.audio_sample_rate)
+                        frame.time_base = Fraction(1, audio_rate)
                         audio_sample_idx += frame.samples
                         for pkt in out_a.encode(frame):
                             dst.mux(pkt)
@@ -1617,13 +1741,8 @@ def _export_clip(
           + (f" (blur-fill bg, {tmpl.get('background_style','center_crop')})" if tmpl.get("background_style") == "blur_fill" else ""))
 
     burn_captions = cfg.get("add_captions", False)
-    # Let automatic templates supply their own caption style when the request is
-    # still on the default CapCut style; non-default user choices keep priority.
-    requested_style = cfg.get("caption_style") or "capcut"
-    if requested_style == "capcut" and tmpl.get("caption_style"):
-        style = tmpl.get("caption_style", "capcut")
-    else:
-        style = requested_style
+    # Explicit user selection always wins; unset (None) = auto from template.
+    style = cfg.get("caption_style") or tmpl.get("caption_style") or "capcut"
     if style not in CAPTION_STYLE_CFG:
         style = "capcut"
 
@@ -1676,7 +1795,7 @@ def _export_clip(
     render_captions = captions
     if burn_captions and vo_path and vo_script:
         voice_duration = _media_duration_sec(vo_path) or max(0.2, clip.end - clip.start)
-        words_per_line = 3 if style in CAPCUT_STYLES else 6
+        words_per_line = 5 if style == "tiktok" else (3 if style in CAPCUT_STYLES else 6)
         render_captions = _voiceover_script_to_captions(
             vo_script,
             voice_duration_sec=voice_duration,

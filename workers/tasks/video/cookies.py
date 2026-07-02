@@ -37,6 +37,7 @@ __all__ = [
     '_COOKIES_BUNDLED',
     '_COOKIES_LIVE',
     '_MIN_COOKIE_BYTES',
+    '_record_good_proxy',
     '_is_valid_cookie_file',
     '_seed_live_cookies',
     '_active_cookies_path',
@@ -60,8 +61,27 @@ def _ytdlp_proxies() -> list[str]:
     return _proxies.get_proxies()
 
 
+import threading as _threading_mod
+
+_last_good_proxy_lock = _threading_mod.Lock()
+_LAST_GOOD_PROXY: str | None = None  # most recent proxy to win a download — tried first next time
+
+
+def _record_good_proxy(proxy: str) -> None:
+    global _LAST_GOOD_PROXY
+    with _last_good_proxy_lock:
+        _LAST_GOOD_PROXY = proxy
+
+
 def _ytdlp_proxies_with_refresh() -> list[str]:
-    return _ytdlp_proxies()
+    proxies = _ytdlp_proxies()
+    with _last_good_proxy_lock:
+        good = _LAST_GOOD_PROXY
+    if good and good in proxies:
+        proxies.remove(good)
+        proxies.insert(0, good)
+        logging.info("Trying last known-good proxy first: %s", good)
+    return proxies
 
 
 # Bundled cookies: read-only, baked into the image / mounted from the repo.

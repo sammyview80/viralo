@@ -375,8 +375,8 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
 
     # Step 4: Captions (60%)
     _publish_progress(job_id, "captions", 60, "processing", "Generating captions...")
-    style = cfg.get("caption_style", "capcut")
-    words_per_line = 3 if style in CAPCUT_STYLES else 6
+    style = _effective_caption_style(cfg)
+    words_per_line = 5 if style == "tiktok" else (3 if style in CAPCUT_STYLES else 6)
     all_captions: dict[int, list[CaptionSegment]] = {}
     for idx, clip in enumerate(clips):
         segs = _generate_captions(words, clip, max_words=words_per_line)
@@ -532,7 +532,7 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
     topic_focus = cfg.get("topic_focus") or ""
     platforms   = cfg.get("platforms") or ["tiktok", "reels", "shorts"]
     language    = cfg.get("language", "auto")
-    style       = cfg.get("caption_style", "capcut")
+    style       = _effective_caption_style(cfg)
     precision_mode_gvc = cfg.get("precision_mode", False)
     yt_engagement_gvc: dict | None = None
 
@@ -715,7 +715,7 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
                       f"Found {len(clips)} viral clips (source={transcript_source})")
 
     # ── Step 3: Captions per clip ──────────────────────────────────────────────
-    words_per_line = 3 if style in CAPCUT_STYLES else 6
+    words_per_line = 5 if style == "tiktok" else (3 if style in CAPCUT_STYLES else 6)
     all_captions: dict[int, list[CaptionSegment]] = {}
     for idx, clip in enumerate(clips):
         all_captions[idx] = _generate_captions(words, clip, max_words=words_per_line)
