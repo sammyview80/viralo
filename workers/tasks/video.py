@@ -2845,11 +2845,14 @@ def _render_clip(
     caption_timeline = _build_caption_timeline(captions, style) if use_captions else {}
 
     fps = meta.fps
-    frame_idx = 0
+    # Round, never truncate: int(29.97) = 29 stretched video ~3.3% vs the
+    # source-clock-anchored audio — progressive A/V and caption drift.
+    fps_int = max(1, int(round(fps)))
+    last_video_pts = -1
     audio_sample_idx = 0
 
     with av.open(output_path, "w", format="mp4") as dst:
-        out_v = dst.add_stream("h264", rate=int(fps))
+        out_v = dst.add_stream("h264", rate=fps_int)
         out_v.width = target_width
         out_v.height = target_height
         out_v.pix_fmt = "yuv420p"
@@ -2861,15 +2864,21 @@ def _render_clip(
             "movflags": "+faststart", # web-optimized: moov atom at front for streaming
         }
 
-        out_a = None
-        if meta.has_audio:
-            ch_layout = "stereo" if meta.audio_channels >= 2 else "mono"
-            out_a = dst.add_stream("aac", rate=meta.audio_sample_rate, layout=ch_layout)
-            out_a.bit_rate = AUDIO_BITRATE
-
         with av.open(source_path) as src:
             v_stream = next((s for s in src.streams if s.type == "video"), None)
-            a_stream = next((s for s in src.streams if s.type == "audio"), None) if out_a else None
+            a_stream = next((s for s in src.streams if s.type == "audio"), None) if meta.has_audio else None
+
+            out_a = None
+            audio_rate = meta.audio_sample_rate
+            if a_stream is not None:
+                # Use the stream's real rate/channels — meta defaults (44100/stereo)
+                # desync audio when the source is e.g. 48 kHz (ffmpeg intermediates).
+                audio_rate = a_stream.sample_rate or meta.audio_sample_rate
+                src_channels = getattr(a_stream.codec_context, "channels", 0) or meta.audio_channels
+                ch_layout = "stereo" if src_channels >= 2 else "mono"
+                out_a = dst.add_stream("aac", rate=audio_rate, layout=ch_layout)
+                out_a.bit_rate = AUDIO_BITRATE
+
             decode_streams = [s for s in [v_stream, a_stream] if s is not None]
 
             src.seek(int(clip.start * 1_000_000))
@@ -2894,12 +2903,19 @@ def _render_clip(
                     if t > clip.end + 0.05:
                         video_done = True
                         continue
-                    if t < clip.start - 0.05:
-                        continue
+                    # NOTE: packets before clip.start still go to the decoder —
+                    # inter-coded frames need them as references. Gate on frame time.
                     for frame in packet.decode():
                         t_frame = float(frame.pts * v_stream.time_base) if frame.pts is not None else t
+                        if t_frame < clip.start - 0.005:
+                            continue
                         if first_video_t is None:
                             first_video_t = t_frame
+                        # Lock output PTS to source time so video can't drift from
+                        # the source-clock-anchored audio; drop duplicate-slot frames.
+                        out_pts = int(round((t_frame - first_video_t) * fps_int))
+                        if out_pts <= last_video_pts:
+                            continue
                         t_in_clip = t_frame - clip.start
 
                         needs_pil = bool(crop_mode or caption_timeline or (hook_text and hook_duration_sec > 0))
@@ -2925,9 +2941,9 @@ def _render_clip(
                                 format="yuv420p",
                             )
 
-                        new_frame.pts = frame_idx
-                        new_frame.time_base = Fraction(1, int(fps))
-                        frame_idx += 1
+                        new_frame.pts = out_pts
+                        new_frame.time_base = Fraction(1, fps_int)
+                        last_video_pts = out_pts
                         for pkt in out_v.encode(new_frame):
                             dst.mux(pkt)
                         del new_frame  # release frame buffer before next decode
@@ -2945,12 +2961,14 @@ def _render_clip(
                         t_frame = float(frame.pts * a_stream.time_base) if frame.pts is not None else t
                         # Align audio origin to first video frame so A/V stays in sync
                         anchor = first_video_t if first_video_t is not None else clip.start
-                        pts_samples = max(0, int((t_frame - anchor) * meta.audio_sample_rate))
+                        if t_frame + frame.samples / audio_rate <= anchor:
+                            continue  # frame ends before the first video frame
+                        pts_samples = max(0, int((t_frame - anchor) * audio_rate))
                         if audio_sample_idx == 0 and pts_samples > 0:
                             audio_sample_idx = pts_samples
                         frame.pts = audio_sample_idx
                         frame.dts = audio_sample_idx
-                        frame.time_base = Fraction(1, meta.audio_sample_rate)
+                        frame.time_base = Fraction(1, audio_rate)
                         audio_sample_idx += frame.samples
                         for pkt in out_a.encode(frame):
                             dst.mux(pkt)
