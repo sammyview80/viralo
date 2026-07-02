@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { navigate } from "@/lib/router";
 import { videoApi, type ClipConfig, type VideoResponse } from "@/lib/api";
 import { DEFAULT_CONFIG } from "./UploadPage";
+import { CAPTION_STYLES, type CaptionStyleOption } from "./upload/constants";
 
 // ── YouTube Import Modal ──────────────────────────────────────────────────────
 
@@ -44,30 +45,69 @@ const CLIP_COUNTS: { id: string; label: string; value?: number }[] = [
 
 const TEMPLATE_TABS = ["9:16 template", "My template", "Brand template"] as const;
 
-// Caption templates → backend caption_style. `cap` describes how the sample renders.
-type CaptionTemplate = {
-  id: string;
-  label: string;
-  caption_style: string;
-  bg: string;          // gradient bg for the preview phone
-  word: string;        // highlighted word color
-  box: boolean;        // white box behind caption
-  hl: string;          // highlight bg ("" = none)
-  italic?: boolean;
-  upper?: boolean;
+// One card per backend caption style (CAPTION_STYLES is the same list the
+// ClipConfigPanel picker uses — kept in sync with GET /caption-styles).
+const TEMPLATE_BG: Record<string, string> = {
+  auto:          "from-zinc-800 to-zinc-950",
+  "tiktok":      "from-zinc-700 to-zinc-950",
+  "word-pop":    "from-rose-700 to-red-950",
+  "capcut":      "from-amber-700 to-orange-900",
+  "capcut-bold": "from-orange-600 to-amber-950",
+  "hormozi":     "from-emerald-700 to-green-950",
+  "beast":       "from-sky-600 to-blue-900",
+  "neon":        "from-indigo-700 to-violet-950",
+  "karaoke":     "from-fuchsia-700 to-purple-950",
+  "classic":     "from-zinc-600 to-zinc-900",
+  "impact":      "from-stone-600 to-stone-900",
+  "minimal":     "from-slate-600 to-slate-900",
 };
 
-const CAPTION_TEMPLATES: CaptionTemplate[] = [
-  { id: "default",  label: "Default",  caption_style: "classic",     bg: "from-zinc-700 to-zinc-900",     word: "#fff",     box: true,  hl: "" },
-  { id: "modern",   label: "Modern",   caption_style: "capcut",      bg: "from-amber-700 to-orange-900",  word: "#fde047", box: false, hl: "#000", upper: false },
-  { id: "bouncy",   label: "Bouncy",   caption_style: "capcut",      bg: "from-violet-600 to-fuchsia-800",word: "#fff",    box: true,  hl: "" },
-  { id: "mrbeast",  label: "Mr. Beast",caption_style: "capcut-bold", bg: "from-sky-600 to-blue-900",      word: "#22c55e", box: false, hl: "#facc15", upper: true },
-  { id: "business", label: "Business", caption_style: "minimal",     bg: "from-stone-500 to-stone-800",   word: "#e7e5e4", box: false, hl: "" },
-  { id: "clean",    label: "Clean",    caption_style: "minimal",     bg: "from-slate-600 to-slate-900",   word: "#fff",    box: false, hl: "" },
-  { id: "neon",     label: "Neon",     caption_style: "capcut-bold", bg: "from-indigo-700 to-violet-950", word: "#e879f9", box: false, hl: "" },
-];
+function CaptionCard({ s, selected, onSelect }: { s: CaptionStyleOption; selected: boolean; onSelect: () => void }) {
+  const outlineShadow = "0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000";
+  const hl = s.highlight ?? "#f5c518";
+  const tx = (w: string) => (s.uppercase ? w.toUpperCase() : w);
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hl.slice(i, i + 2), 16));
+  const pillText = 0.299 * r + 0.587 * g + 0.114 * b > 140 ? "#000" : "#fff";
 
-function CaptionCard({ tpl, selected, onSelect }: { tpl: CaptionTemplate; selected: boolean; onSelect: () => void }) {
+  const sample = (() => {
+    if (!s.id) {
+      return <span className="text-[13px]">✨<br /><span className="text-[9px] font-black text-emerald-300">Best match</span></span>;
+    }
+    switch (s.family) {
+      case "pill":
+        return (
+          <span className="inline-flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5">
+            <span className="text-[9px] font-black text-white" style={{ textShadow: "1px 1px 0 #000" }}>{tx("here is")}</span>
+            <span className="rounded-[3px] px-1 py-px text-[9px] font-black" style={{ background: hl, color: pillText }}>{tx("your")}</span>
+            <span className="text-[9px] font-black text-white" style={{ textShadow: "1px 1px 0 #000" }}>{tx("subtitle")}</span>
+          </span>
+        );
+      case "reveal":
+        return (
+          <span className="inline-flex flex-col items-center gap-0.5">
+            <span className="rounded-[4px] bg-black/85 px-1.5 py-0.5 text-[9px] font-bold text-white">Here is your</span>
+            <span className="rounded-[4px] bg-black/85 px-1.5 py-0.5 text-[9px] font-bold text-white">subtitle</span>
+          </span>
+        );
+      case "pop":
+        return <span className="text-[16px] font-black text-white" style={{ textShadow: outlineShadow }}>WOW</span>;
+      case "karaoke":
+        return (
+          <span className="whitespace-nowrap rounded-[3px] bg-black/75 px-1.5 py-0.5 text-[8.5px] font-bold text-white">
+            here is <span style={{ color: hl }}>your</span> subtitle
+          </span>
+        );
+      case "outline":
+        return (
+          <span className={cn("font-black leading-tight text-white", s.uppercase ? "text-[10px]" : "text-[9.5px]")}
+            style={{ textShadow: outlineShadow }}>{tx("Here is your subtitle")}</span>
+        );
+      default: // minimal
+        return <span className="text-[9px] font-semibold text-zinc-200/90">here is your subtitle</span>;
+    }
+  })();
+
+  const posCls = !s.id ? "top-1/2 -translate-y-1/2" : s.family === "pop" ? "top-[44%]" : s.family === "minimal" ? "bottom-4" : "bottom-7";
   return (
     <button
       type="button"
@@ -76,37 +116,25 @@ function CaptionCard({ tpl, selected, onSelect }: { tpl: CaptionTemplate; select
     >
       <div className={cn(
         "relative h-[200px] w-[118px] overflow-hidden rounded-[14px] border-2 bg-gradient-to-b transition",
-        tpl.bg,
+        TEMPLATE_BG[s.id ?? "auto"] ?? "from-zinc-700 to-zinc-900",
         selected ? "border-[#ff3d6a] shadow-[0_0_0_3px_rgba(255,61,106,.25)]" : "border-c-border group-hover:border-c-border-hover"
       )}>
         {/* top mock title */}
-        <div className="absolute left-1/2 top-3 -translate-x-1/2">
-          <span className="rounded-[4px] bg-black/55 px-1.5 py-0.5 text-[7px] font-bold text-white">Your video title</span>
-        </div>
+        {s.id && (
+          <div className="absolute left-1/2 top-3 -translate-x-1/2">
+            <span className="rounded-[4px] bg-black/55 px-1.5 py-0.5 text-[7px] font-bold text-white whitespace-nowrap">Your video title</span>
+          </div>
+        )}
         {/* selected check */}
         {selected && (
           <span className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-[#ff3d6a] text-white shadow">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3.5}><path d="M20 6L9 17l-5-5"/></svg>
           </span>
         )}
-        {/* sample caption */}
-        <div className="absolute bottom-7 left-0 right-0 px-2 text-center">
-          <span
-            className={cn(
-              "inline-block text-[10px] font-black leading-tight",
-              tpl.upper && "uppercase",
-              tpl.italic && "italic",
-              tpl.box && "rounded-[4px] bg-white px-1.5 py-0.5 text-black"
-            )}
-            style={tpl.hl
-              ? { background: tpl.hl, color: tpl.word, padding: "1px 4px", borderRadius: 4, WebkitTextStroke: "0.4px rgba(0,0,0,.35)" }
-              : { color: tpl.word, textShadow: tpl.box ? "none" : "0 1px 3px rgba(0,0,0,.7)" }}
-          >
-            Here is your <span style={{ color: tpl.hl ? tpl.word : undefined }}>subtitle</span>
-          </span>
-        </div>
+        {/* sample caption at the style's real burn-in position */}
+        <div className={cn("absolute left-0 right-0 px-1.5 text-center", posCls)}>{sample}</div>
       </div>
-      <p className={cn("mt-2 text-[12px] font-bold", selected ? "text-[#ff7a9a]" : "text-c-text-muted")}>{tpl.label}</p>
+      <p className={cn("mt-2 text-[12px] font-bold", selected ? "text-[#ff7a9a]" : "text-c-text-muted")}>{s.label}</p>
     </button>
   );
 }
@@ -124,7 +152,7 @@ function FeatureCheck({ label, checked, onChange, badge }: { label: string; chec
   );
 }
 
-function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null }: YoutubeModalProps) {
+export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null }: YoutubeModalProps) {
   const [urlVal, setUrlVal]       = useState(initialUrl);
   const [urlReady, setUrlReady]   = useState(Boolean(prefetched));
   const [ytMeta, setYtMeta]       = useState<YtMeta | null>(prefetched);
@@ -140,7 +168,7 @@ function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null }: You
   const [clipLen, setClipLen]     = useState<string>("any");
   const [clipCount, setClipCount] = useState<string>("auto");
   const [tab, setTab]             = useState<typeof TEMPLATE_TABS[number]>("9:16 template");
-  const [template, setTemplate]   = useState<string>("mrbeast");
+  const [template, setTemplate]   = useState<string>("tiktok");
   const [feat, setFeat]           = useState({ emoji: true, highlight: true, silences: false, brolls: false });
   const [findMoment, setFindMoment] = useState("");
   const [autoSchedule, setAutoSchedule] = useState(false);
@@ -196,7 +224,7 @@ function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null }: You
     setUploading(true);
     setError("");
     try {
-      const tpl = CAPTION_TEMPLATES.find((t) => t.id === template);
+      const tpl = CAPTION_STYLES.find((s) => (s.id ?? "auto") === template);
       const len = CLIP_LENGTHS.find((c) => c.id === clipLen);
       const cnt = CLIP_COUNTS.find((c) => c.id === clipCount);
       const cfg: ClipConfig = {
@@ -204,7 +232,7 @@ function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null }: You
         output_quality: "source",
         aspect_ratio: ratio,
         add_captions: true,
-        caption_style: tpl?.caption_style ?? DEFAULT_CONFIG.caption_style,
+        caption_style: tpl?.id ?? null,
         ...(len?.min != null ? { duration_min: len.min, duration_max: len.max } : {}),
         ...(cnt?.value != null ? { max_clips: cnt.value } : {}),
         ...(findMoment.trim() ? { topic_focus: findMoment.trim() } : {}),
@@ -349,8 +377,8 @@ function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null }: You
               {tab === "9:16 template" ? (
                 <div className="relative">
                   <div ref={carouselRef} className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {CAPTION_TEMPLATES.map((tpl) => (
-                      <CaptionCard key={tpl.id} tpl={tpl} selected={template === tpl.id} onSelect={() => setTemplate(tpl.id)} />
+                    {CAPTION_STYLES.map((s) => (
+                      <CaptionCard key={String(s.id)} s={s} selected={template === (s.id ?? "auto")} onSelect={() => setTemplate(s.id ?? "auto")} />
                     ))}
                   </div>
                   <button
