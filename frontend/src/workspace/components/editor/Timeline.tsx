@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { PaletteItem } from "./SoundEffectPalette";
 
@@ -17,6 +17,7 @@ interface TimelineProps {
   selectedEffect: PaletteItem;
   trimStart?: number;
   trimEnd?: number;
+  videoSrc?: string;
   onSeek: (timeSec: number) => void;
   onAddMarker: (timeMs: number) => void;
   onRemoveMarker: (id: string) => void;
@@ -35,11 +36,53 @@ export function Timeline({
   selectedEffect,
   trimStart,
   trimEnd,
+  videoSrc,
   onSeek,
   onAddMarker,
   onRemoveMarker,
 }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const waveformRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!videoSrc) return;
+    const canvas = waveformRef.current;
+    if (!canvas) return;
+    let cancelled = false;
+    fetch(videoSrc)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => {
+        if (cancelled) return;
+        const actx = new AudioContext();
+        return actx.decodeAudioData(buf).then((audioBuffer) => {
+          actx.close();
+          return audioBuffer;
+        });
+      })
+      .then((audioBuffer) => {
+        if (cancelled || !audioBuffer) return;
+        const data = audioBuffer.getChannelData(0);
+        const c = waveformRef.current;
+        if (!c) return;
+        const ctx = c.getContext("2d")!;
+        const W = c.width;
+        const H = c.height;
+        const step = Math.ceil(data.length / W);
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = "rgba(255,61,106,0.30)";
+        for (let i = 0; i < W; i++) {
+          let peak = 0;
+          for (let j = 0; j < step; j++) {
+            const v = Math.abs(data[i * step + j] ?? 0);
+            if (v > peak) peak = v;
+          }
+          const h = Math.max(1, peak * H * 0.9);
+          ctx.fillRect(i, (H - h) / 2, 1, h);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [videoSrc]);
 
   const progress = duration > 0 ? currentTime / duration : 0;
   const ticks = duration > 0 ? Math.min(20, Math.floor(duration) + 1) : 0;
@@ -64,7 +107,7 @@ export function Timeline({
   }
 
   if (duration <= 0) return (
-    <div className="h-20 flex items-center justify-center text-zinc-700 text-[12px]">
+    <div className="h-20 flex items-center justify-center text-c-text-muted text-[12px]">
       Load a video to see the timeline
     </div>
   );
@@ -75,7 +118,7 @@ export function Timeline({
   return (
     <div className="flex flex-col gap-1 px-4 pb-3 pt-2">
       {/* Label row */}
-      <div className="flex items-center justify-between text-[10px] text-zinc-600 mb-1">
+      <div className="flex items-center justify-between text-[10px] text-c-text-muted mb-1">
         <span>
           Click to place{" "}
           <span className="font-bold text-rose-400">
@@ -90,18 +133,18 @@ export function Timeline({
       <div
         ref={trackRef}
         onClick={handleClick}
-        className="relative h-16 cursor-crosshair overflow-hidden rounded-[10px] border border-white/[.07] bg-[#0d1520] hover:border-[#ff3d6a]/20 select-none transition"
+        className="relative h-16 cursor-crosshair overflow-hidden rounded-[10px] border border-c-border bg-surface-1 hover:border-[#ff3d6a]/20 select-none transition"
         style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,.03)" }}
       >
         {/* Tick grid */}
         {Array.from({ length: ticks }).map((_, i) => (
           <div
             key={i}
-            className="absolute top-0 bottom-0 border-l border-white/[.04]"
+            className="absolute top-0 bottom-0 border-l border-c-border"
             style={{ left: `${(i / Math.max(1, ticks - 1)) * 100}%` }}
           >
             {i > 0 && (
-              <span className="absolute top-1 left-1 text-[8px] font-mono text-zinc-700">
+              <span className="absolute top-1 left-1 text-[8px] font-mono text-c-text-muted">
                 {Math.round((i / (ticks - 1)) * duration)}s
               </span>
             )}
@@ -121,6 +164,14 @@ export function Timeline({
             style={{ width: `${100 - trimEndPct}%` }}
           />
         )}
+
+        {/* Waveform */}
+        <canvas
+          ref={waveformRef}
+          width={800}
+          height={64}
+          className="absolute inset-0 h-full w-full pointer-events-none opacity-70"
+        />
 
         {/* Elapsed fill */}
         <div
@@ -162,7 +213,7 @@ export function Timeline({
       {/* Markers list — compact */}
       {markers.length > 0 && (
         <div className="mt-1 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-zinc-600 font-semibold uppercase tracking-wide">
+          <span className="text-[10px] text-c-text-muted font-semibold uppercase tracking-wide">
             {markers.length} effect{markers.length !== 1 ? "s" : ""}:
           </span>
           {[...markers].sort((a, b) => a.timeMs - b.timeMs).map((m) => (
@@ -171,8 +222,8 @@ export function Timeline({
               onClick={() => onRemoveMarker(m.id)}
               title="Click to remove"
               className={cn(
-                "flex items-center gap-1 rounded-full border border-white/[.06] bg-white/[.03] px-2 py-0.5",
-                "text-[10px] text-zinc-400 hover:border-red-500/30 hover:text-red-400 transition cursor-pointer"
+                "flex items-center gap-1 rounded-full border border-c-border bg-surface-1 px-2 py-0.5",
+                "text-[10px] text-c-text-secondary hover:border-red-500/30 hover:text-red-400 transition cursor-pointer"
               )}
             >
               {m.emoji} {fmt(m.timeMs / 1000)} ✕
@@ -180,7 +231,7 @@ export function Timeline({
           ))}
           <button
             onClick={() => markers.forEach((m) => onRemoveMarker(m.id))}
-            className="text-[10px] text-zinc-600 hover:text-red-400 transition cursor-pointer ml-auto"
+            className="text-[10px] text-c-text-muted hover:text-red-400 transition cursor-pointer ml-auto"
           >
             Clear all
           </button>

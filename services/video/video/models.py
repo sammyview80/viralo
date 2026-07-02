@@ -54,3 +54,4 @@ class Clip(Base, TenantMixin, TimestampMixin):
     clip_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     upload_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
     upload_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    upscaled_storage_url: Mapped[str | None] = mapped_column(Text, nullable=True)

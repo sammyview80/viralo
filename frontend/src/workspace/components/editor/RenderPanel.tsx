@@ -57,7 +57,7 @@ export function RenderPanel({ clipId, trimStart, trimEnd, captions, markers }: R
         trim_end_sec: trimEnd || null,
         captions: captions.map((c) => ({
           id: c.id, text: c.text, start_sec: c.startSec, end_sec: c.endSec,
-          position: c.position, color: c.color, font_size: c.fontSize,
+          position: c.position, color: c.color, font_size: c.fontSize, template: c.template,
         })),
         markers: markers.map((m) => ({
           id: m.id, time_ms: m.timeMs, sound: m.sound, emoji: m.emoji, label: m.label,

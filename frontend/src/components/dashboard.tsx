@@ -82,12 +82,12 @@ const GRAD_POOL = [
 
 function Platform({ id, size = "sm" }: { id: string; size?: "xs" | "sm" }) {
   const map: Record<string, [string, string]> = {
-    tt: ["♪", "bg-zinc-950 text-white border-white/10"],
-    ig: ["◎", "bg-gradient-to-br from-fuchsia-500 to-orange-400 text-white border-white/10"],
+    tt: ["♪", "bg-zinc-950 text-white border-c-border"],
+    ig: ["◎", "bg-gradient-to-br from-fuchsia-500 to-orange-400 text-white border-c-border"],
     yt: ["▶", "bg-red-500 text-white border-red-300/20"],
     tw: ["𝕏", "bg-zinc-100 text-zinc-950 border-white/20"],
-    tiktok: ["♪", "bg-zinc-950 text-white border-white/10"],
-    instagram: ["◎", "bg-gradient-to-br from-fuchsia-500 to-orange-400 text-white border-white/10"],
+    tiktok: ["♪", "bg-zinc-950 text-white border-c-border"],
+    instagram: ["◎", "bg-gradient-to-br from-fuchsia-500 to-orange-400 text-white border-c-border"],
     youtube: ["▶", "bg-red-500 text-white border-red-300/20"],
     twitter: ["𝕏", "bg-zinc-100 text-zinc-950 border-white/20"],
   };
@@ -167,10 +167,10 @@ function StatStrip() {
       ];
 
   return (
-    <div className="grid overflow-hidden rounded-[14px] border border-white/[.06] bg-[#0e121b] sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid overflow-hidden rounded-[14px] border border-c-border bg-surface-1 sm:grid-cols-2 xl:grid-cols-4">
       {stats.map(([label, sub, val, errHint], index) => (
-        <div key={label} className="relative border-white/[.06] p-6 sm:border-r sm:last:border-r-0">
-          <div className="mb-2.5 flex gap-1 text-[10.5px] font-semibold uppercase tracking-[.1em] text-zinc-500">
+        <div key={label} className="relative border-c-border p-6 sm:border-r sm:last:border-r-0">
+          <div className="mb-2.5 flex gap-1 text-[10.5px] font-semibold uppercase tracking-[.1em] text-c-text-muted">
             {label} <em className="font-normal normal-case tracking-normal opacity-60">{sub}</em>
             {errHint && (
               <span className="ml-1 text-red-500/80" title={errHint}>⚠</span>
@@ -179,7 +179,7 @@ function StatStrip() {
           {loading ? (
             <Skeleton className="mb-2.5 h-9 w-24" />
           ) : (
-            <div className={cn("mb-2.5 font-display text-3xl font-bold leading-none tracking-[-.03em]", error ? "text-zinc-500" : "")}>{val}</div>
+            <div className={cn("mb-2.5 font-display text-3xl font-bold leading-none tracking-[-.03em]", error ? "text-c-text-muted" : "")}>{val}</div>
           )}
           {loading ? (
             <Skeleton className="h-4 w-16" />
@@ -189,7 +189,7 @@ function StatStrip() {
                 <TrendingUp className="h-2.5 w-2.5" />
                 live
               </span>
-              <span className="text-zinc-600">7-day period</span>
+              <span className="text-c-text-muted">7-day period</span>
             </div>
           )}
           {index === 3 ? <span className="sr-only">end</span> : null}
@@ -202,9 +202,9 @@ function StatStrip() {
 function SectionTitle({ title, action }: { title: string; action?: string }) {
   return (
     <div className="mb-4 flex items-center justify-between">
-      <h3 className="text-[13px] font-semibold text-zinc-300">{title}</h3>
+      <h3 className="text-[13px] font-semibold text-c-text-secondary">{title}</h3>
       {action ? (
-        <a className="inline-flex items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+        <a className="inline-flex items-center gap-1 text-[11.5px] font-medium text-c-text-muted hover:text-c-text-secondary">
           {action}
           <ChevronRight className="h-3 w-3" />
         </a>
@@ -217,7 +217,7 @@ function VideoListSkeleton() {
   return (
     <div>
       {[0, 1, 2].map((i) => (
-        <div key={i} className="grid grid-cols-[52px_1fr_auto] items-center gap-3.5 px-2 py-2.5 border-b border-white/[.05] last:border-0">
+        <div key={i} className="grid grid-cols-[52px_1fr_auto] items-center gap-3.5 px-2 py-2.5 border-b border-c-border last:border-0">
           <Skeleton className="h-[34px] w-[52px] rounded-[7px]" />
           <div className="space-y-1.5">
             <Skeleton className="h-3.5 w-3/4" />
@@ -241,27 +241,26 @@ function VideoList() {
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-[13px] font-semibold text-zinc-300">Recent videos</h3>
-        <a onClick={() => navigate("/clips")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+        <h3 className="text-[13px] font-semibold text-c-text-secondary">Recent videos</h3>
+        <a onClick={() => navigate("/clips")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-c-text-muted hover:text-c-text-secondary">
           Open library <ChevronRight className="h-3 w-3" />
         </a>
       </div>
       {loading ? (
         <VideoListSkeleton />
       ) : videos.length === 0 ? (
-        <p className="py-4 text-center text-sm text-zinc-600">No videos yet</p>
+        <p className="py-4 text-center text-sm text-c-text-muted">No videos yet</p>
       ) : (
         <div>
           {videos.map((video: VideoResponse, index: number) => {
-            const plats: string[] = video.clip_config?.platforms ?? [];
             const grad = GRAD_POOL[index % GRAD_POOL.length];
             return (
               <div
                 key={video.id}
                 onClick={() => navigate(`/projects/${video.id}`)}
                 className={cn(
-                  "grid cursor-pointer grid-cols-[52px_1fr_auto] items-center gap-3.5 px-2 py-2.5 transition hover:bg-white/[.03] rounded-lg",
-                  index < videos.length - 1 && "border-b border-white/[.05]",
+                  "grid cursor-pointer grid-cols-[52px_1fr_auto] items-center gap-3.5 px-2 py-2.5 transition hover:bg-surface-1 rounded-lg",
+                  index < videos.length - 1 && "border-b border-c-border",
                 )}
               >
                 <div className={cn("relative grid h-[34px] w-[52px] place-items-center overflow-hidden rounded-[7px] bg-gradient-to-br", grad)}>
@@ -278,18 +277,8 @@ function VideoList() {
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-[13px] font-medium">{video.title ?? "Untitled"}</div>
-                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
+                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-c-text-muted">
                     <span>{formatRelative(video.created_at)}</span>
-                    {plats.length > 0 && (
-                      <>
-                        <span className="opacity-40">·</span>
-                        <span className="flex gap-1">
-                          {plats.slice(0, 3).map((p) => (
-                            <Platform key={p} id={p} size="xs" />
-                          ))}
-                        </span>
-                      </>
-                    )}
                   </div>
                 </div>
                 <StatusBadge status={video.status} />
@@ -306,8 +295,8 @@ function Workflows() {
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-[13px] font-semibold text-zinc-300">Automations</h3>
-        <a onClick={() => navigate("/workflows")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+        <h3 className="text-[13px] font-semibold text-c-text-secondary">Automations</h3>
+        <a onClick={() => navigate("/workflows")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-c-text-muted hover:text-c-text-secondary">
           Manage <ChevronRight className="h-3 w-3" />
         </a>
       </div>
@@ -317,7 +306,7 @@ function Workflows() {
             key={workflow.name}
             className={cn(
               "grid grid-cols-[34px_1fr_auto] items-center gap-3 px-2 py-2.5",
-              index < workflows.length - 1 && "border-b border-white/[.05]",
+              index < workflows.length - 1 && "border-b border-c-border",
             )}
           >
             <div className={cn("grid h-[34px] w-[34px] place-items-center rounded-[9px] border", workflow.tone)}>
@@ -325,13 +314,13 @@ function Workflows() {
             </div>
             <div className="min-w-0">
               <div className="truncate text-[13px] font-medium">{workflow.name}</div>
-              <div className="mt-0.5 text-[11px] text-zinc-500">Last run {workflow.last}</div>
+              <div className="mt-0.5 text-[11px] text-c-text-muted">Last run {workflow.last}</div>
             </div>
             <div className="flex items-center gap-2.5">
-              <span className={cn("min-w-5 text-[11px] font-semibold", workflow.on ? "text-emerald-300" : "text-zinc-600")}>
+              <span className={cn("min-w-5 text-[11px] font-semibold", workflow.on ? "text-emerald-300" : "text-c-text-muted")}>
                 {workflow.on ? "On" : "Off"}
               </span>
-              <div className={cn("h-5 w-9 rounded-full border p-0.5 transition", workflow.on ? "border-[#ff3d6a]/30 bg-[#ff3d6a]/25" : "border-white/10 bg-white/[.04]")}>
+              <div className={cn("h-5 w-9 rounded-full border p-0.5 transition", workflow.on ? "border-[#ff3d6a]/30 bg-[#ff3d6a]/25" : "border-c-border bg-surface-3")}>
                 <div className={cn("h-4 w-4 rounded-full bg-white transition", workflow.on && "translate-x-4 bg-[#ff3d6a]")} />
               </div>
             </div>
@@ -357,7 +346,7 @@ function ViralityCard() {
   return (
     <Card className="border-[#ff3d6a]/15 bg-[linear-gradient(135deg,rgba(255,61,106,.07),rgba(255,61,106,.02)_60%,transparent)] p-5">
       <div className="grid items-center gap-5 sm:grid-cols-[66px_1fr_auto]">
-        <div className="relative grid h-[94px] w-[66px] place-items-center overflow-hidden rounded-[10px] border border-white/10 bg-gradient-to-br from-[#ff3d6a] via-[#ff7a3d] to-[#3daaff]">
+        <div className="relative grid h-[94px] w-[66px] place-items-center overflow-hidden rounded-[10px] border border-c-border bg-gradient-to-br from-[#ff3d6a] via-[#ff7a3d] to-[#3daaff]">
           {clip?.thumbnail_url ? (
             <img src={clip.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
           ) : null}
@@ -394,7 +383,7 @@ function ViralityCard() {
           ) : (
             <>
               <svg className="-rotate-90" height="76" width="76">
-                <circle cx="38" cy="38" fill="none" r="34" stroke="rgba(255,255,255,.06)" strokeWidth="5.5" />
+                <circle cx="38" cy="38" fill="none" r="34" stroke="var(--c-border)" strokeWidth="5.5" />
                 <circle
                   cx="38"
                   cy="38"
@@ -431,13 +420,13 @@ function UsageBars() {
         {quotas.map(([label, used, total, width, color]) => (
           <div key={label}>
             <div className="mb-2 flex justify-between">
-              <span className="text-xs font-medium text-zinc-300">{label}</span>
-              <span className="font-mono text-[11px] text-zinc-500">
+              <span className="text-xs font-medium text-c-text-secondary">{label}</span>
+              <span className="font-mono text-[11px] text-c-text-muted">
                 {used}
                 <span className="opacity-60"> / {total}</span>
               </span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]">
+            <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
               <div className={cn("h-full rounded-full", color)} style={{ width }} />
             </div>
           </div>
@@ -451,7 +440,7 @@ function UpcomingPostsSkeleton() {
   return (
     <div className="space-y-2">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[9px] border border-white/[.055] bg-white/[.025] p-2.5">
+        <div key={i} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[9px] border border-c-border bg-surface-2 p-2.5">
           <Skeleton className="h-7 w-7 rounded-[5px]" />
           <div className="space-y-1.5">
             <Skeleton className="h-3 w-2/3" />
@@ -475,27 +464,27 @@ function UpcomingPosts() {
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-[13px] font-semibold text-zinc-300">Upcoming posts</h3>
-        <a onClick={() => navigate("/scheduler")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+        <h3 className="text-[13px] font-semibold text-c-text-secondary">Upcoming posts</h3>
+        <a onClick={() => navigate("/scheduler")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-c-text-muted hover:text-c-text-secondary">
           Calendar <ChevronRight className="h-3 w-3" />
         </a>
       </div>
       {loading ? (
         <UpcomingPostsSkeleton />
       ) : posts.length === 0 ? (
-        <p className="py-4 text-center text-sm text-zinc-600">No scheduled posts</p>
+        <p className="py-4 text-center text-sm text-c-text-muted">No scheduled posts</p>
       ) : (
         <div className="space-y-2">
           {posts.map((post: ScheduledPost) => {
             const { date, time } = formatScheduledDate(post.scheduled_at);
             return (
-              <div key={post.id} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[9px] border border-white/[.055] bg-white/[.025] p-2.5">
+              <div key={post.id} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[9px] border border-c-border bg-surface-2 p-2.5">
                 <Platform id={post.platform} />
                 <div className="min-w-0">
                   <div className="truncate text-[12.5px] font-medium">{post.caption ?? "—"}</div>
-                  <div className="mt-0.5 text-[11px] text-zinc-500">{date}</div>
+                  <div className="mt-0.5 text-[11px] text-c-text-muted">{date}</div>
                 </div>
-                <div className="font-mono text-[11.5px] font-semibold text-zinc-300">{time}</div>
+                <div className="font-mono text-[11.5px] font-semibold text-c-text-secondary">{time}</div>
               </div>
             );
           })}
@@ -512,14 +501,14 @@ function ChartCard() {
       <CardHeader>
         <div>
           <CardTitle>Audience growth</CardTitle>
-          <p className="mt-1 text-xs text-zinc-500">Views, engagement and follower lift across active channels.</p>
+          <p className="mt-1 text-xs text-c-text-muted">Views, engagement and follower lift across active channels.</p>
         </div>
         <Button variant="ghost" size="sm" onClick={() => navigate("/analytics")}>
           Export
         </Button>
       </CardHeader>
       <CardContent>
-        <div className="flex h-[230px] items-end gap-2 border-b border-white/[.06] pb-4">
+        <div className="flex h-[230px] items-end gap-2 border-b border-c-border pb-4">
           {chartBars.map((value, index) => (
             <div
               key={index}
@@ -534,9 +523,9 @@ function ChartCard() {
             ["91.4K", "new followers"],
             ["6.8%", "avg engagement"],
           ].map(([value, label]) => (
-            <div key={label} className="rounded-[10px] border border-white/[.06] bg-white/[.025] p-3">
+            <div key={label} className="rounded-[10px] border border-c-border bg-surface-2 p-3">
               <div className="font-display text-xl font-bold tracking-tight">{value}</div>
-              <div className="mt-1 text-[10px] font-semibold uppercase tracking-[.1em] text-zinc-600">{label}</div>
+              <div className="mt-1 text-[10px] font-semibold uppercase tracking-[.1em] text-c-text-muted">{label}</div>
             </div>
           ))}
         </div>
@@ -597,24 +586,24 @@ export function DashboardContent() {
           <UpcomingPosts />
           <Card className="p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-[13px] font-semibold text-zinc-300">AI agents</h3>
-              <a onClick={() => navigate("/brainstorm")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-zinc-500 hover:text-zinc-300">
+              <h3 className="text-[13px] font-semibold text-c-text-secondary">AI agents</h3>
+              <a onClick={() => navigate("/brainstorm")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-c-text-muted hover:text-c-text-secondary">
                 Open <ChevronRight className="h-3 w-3" />
               </a>
             </div>
             <div className="space-y-3">
               {["Trend scout", "Hook critic", "Script writer", "Caption editor"].map((agent, index) => (
-                <div key={agent} onClick={() => navigate("/brainstorm")} className="flex cursor-pointer items-center justify-between rounded-[9px] border border-white/[.055] bg-white/[.025] p-3 transition hover:bg-white/[.04]">
+                <div key={agent} onClick={() => navigate("/brainstorm")} className="flex cursor-pointer items-center justify-between rounded-[9px] border border-c-border bg-surface-2 p-3 transition hover:bg-surface-2">
                   <div className="flex items-center gap-3">
-                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-white/[.05] text-zinc-300">
+                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-surface-3 text-c-text-secondary">
                       <Sparkles className="h-3.5 w-3.5" />
                     </div>
                     <div>
                       <div className="text-[13px] font-medium">{agent}</div>
-                      <div className="text-[11px] text-zinc-500">{index === 0 ? "Running" : "Ready"}</div>
+                      <div className="text-[11px] text-c-text-muted">{index === 0 ? "Running" : "Ready"}</div>
                     </div>
                   </div>
-                  <MoreHorizontal className="h-4 w-4 text-zinc-600" />
+                  <MoreHorizontal className="h-4 w-4 text-c-text-muted" />
                 </div>
               ))}
             </div>

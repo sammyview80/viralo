@@ -67,13 +67,13 @@ function FeatureCarousel() {
       className="transition-all duration-300"
       style={{ opacity: animating ? 0 : 1, transform: animating ? "translateY(10px)" : "translateY(0)" }}
     >
-      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[.07] text-3xl shadow-inner">
+      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2 text-3xl shadow-inner">
         {f.icon}
       </div>
-      <h3 className="mb-2 font-display text-[22px] font-bold leading-tight tracking-[-0.02em] text-white">
+      <h3 className="mb-2 font-display text-[22px] font-bold leading-tight tracking-[-0.02em] text-c-text">
         {f.title}
       </h3>
-      <p className="mb-4 text-[14px] leading-[1.7] text-zinc-400">{f.desc}</p>
+      <p className="mb-4 text-[14px] leading-[1.7] text-c-text-secondary">{f.desc}</p>
       <div className="inline-flex items-center gap-2 rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-3.5 py-1.5 text-[12px] font-semibold text-[#ff3d6a]">
         <span className="h-1.5 w-1.5 rounded-full bg-[#ff3d6a]" />
         {f.stat}
@@ -87,7 +87,7 @@ function FeatureCarousel() {
             onClick={() => setIdx(i)}
             className={cn(
               "h-1.5 rounded-full transition-all",
-              i === idx ? "w-6 bg-[#ff3d6a]" : "w-1.5 bg-white/20 hover:bg-white/40"
+              i === idx ? "w-6 bg-[#ff3d6a]" : "w-1.5 bg-c-border-hover hover:bg-c-text-muted/40"
             )}
           />
         ))}
@@ -109,9 +109,9 @@ export function AuthShell({
   footer?: ReactNode;
 }) {
   return (
-    <div className="relative flex h-screen overflow-hidden bg-[#080b12]">
+    <div className="relative flex h-screen overflow-hidden bg-background">
       {/* ── Left panel — feature showcase (hidden on mobile) ── */}
-      <div className="relative hidden h-screen w-[52%] flex-none overflow-hidden border-r border-white/[.05] lg:flex lg:flex-col">
+      <div className="relative hidden h-screen w-[52%] flex-none overflow-hidden border-r border-c-border lg:flex lg:flex-col">
         {/* Ambient blobs */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute left-[-15%] top-[-10%] h-[600px] w-[600px] rounded-full bg-[#ff3d6a]/[.08] blur-[130px]" />
@@ -135,7 +135,7 @@ export function AuthShell({
           <p className="mb-3 text-[11px] font-bold uppercase tracking-[.14em] text-[#ff3d6a]">
             AI-powered content engine
           </p>
-          <h2 className="mb-10 font-display text-[30px] font-extrabold leading-[1.18] tracking-[-0.025em] text-white xl:text-[34px]">
+          <h2 className="mb-10 font-display text-[30px] font-extrabold leading-[1.18] tracking-[-0.025em] text-c-text xl:text-[34px]">
             Turn any idea into<br />
             <span className="bg-gradient-to-r from-[#ff3d6a] to-[#ff7a3d] bg-clip-text text-transparent">
               viral short-form content.
@@ -146,7 +146,7 @@ export function AuthShell({
 
         {/* Platform row — bottom */}
         <div className="relative z-10 px-12 pb-10 xl:px-16">
-          <p className="mb-3 text-[10.5px] font-semibold uppercase tracking-[.12em] text-zinc-600">
+          <p className="mb-3 text-[10.5px] font-semibold uppercase tracking-[.12em] text-c-text-muted">
             Post to
           </p>
           <div className="flex gap-2">
@@ -188,14 +188,14 @@ export function AuthShell({
 
           {/* Heading above card */}
           <div className="mb-6">
-            <h1 className="font-display text-[24px] font-bold tracking-[-0.025em] text-white">{title}</h1>
-            <p className="mt-1.5 text-[13px] text-zinc-500">{subtitle}</p>
+            <h1 className="font-display text-[24px] font-bold tracking-[-0.025em] text-c-text">{title}</h1>
+            <p className="mt-1.5 text-[13px] text-c-text-muted">{subtitle}</p>
           </div>
 
           <div className="py-2">{children}</div>
 
           {footer && (
-            <p className="mt-5 text-center text-[13px] text-zinc-500">{footer}</p>
+            <p className="mt-5 text-center text-[13px] text-c-text-muted">{footer}</p>
           )}
         </div>
       </div>
@@ -217,9 +217,9 @@ export function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-[11.5px] font-semibold uppercase tracking-[.07em] text-zinc-500">{label}</label>
+      <label className="block text-[11.5px] font-semibold uppercase tracking-[.07em] text-c-text-muted">{label}</label>
       {children}
-      {hint && !error && <p className="text-[11px] text-zinc-600">{hint}</p>}
+      {hint && !error && <p className="text-[11px] text-c-text-muted">{hint}</p>}
       {error && <p className="text-[11px] text-red-400">{error}</p>}
     </div>
   );
@@ -230,8 +230,8 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   return (
     <input
       className={cn(
-        "w-full rounded-[10px] border border-white/[.07] bg-white/[.04] px-4 py-3 text-[13.5px] text-zinc-100 placeholder-zinc-600 outline-none transition",
-        "focus:border-[#ff3d6a]/40 focus:bg-white/[.055] focus:shadow-[0_0_0_3px_rgba(255,61,106,.07)]",
+        "w-full rounded-[10px] border border-c-border bg-surface-2 px-4 py-3 text-[13.5px] text-c-text placeholder-c-text-muted outline-none transition",
+        "focus:border-[#ff3d6a]/40 focus:bg-surface-3 focus:shadow-[0_0_0_3px_rgba(255,61,106,.07)]",
         className,
       )}
       {...props}

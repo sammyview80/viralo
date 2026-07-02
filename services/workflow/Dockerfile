@@ -3,19 +3,23 @@ WORKDIR /app
 RUN pip install uv
 
 FROM base AS development
-COPY shared/ ./shared/
+COPY shared/pyproject.toml ./shared/
 COPY services/workflow/pyproject.toml ./services/workflow/
 RUN uv pip install --system -e ./shared -e ./services/workflow
+COPY shared/ ./shared/
 COPY workers/ ./workers/
 COPY services/workflow/ ./services/workflow/
+RUN uv pip install --system -e ./shared -e ./services/workflow
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "workflow.main:app", "--host", "0.0.0.0", "--port", "8005"]
 
 FROM base AS production
-COPY shared/ ./shared/
+COPY shared/pyproject.toml ./shared/
 COPY services/workflow/pyproject.toml ./services/workflow/
 RUN uv pip install --system -e ./shared -e ./services/workflow
+COPY shared/ ./shared/
 COPY workers/ ./workers/
 COPY services/workflow/ ./services/workflow/
+RUN uv pip install --system -e ./shared -e ./services/workflow
 ENV PYTHONPATH=/app
 CMD ["uvicorn", "workflow.main:app", "--host", "0.0.0.0", "--port", "8005", "--workers", "2"]

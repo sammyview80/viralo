@@ -461,13 +461,30 @@ function PlatformCopyCard({ platform, content, pcfg }: {
       {open && (
         <div className="border-t border-white/[.06] px-3 pb-3 pt-2">
           <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                const tags = content.tags?.map((t) => `#${t.replace(/^#+/, "")}`).join(" ") ?? "";
+                navigator.clipboard.writeText([content.description, tags].filter(Boolean).join("\n\n"));
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-white/[.07] bg-white/[.025] py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-white/[.05] hover:text-white"
+            >
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy all
+            </button>
             <div>
-              <p className="mb-1 text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Description</p>
+              <div className="mb-1 flex items-center justify-between">
+                <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Description</p>
+                <button type="button" onClick={() => navigator.clipboard.writeText(content.description)} className="text-[9px] text-zinc-600 hover:text-zinc-400 transition">copy</button>
+              </div>
               <p className="rounded-[8px] bg-white/[.025] p-2 text-[11px] leading-4 text-zinc-300">{content.description}</p>
             </div>
             {content.tags?.length > 0 && (
               <div>
-                <p className="mb-1 text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Tags</p>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Tags</p>
+                  <button type="button" onClick={() => navigator.clipboard.writeText(content.tags.map((t) => `#${t.replace(/^#+/, "")}`).join(" "))} className="text-[9px] text-zinc-600 hover:text-zinc-400 transition">copy</button>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {content.tags.map((tag) => <span key={tag} className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: `${pcfg.color}35`, background: `${pcfg.color}12`, color: pcfg.color }}>#{tag.replace(/^#+/, "")}</span>)}
                 </div>
@@ -568,7 +585,7 @@ export function ClipsPage() {
   const [minViralityScore, setMinViralityScore] = useState(0);
   const [published, setPublished] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortMode>("newest");
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestResponse | null>(null);
   const [suggestingTags, setSuggestingTags] = useState(false);
   const [tagSuggestError, setTagSuggestError] = useState<string | null>(null);
@@ -577,9 +594,11 @@ export function ClipsPage() {
   const [savedTagClipId, setSavedTagClipId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalClips, setTotalClips] = useState(0);
-  const perPage = 24;
+  const perPage = 9;
   const [editClip, setEditClip] = useState<ClipApiResponse | null>(null);
   const [failedPostBanner, setFailedPostBanner] = useState<string | null>(null);
+  const [upscalingId, setUpscalingId] = useState<string | null>(null);
+  const [compareView, setCompareView] = useState<string | null>(null); // clip id with compare open
   async function handleSaveAiSuggestions(clip: ClipApiResponse, suggestions: TagSuggestResponse) {
     setSavingTags(true);
     try {
@@ -620,15 +639,31 @@ export function ClipsPage() {
 
 
   // Highlight clip + show banner when navigated from failed post notification
+  // Also handle ?video_id= from Projects "Show clips"
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const clipParam = params.get("clip");
     if (clipParam) {
       setSelectedId(clipParam);
       setFailedPostBanner("This clip failed to post. Check status below and reschedule when ready.");
-      // Clean URL without reload
       const url = new URL(window.location.href);
       url.searchParams.delete("clip");
+      window.history.replaceState({}, "", url.toString());
+    }
+    const vidParam = params.get("video_id");
+    if (vidParam) {
+      setLoading(true);
+      videoApi.clips(vidParam).then((resp) => {
+        const items = Array.isArray(resp.items) ? resp.items : [];
+        setClips(items);
+        setTotalClips(items.length);
+        setSelectedId(items.at(0)?.id ?? null);
+      }).catch(() => {
+        setClips([]);
+        setTotalClips(0);
+      }).finally(() => setLoading(false));
+      const url = new URL(window.location.href);
+      url.searchParams.delete("video_id");
       window.history.replaceState({}, "", url.toString());
     }
   }, []);
@@ -637,15 +672,20 @@ export function ClipsPage() {
     async function load() {
       setLoading(true);
       try {
-        const [clipsResp, postsResp] = await Promise.all([
+        const [clipsResp, postsResp] = await Promise.allSettled([
           videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined, sort === "score_desc" ? "score" : undefined),
           platformApi.listPosts({ per_page: 20 }),
         ]);
-        const allClips = Array.isArray(clipsResp.items) ? clipsResp.items : [];
-        setClips(allClips);
-        setTotalClips(typeof clipsResp.total === "number" ? clipsResp.total : allClips.length);
-        setPosts(Array.isArray(postsResp.items) ? postsResp.items : []);
-        setSelectedId((current) => current ?? (allClips.at(0)?.id ?? null));
+        if (clipsResp.status === "fulfilled") {
+          const allClips = Array.isArray(clipsResp.value.items) ? clipsResp.value.items : [];
+          setClips(allClips);
+          setTotalClips(typeof clipsResp.value.total === "number" ? clipsResp.value.total : allClips.length);
+          setSelectedId((current) => current ?? (allClips.at(0)?.id ?? null));
+        } else {
+          setClips([]);
+          setTotalClips(0);
+        }
+        setPosts(postsResp.status === "fulfilled" && Array.isArray(postsResp.value.items) ? postsResp.value.items : []);
       } catch {
         setClips([]);
         setTotalClips(0);
@@ -777,63 +817,67 @@ export function ClipsPage() {
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0b1018] shadow-[0_18px_80px_rgba(0,0,0,.28)]">
+      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col bg-[#080b12]">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
-          <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
-          <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
-            <div className="flex items-center gap-2">
-              <h1 className="font-display text-[20px] font-bold tracking-[-.02em]">Clips</h1>
-              <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
-            </div>
-            <p className="mt-1 text-[11px] text-zinc-600">Search, review, and publish shorts.</p>
-          </div>
-          <div className="relative min-w-0 max-w-none flex-1 lg:min-w-[240px] lg:max-w-[520px]">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-600 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
-          </div>
-          <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:text-zinc-200")}>
-            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
-            Filters
-            {activeFilterCount > 0 && <span className="rounded-full bg-[#ff3d6a] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span>}
-          </button>
-          <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
-            {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-white/[.06] text-white" : "text-zinc-500 hover:text-zinc-300")}>{v === "grid" ? "Grid" : "List"}</button>)}
-          </div>
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 focus:outline-none transition cursor-pointer">
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="score_desc">Highest score</option>
-            <option value="score_asc">Lowest score</option>
-            <option value="duration_desc">Longest first</option>
-          </select>
+        <div className="border-b border-white/[.06] bg-[#080b12]/95 px-3 py-3 sm:px-5 sm:py-4">
+          <div className="mx-auto flex w-full max-w-[1240px] flex-col px-3 sm:px-4 xl:px-5">
+            <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+              <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
+                <div className="flex items-center gap-2">
+                  <h1 className="font-display text-[20px] font-bold tracking-[-.02em]">Clips</h1>
+                  <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-600">Search, review, and publish shorts.</p>
+              </div>
+              <div className="relative min-w-0 max-w-none flex-1 lg:min-w-[240px] lg:max-w-[520px]">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-600 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+              </div>
+              <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:text-zinc-200")}>
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+                Filters
+                {activeFilterCount > 0 && <span className="rounded-full bg-[#ff3d6a] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span>}
+              </button>
+              <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
+                {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-white/[.06] text-white" : "text-zinc-500 hover:text-zinc-300")}>{v === "grid" ? "Grid" : "List"}</button>)}
+              </div>
+              <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 focus:outline-none transition cursor-pointer">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="score_desc">Highest score</option>
+                <option value="score_asc">Lowest score</option>
+                <option value="duration_desc">Longest first</option>
+              </select>
 
-          <Button size="sm" className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
-          </div>
-          {activeFilterCount > 0 && !showFilters && (
-            <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
-              <span>{activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active</span>
-              <button onClick={clearFilters} className="font-semibold text-rose-300/80 hover:text-rose-200">Clear all</button>
+              <Button size="sm" className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
             </div>
-          )}
+            {activeFilterCount > 0 && !showFilters && (
+              <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
+                <span>{activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active</span>
+                <button onClick={clearFilters} className="font-semibold text-rose-300/80 hover:text-rose-200">Clear all</button>
+              </div>
+            )}
+          </div>
         </div>
 
 
 
         {/* Failed post banner */}
         {failedPostBanner && (
-          <div className="flex items-center gap-3 border-b border-red-500/20 bg-red-500/[.07] px-5 py-3">
-            <span className="text-lg">⚠️</span>
-            <p className="flex-1 text-[12px] font-semibold text-red-300">{failedPostBanner}</p>
-            <button onClick={() => setFailedPostBanner(null)} className="text-red-400/60 hover:text-red-300 transition cursor-pointer text-sm">✕</button>
+          <div className="border-b border-red-500/20 bg-red-500/[.07] px-3 py-3 sm:px-5">
+            <div className="mx-auto flex w-full max-w-[1240px] items-center gap-3 px-3 sm:px-4 xl:px-5">
+              <span className="text-lg">⚠️</span>
+              <p className="flex-1 text-[12px] font-semibold text-red-300">{failedPostBanner}</p>
+              <button onClick={() => setFailedPostBanner(null)} className="text-red-400/60 hover:text-red-300 transition cursor-pointer text-sm">✕</button>
+            </div>
           </div>
         )}
 
         {/* Filter bar — collapsed by default to keep the workspace calm */}
         {showFilters && (
-          <div className="border-b border-white/[.06] bg-[#0b1018] px-3 py-3 sm:px-5 sm:py-4">
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+          <div className="border-b border-white/[.06] bg-[#080b12] px-3 py-3 sm:px-5 sm:py-4">
+            <div className="mx-auto grid w-full max-w-[1240px] gap-5 px-3 sm:px-4 md:grid-cols-2 xl:grid-cols-5 xl:px-5">
               <FilterGroup label="Platform">{PLATFORM_OPTIONS.map((f) => <Chip key={f.id} active={platforms.has(f.id)} onClick={() => setPlatforms((p) => toggle(p, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Status">{STATUS_OPTIONS.map((f) => <Chip key={f.id} active={statuses.has(f.id)} onClick={() => setStatuses((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Duration">{DURATION_OPTIONS.map((f) => <Chip key={f.id} active={durations.has(f.id)} onClick={() => setDurations((d) => toggle(d, f.id))}>{f.label}</Chip>)}</FilterGroup>
@@ -854,7 +898,7 @@ export function ClipsPage() {
         )}
 
         {/* Body */}
-        <div className="grid min-w-0 flex-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: "start" }}>
+        <div className="mx-auto grid w-full max-w-[1240px] flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: "start" }}>
           <div className="min-w-0 p-3 sm:p-4 xl:p-5">
             {loading ? (
               <div className="grid gap-4 md:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}</div>
@@ -973,7 +1017,7 @@ export function ClipsPage() {
           </div>
 
           {/* Clip details sidebar */}
-          <div className="hidden border-l border-white/[.07] bg-[#0b101a] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
+          <div className="hidden border-l border-white/[.07] bg-[#080b12] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
             {drawer ? (() => {
               const platformKey = drawer.platform ?? "shorts";
               const platformContent = drawer.clip_metadata?.platforms?.[platformKey] ?? drawer.clip_metadata?.platforms?.shorts ?? null;
@@ -1060,6 +1104,12 @@ export function ClipsPage() {
                             <p className="text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Primary hashtags</p>
                             <div className="flex items-center gap-1.5">
                               {displayPrimaryTags.length > 0 && <span className="text-[10px] text-zinc-600">{displayPrimaryTags.length}</span>}
+                              {displayPrimaryTags.length > 0 && (
+                                <button
+                                  onClick={() => navigator.clipboard.writeText(displayPrimaryTags.map((t) => `#${t}`).join(" "))}
+                                  className="text-[9px] font-semibold text-zinc-600 hover:text-zinc-400 transition"
+                                >copy</button>
+                              )}
                               <button
                                 onClick={() => handleSuggestTags(drawer)}
                                 disabled={isSuggestingThisClip}
@@ -1159,7 +1209,27 @@ export function ClipsPage() {
 
 
 
-                  <div className="sticky bottom-0 space-y-2 bg-[#0b101a]/95 pt-1 backdrop-blur">
+                  {compareView === drawer.id && drawer.upscaled_storage_url && drawer.storage_url && (
+                    <section className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
+                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Before / After</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="mb-1 text-center text-[9px] text-zinc-600">Original</p>
+                          <video src={drawer.storage_url} className="w-full rounded-[8px] object-cover" controls muted playsInline preload="metadata" style={{ maxHeight: 140 }} />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-center text-[9px] text-emerald-500">4K Upscaled</p>
+                          <video src={drawer.upscaled_storage_url} className="w-full rounded-[8px] object-cover ring-1 ring-emerald-500/40" controls muted playsInline preload="metadata" style={{ maxHeight: 140 }} />
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <a href={drawer.storage_url} download className="rounded-[8px] border border-white/[.06] bg-white/[.025] py-1 text-center text-[10px] font-semibold text-zinc-400 hover:bg-white/[.05]">↓ Original</a>
+                        <a href={drawer.upscaled_storage_url} download className="rounded-[8px] border border-emerald-500/30 bg-emerald-500/10 py-1 text-center text-[10px] font-semibold text-emerald-400 hover:bg-emerald-500/20">↓ 4K</a>
+                      </div>
+                    </section>
+                  )}
+
+                  <div className="sticky bottom-0 space-y-2 bg-[#080b12]/95 pt-1 backdrop-blur">
                     <Button className="w-full h-9 bg-[#ff3d6a] hover:bg-[#e8304f] text-white text-[13px] font-semibold" onClick={() => setPublishOpen(true)}>
                       {drawerPosted ? "Publish again" : drawerScheduled ? "Reschedule" : "Publish"}
                     </Button>
@@ -1174,6 +1244,25 @@ export function ClipsPage() {
                         Download
                       </Button>
                     </div>
+                    <Button
+                      className="w-full h-8 text-[12px]"
+                      variant="secondary"
+                      disabled={upscalingId === drawer.id || !drawer.storage_url}
+                      onClick={() => {
+                        if (drawer.upscaled_storage_url) {
+                          setCompareView((v) => v === drawer.id ? null : drawer.id);
+                          return;
+                        }
+                        const clipId = drawer.id;
+                        setUpscalingId(clipId);
+                        videoApi.upscaleClip(clipId, "4K").then((updated) => {
+                          setClips((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+                          setCompareView(clipId);
+                        }).finally(() => setUpscalingId(null));
+                      }}
+                    >
+                      {upscalingId === drawer.id ? "Upscaling…" : drawer.upscaled_storage_url ? "⬆ Upscaled ✓ — Compare" : "⬆ Upscale 4K"}
+                    </Button>
                   </div>
                 </div>
               </div>

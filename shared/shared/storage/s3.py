@@ -23,5 +23,8 @@ class S3Adapter(StorageAdapter):
             "get_object", Params={"Bucket": self.bucket, "Key": path}, ExpiresIn=expires_in
         )
 
+    async def download(self, path: str, dest_path: str) -> None:
+        self.client.download_file(self.bucket, path, dest_path)
+
     async def delete(self, path: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=path)

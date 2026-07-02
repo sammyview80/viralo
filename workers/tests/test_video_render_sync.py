@@ -4,6 +4,65 @@ from unittest.mock import Mock
 from workers.tasks import video
 
 
+def test_editor_precise_trim_command_cuts_audio_and_video_from_same_source_point(tmp_path):
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "trimmed.mp4"
+
+    cmd = video._build_precise_trim_command(
+        source_path=str(source),
+        output_path=str(output),
+        start_sec=12.345,
+        end_sec=20.345,
+        has_audio=True,
+    )
+
+    filters = cmd[cmd.index("-filter_complex") + 1]
+    assert cmd[cmd.index("-ss") + 1] == "10.345"
+    assert "trim=start=2.0:duration=7.999999999999998,setpts=PTS-STARTPTS[vout]" in filters
+    assert "atrim=start=2.0:duration=7.999999999999998,asetpts=PTS-STARTPTS[aout]" in filters
+    assert "-c" not in cmd
+    assert "copy" not in cmd
+
+
+def test_editor_precise_trim_command_handles_silent_sources(tmp_path):
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "trimmed.mp4"
+
+    cmd = video._build_precise_trim_command(
+        source_path=str(source),
+        output_path=str(output),
+        start_sec=3.0,
+        end_sec=None,
+        has_audio=False,
+    )
+
+    filters = cmd[cmd.index("-filter_complex") + 1]
+    assert "[0:a:0]" not in filters
+    assert "-map" in cmd
+    assert "[vout]" in cmd
+    assert "[aout]" not in cmd
+
+
+def test_sound_marker_mix_handles_silent_source_without_base_audio(monkeypatch, tmp_path):
+    sounds_dir = tmp_path / "sounds"
+    sounds_dir.mkdir()
+    (sounds_dir / "ding.wav").write_bytes(b"fake")
+    monkeypatch.setattr(video, "SOUNDS_DIR", sounds_dir)
+
+    cmd = video._mix_sound_markers(
+        source_path=str(tmp_path / "silent.mp4"),
+        markers=[{"sound": "ding", "time_ms": 2500}],
+        output_path=str(tmp_path / "out.mp4"),
+        base_cmd_prefix=["-crf", "22"],
+        source_has_audio=False,
+    )
+
+    filters = cmd[cmd.index("-filter_complex") + 1]
+    assert "[0:a]" not in filters
+    assert "adelay=2500|2500" in filters
+    assert "amix=inputs=1" in filters
+
+
 def _ok_run(cmd, *args, **kwargs):
     output = cmd[-1]
     Path(output).write_bytes(b"0" * 2048)

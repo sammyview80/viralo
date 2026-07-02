@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { navigate } from "@/lib/router";
+import { navigate, useSearchParams } from "@/lib/router";
 import { videoApi, token as authToken, API_BASES, type VideoResponse } from "@/lib/api";
 import { Pagination } from "../components/Pagination";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
@@ -66,14 +66,14 @@ function progressFor(video: VideoResponse) {
 function DeleteModal({ video, onConfirm, onCancel }: { video: VideoResponse; onConfirm: () => void; onCancel: () => void }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-[20px] border border-white/[.09] bg-[#111724] p-6 shadow-[0_28px_90px_rgba(0,0,0,.45)]">
+      <div className="w-full max-w-md rounded-[20px] border border-c-border [background:rgb(var(--surface-1))] p-6 shadow-[0_28px_90px_rgba(0,0,0,.45)]">
         <div className="mb-3 grid h-11 w-11 place-items-center rounded-[14px] border border-red-400/20 bg-red-400/10 text-red-300">⌫</div>
         <h3 className="font-display text-xl font-bold text-white">Delete project?</h3>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">
+        <p className="mt-2 text-sm leading-6 text-c-text-muted">
           This removes "{video.title || "Untitled"}" from project history. Generated clips for this video may no longer be accessible.
         </p>
         <div className="mt-6 flex gap-3">
-          <button onClick={onCancel} className="flex-1 rounded-[11px] border border-white/[.08] bg-white/[.03] px-4 py-2.5 text-sm font-semibold text-zinc-300 transition hover:bg-white/[.06] hover:text-white">Cancel</button>
+          <button onClick={onCancel} className="flex-1 rounded-[11px] border border-c-border [background:rgb(var(--surface-2))] px-4 py-2.5 text-sm font-semibold text-c-text-secondary transition hover:[background:rgb(var(--surface-3))] hover:text-c-text">Cancel</button>
           <button onClick={onConfirm} className="flex-1 rounded-[11px] bg-red-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-400">Delete</button>
         </div>
       </div>
@@ -115,7 +115,7 @@ function SourcePill({ source }: { source: string }) {
 function ProjectThumb({ video, className = "" }: { video: VideoResponse; className?: string }) {
   const processing = !isTerminalStatus(video);
   return (
-    <div className={cn("relative overflow-hidden rounded-[16px] border border-white/[.08] bg-gradient-to-br shadow-[inset_0_0_0_1px_rgba(255,255,255,.05)]", gradFromId(video.id), className)}>
+    <div className={cn("relative overflow-hidden rounded-[16px] border border-c-border bg-gradient-to-br shadow-[inset_0_0_0_1px_rgba(255,255,255,.05)]", gradFromId(video.id), className)}>
       {video.thumbnail_url ? (
         <img src={video.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
       ) : (
@@ -160,7 +160,7 @@ function RowMenu({ onShowDetails, onDelete }: { onShowDetails: () => void; onDel
       <button
         ref={btnRef}
         onClick={handleOpen}
-        className="grid h-8 w-8 place-items-center rounded-[8px] text-zinc-600 transition hover:bg-white/[.06] hover:text-zinc-300"
+        className="grid h-8 w-8 place-items-center rounded-[8px] text-c-text-muted transition hover:[background:rgb(var(--surface-3))] hover:text-c-text-secondary"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>
@@ -170,16 +170,16 @@ function RowMenu({ onShowDetails, onDelete }: { onShowDetails: () => void; onDel
         <div
           ref={menuRef}
           style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="min-w-[160px] overflow-hidden rounded-[12px] border border-white/[.08] bg-[#111724] py-1 shadow-[0_16px_48px_rgba(0,0,0,.5)]"
+          className="min-w-[160px] overflow-hidden rounded-[12px] border border-c-border [background:rgb(var(--surface-1))] py-1 shadow-[0_16px_48px_rgba(0,0,0,.5)]"
         >
           <button
             onClick={() => { setOpen(false); onShowDetails(); }}
-            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-zinc-300 transition hover:bg-white/[.05] hover:text-white"
+            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-c-text-secondary transition hover:[background:rgb(var(--surface-3))] hover:text-c-text"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
             Show details
           </button>
-          <div className="mx-3 my-1 h-px bg-white/[.06]" />
+          <div className="mx-3 my-1 h-px [background:rgb(var(--surface-3))]" />
           <button
             onClick={() => { setOpen(false); onDelete(); }}
             className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-red-400 transition hover:bg-red-400/10 hover:text-red-300"
@@ -206,13 +206,23 @@ export function ProjectsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VideoResponse | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clipping" | "ranking">("clipping");
+  const [searchParams, setSearchParam] = useSearchParams();
+  const tabQuery = searchParams.get("tab");
+  const tab = tabQuery === "ranking" ? "ranking" : "clipping";
+
+  const setTab = (t: "clipping" | "ranking") => {
+    setSearchParam("tab", t);
+    setSearch("");
+    setSelectedId(null);
+    setPage(1);
+  };
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [statusFilter, setStatusFilter] = useState<"all" | "ready" | "processing" | "failed">("all");
   const [page, setPage] = useState(1);
   const [totalProjects, setTotalProjects] = useState(0);
-  const perPage = 20;
+  const perPage = 5;
 
   const loadHistory = useCallback(() => {
     setLoading(true);
@@ -298,6 +308,13 @@ export function ProjectsPage() {
   const failedCount = filtered.filter((v) => v.status === "failed").length;
   const total = filtered.length;
 
+  const displayFiltered = useMemo(() => {
+    if (statusFilter === "ready") return filtered.filter((v) => isTerminalStatus(v) && v.status !== "failed");
+    if (statusFilter === "processing") return filtered.filter((v) => !isTerminalStatus(v));
+    if (statusFilter === "failed") return filtered.filter((v) => v.status === "failed");
+    return filtered;
+  }, [filtered, statusFilter]);
+
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
     const video = deleteTarget;
@@ -318,57 +335,79 @@ export function ProjectsPage() {
     <>
       {deleteTarget && <DeleteModal video={deleteTarget} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
 
-      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[18px] border border-white/[.07] bg-[#0e1420] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
+      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden [background:rgb(var(--surface-0))]">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#090e16]/95 px-3 py-3 sm:px-5 sm:py-4">
-          <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
-            <div className="min-w-0 lg:mr-2 lg:min-w-[150px]">
-              <div className="flex items-center gap-2">
-                <h1 className="font-display text-[20px] font-bold tracking-[-.02em] text-white">Projects</h1>
-                <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">
-                  {loading ? "…" : `${filtered.length}${totalProjects !== history.length ? `/${totalProjects}` : ""}`}
-                </span>
+        <div className="flex flex-col border-b border-c-border">
+          {/* Tabs + Filtering + New upload */}
+          <div className="">
+            <div className="mx-auto flex w-full max-w-[1240px] flex-col items-stretch justify-between gap-4 px-3 sm:px-4 py-1 lg:flex-row lg:items-center xl:px-5">
+              {/* Noticeable tabs */}
+              <div className="flex gap-8">
+                {(["clipping", "ranking"] as const).map((t) => {
+                  const active = tab === t;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setTab(t)}
+                      className={cn(
+                        "relative py-3.5 text-[14px] font-bold tracking-tight transition-all focus:outline-none flex items-center gap-2",
+                        active ? "text-white" : "text-c-text-muted hover:text-c-text-secondary"
+                      )}
+                    >
+                      {t === "clipping" ? (
+                        <>
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4" />
+                          </svg>
+                          <span>Clips</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 21h18M5 17V9M10 17V5M15 17v-7M20 17v-5" />
+                          </svg>
+                          <span>Video Ranking</span>
+                        </>
+                      )}
+                      {active && (
+                        <div className="absolute bottom-0 left-0 right-0 h-[3px] rounded-t-full bg-[#ff3d6a] shadow-[0_-2px_10px_rgba(255,61,106,0.6)]" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <p className="mt-1 text-[11px] text-zinc-600">Upload history and generated clip workspaces.</p>
-            </div>
 
-            {/* Tabs */}
-            <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
-              {(["clipping", "ranking"] as const).map((t) => (
+              {/* Filtering / Search panel */}
+              <div className="flex flex-wrap items-center gap-3 pb-3 lg:pb-0">
+                <div className="relative min-w-0 flex-1 sm:max-w-[320px] lg:w-[240px]">
+                  <svg className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-c-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  <input className="h-9 w-full rounded-[9px] border border-c-border [background:rgb(var(--surface-2))] pl-9 pr-8 text-xs text-c-text placeholder:text-c-text-muted transition focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20" placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                  {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted transition hover:text-c-text-secondary"><svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+                </div>
+
+                <div className="flex rounded-[9px] border border-c-border [background:rgb(var(--surface-2))] p-0.5">
+                  {(["grid", "list"] as const).map((v) => (
+                    <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-[11px] font-semibold capitalize transition", viewMode === v ? "[background:rgb(var(--surface-3))] text-white" : "text-c-text-muted hover:text-c-text-secondary")}>{v}</button>
+                  ))}
+                </div>
+
+                <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-9 rounded-[9px] border border-c-border [background:rgb(var(--surface-2))] px-2.5 text-[11px] font-semibold text-c-text-muted transition focus:outline-none cursor-pointer">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="title">Title A-Z</option>
+                  <option value="status">Status</option>
+                </select>
+
                 <button
-                  key={t}
-                  onClick={() => { setTab(t); setSearch(""); setSelectedId(null); setPage(1); }}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-xs font-semibold capitalize transition",
-                    tab === t ? "bg-[#ff3d6a] text-white" : "text-zinc-500 hover:text-zinc-300"
-                  )}
+                  onClick={loadHistory}
+                  className="flex h-9 items-center gap-1.5 rounded-[9px] border border-c-border [background:rgb(var(--surface-2))] px-3 text-xs font-semibold text-c-text-muted transition hover:[background:rgb(var(--surface-3))] hover:text-c-text"
                 >
-                  {t === "clipping" ? "Clipping" : "Ranking"}
+                  <svg className={cn("h-3.5 w-3.5", loading ? "animate-spin" : "")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                 </button>
-              ))}
+                <button onClick={() => navigate("/studio")} className="h-9 rounded-[9px] bg-[#ff3d6a] px-3.5 text-xs font-bold text-white shadow-[0_6px_18px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f] whitespace-nowrap">+ New upload</button>
+              </div>
             </div>
-
-            <div className="relative min-w-0 flex-1 lg:min-w-[240px] lg:max-w-[520px]">
-              <svg className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 transition focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20" placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} />
-              {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 transition hover:text-zinc-300"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
-            </div>
-
-            <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
-              {(["grid", "list"] as const).map((v) => (
-                <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition", viewMode === v ? "bg-white/[.07] text-white" : "text-zinc-500 hover:text-zinc-300")}>{v}</button>
-              ))}
-            </div>
-
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 transition focus:outline-none">
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="title">Title A-Z</option>
-              <option value="status">Status</option>
-            </select>
-
-            <button onClick={loadHistory} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 transition hover:text-zinc-200">Refresh</button>
-            <button onClick={() => navigate("/studio")} className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f] lg:ml-auto">+ New upload</button>
           </div>
         </div>
 
@@ -377,62 +416,46 @@ export function ProjectsPage() {
         )}
 
         {/* Body */}
-        <div className={cn("grid flex-1", selected ? "xl:grid-cols-[minmax(0,1fr)_400px]" : "grid-cols-1")} style={{ alignItems: "start" }}>
+        <div className={cn("mx-auto grid w-full max-w-[1240px] flex-1", selected ? "xl:grid-cols-[minmax(0,1fr)_400px]" : "grid-cols-1")} style={{ alignItems: "start" }}>
             <div className="min-w-0 p-3 sm:p-4 xl:p-5">
               {/* Stats */}
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-emerald-400/10 text-emerald-300">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Ready</div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-emerald-300">{readyCount}</span>
-                      {total > 0 && <span className="text-[11px] text-zinc-600">of {total}</span>}
+                {([
+                  { key: "ready", label: "Ready", count: readyCount, sub: total > 0 ? `of ${total}` : null, subColor: "text-c-text-muted", numColor: "text-emerald-300", iconBg: "bg-emerald-400/10 text-emerald-300", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
+                  { key: "processing", label: "Processing", count: processingCount, sub: processingCount > 0 ? "in progress" : null, subColor: "text-amber-400/60", numColor: "text-amber-200", iconBg: "bg-amber-400/10 text-amber-200", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+                  { key: "failed", label: "Failed", count: failedCount, sub: failedCount === 0 ? "none" : null, subColor: "text-c-text-muted", numColor: "text-red-300", iconBg: "bg-red-400/10 text-red-300", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> },
+                ] as const).map(({ key, label, count, sub, subColor, numColor, iconBg, icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => setStatusFilter((f) => f === key ? "all" : key)}
+                    className={cn("flex items-center gap-4 rounded-[16px] border px-4 py-3.5 text-left transition cursor-pointer", statusFilter === key ? "border-c-border-hover [background:rgb(var(--surface-2))]" : "border-c-border [background:rgb(var(--surface-2))] hover:[background:rgb(var(--surface-2))]")}
+                  >
+                    <div className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-[10px]", iconBg)}>{icon}</div>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-[.2em] text-c-text-muted">{label}</div>
+                      <div className="mt-0.5 flex items-baseline gap-1.5">
+                        <span className={cn("text-2xl font-bold", numColor)}>{count}</span>
+                        {sub && <span className={cn("text-[11px]", subColor)}>{sub}</span>}
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-amber-400/10 text-amber-200">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Processing</div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-amber-200">{processingCount}</span>
-                      {processingCount > 0 && <span className="text-[11px] text-amber-400/60">in progress</span>}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 rounded-[16px] border border-white/[.06] bg-white/[.025] px-4 py-3.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-red-400/10 text-red-300">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Failed</div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-red-300">{failedCount}</span>
-                      {failedCount === 0 && <span className="text-[11px] text-zinc-600">none</span>}
-                    </div>
-                  </div>
-                </div>
+                  </button>
+                ))}
               </div>
 
               {loading ? (
                 <div className="grid gap-3">
-                  {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-[14px] border border-white/[.06] bg-white/[.025]" />)}
+                  {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-[14px] border border-c-border [background:rgb(var(--surface-2))]" />)}
                 </div>
-              ) : filtered.length === 0 ? (
-                <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[20px] border border-dashed border-white/[.09] bg-white/[.015] p-8 text-center">
+              ) : displayFiltered.length === 0 ? (
+                <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[20px] border border-dashed border-c-border [background:rgb(var(--surface-1))] p-8 text-center">
                   <div className="grid h-14 w-14 place-items-center rounded-[18px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-2xl text-[#ff7a9a]">↥</div>
                   <h3 className="mt-4 font-display text-xl font-bold text-white">{history.length === 0 ? "No projects yet" : "No projects match"}</h3>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">{history.length === 0 ? tab === "ranking" ? "Create your first ranked countdown video from the Rankings page." : "Upload a video or import from YouTube to create your first clipping project." : "Try a different search term or clear the search field."}</p>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-c-text-muted">{history.length === 0 ? tab === "ranking" ? "Create your first ranked countdown video from the Rankings page." : "Upload a video or import from YouTube to create your first clipping project." : "Try a different search term or clear the search field."}</p>
                   <button onClick={() => navigate("/studio")} className="mt-5 rounded-[12px] bg-[#ff3d6a] px-5 py-2.5 text-sm font-bold text-white">Start upload</button>
                 </div>
               ) : viewMode === "grid" ? (
                 <VirtualizedGrid
-                  items={filtered}
+                  items={displayFiltered}
                   keyForItem={(v) => v.id}
                   estimateRowHeight={310}
                   columns={[{ minWidth: 768, columns: 2 }, { minWidth: 1536, columns: 3 }]}
@@ -443,7 +466,7 @@ export function ProjectsPage() {
                     return (
                       <div className={cn(
                         "group overflow-hidden rounded-[20px] border bg-[#111827]",
-                        active ? "border-[#ff3d6a]/55 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-white/[.07]",
+                        active ? "border-[#ff3d6a]/55 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-c-border",
                         isDeleting ? "pointer-events-none opacity-50" : ""
                       )}>
                         <button onClick={() => setSelectedId(video.id)} className="w-full text-left">
@@ -456,15 +479,15 @@ export function ProjectsPage() {
                           </div>
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <SourcePill source={video.source_type} />
-                            <span className="rounded-full bg-white/[.04] px-2.5 py-1 text-[11px] font-medium text-zinc-500">{formatShortDate(video.created_at)}</span>
-                            <span className="rounded-full bg-white/[.04] px-2.5 py-1 text-[11px] font-medium text-zinc-500">{formatDuration(video.duration_sec)}</span>
+                            <span className="rounded-full [background:rgb(var(--surface-3))] px-2.5 py-1 text-[11px] font-medium text-c-text-muted">{formatShortDate(video.created_at)}</span>
+                            <span className="rounded-full [background:rgb(var(--surface-3))] px-2.5 py-1 text-[11px] font-medium text-c-text-muted">{formatDuration(video.duration_sec)}</span>
                           </div>
-                          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[.06]">
+                          <div className="mt-3 h-1.5 overflow-hidden rounded-full [background:rgb(var(--surface-3))]">
                             <div className={cn("h-full rounded-full", video.status === "failed" ? "bg-red-400" : "bg-emerald-400")} style={{ width: `${pct}%` }} />
                           </div>
-                          <div className="mt-3 flex items-center justify-between border-t border-white/[.06] pt-3">
-                            <button onClick={() => setSelectedId(video.id)} className="text-[11px] text-zinc-600 transition hover:text-zinc-400">Details</button>
-                            <button onClick={() => navigate(`/projects/${video.id}`)} className="text-xs font-bold text-zinc-500 transition hover:text-white">Show clips →</button>
+                          <div className="mt-3 flex items-center justify-between border-t border-c-border pt-3">
+                            <button onClick={() => setSelectedId(video.id)} className="text-[11px] text-c-text-muted transition hover:text-c-text-muted">Details</button>
+                            <button onClick={() => navigate(`/projects/${video.id}`)} className="text-xs font-bold text-c-text-muted transition hover:text-c-text">Show clips →</button>
                           </div>
                         </div>
                       </div>
@@ -472,9 +495,9 @@ export function ProjectsPage() {
                   }}
                 />
               ) : (
-                <div className="rounded-[16px] border border-white/[.06] bg-white/[.012]">
+                <div className="">
                   <VirtualizedList
-                    items={filtered}
+                    items={displayFiltered}
                     keyForItem={(v) => v.id}
                     estimateRowHeight={88}
                     renderItem={(video) => {
@@ -487,7 +510,7 @@ export function ProjectsPage() {
                         <div
                           className={cn(
                             "group relative border-l-[3px] border-t border-white/[.04] transition",
-                            active ? "border-l-[#ff3d6a]/70 bg-[#ff3d6a]/[.035]" : "border-l-transparent hover:bg-white/[.02]",
+                            active ? "border-l-[#ff3d6a]/70 bg-[#ff3d6a]/[.035]" : "border-l-transparent hover:[background:rgb(var(--surface-2))]",
                             isDeleting ? "pointer-events-none opacity-50" : "",
                           )}
                         >
@@ -501,7 +524,7 @@ export function ProjectsPage() {
                                 <p className="truncate text-[14px] font-semibold text-white">{video.title || "Untitled"}</p>
                                 <StatusBadge video={video} />
                               </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-c-text-muted">
                                 <span>{video.source_type === "youtube" || video.source_type === "youtube_url" ? "YouTube" : "Upload"}</span>
                                 <span className="text-zinc-700">·</span>
                                 <span>{formatDuration(video.duration_sec)}</span>
@@ -509,13 +532,13 @@ export function ProjectsPage() {
                                 <span>{formatShortDate(video.created_at)}</span>
                               </div>
                               <div className="mt-2 flex items-center gap-2">
-                                <div className="h-1 w-16 overflow-hidden rounded-full bg-white/[.06] sm:w-24">
+                                <div className="h-1 w-16 overflow-hidden rounded-full [background:rgb(var(--surface-3))] sm:w-24">
                                   <div className={cn("h-full rounded-full", isFailed ? "bg-red-400" : isReady ? "bg-emerald-400" : "bg-amber-300")} style={{ width: `${pct}%` }} />
                                 </div>
                                 <span className={cn("text-[10px] font-bold", isFailed ? "text-red-400" : isReady ? "text-emerald-400" : "text-amber-300")}>{pct}%</span>
                               </div>
                             </div>
-                            <span className="hidden shrink-0 text-xs font-semibold text-zinc-600 transition group-hover:text-zinc-300 sm:block">Show clips →</span>
+                            <span className="hidden shrink-0 text-xs font-semibold text-c-text-muted transition group-hover:text-c-text-secondary sm:block">Show clips →</span>
                           </button>
                           <div className="absolute right-3 top-1/2 -translate-y-1/2">
                             <RowMenu
@@ -539,17 +562,17 @@ export function ProjectsPage() {
                   setSelectedId(null);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className="mt-4 rounded-[14px] border border-white/[.06] bg-white/[.012]"
+                className="mt-4 rounded-[14px] border border-c-border [background:rgb(var(--surface-1))]"
               />
             </div>
 
             {/* Details sidebar */}
             {selected && (
-              <aside className="hidden border-l border-white/[.07] bg-[#0e1420] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
+              <aside className="hidden border-l border-c-border bg-[#0e1420] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
                 <div className="p-5">
                   <div className="mb-4 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-zinc-500">Project details</span>
-                    <button onClick={() => setSelectedId(null)} className="grid h-7 w-7 place-items-center rounded-[7px] text-zinc-600 transition hover:bg-white/[.06] hover:text-zinc-300">
+                    <span className="text-xs font-semibold text-c-text-muted">Project details</span>
+                    <button onClick={() => setSelectedId(null)} className="grid h-7 w-7 place-items-center rounded-[7px] text-c-text-muted transition hover:[background:rgb(var(--surface-3))] hover:text-c-text-secondary">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg>
                     </button>
                   </div>
@@ -559,7 +582,7 @@ export function ProjectsPage() {
                   <div className="mt-5 flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="font-display text-[22px] font-bold leading-tight tracking-[-.03em] text-white">{selected.title || "Untitled"}</h2>
-                      <p className="mt-1.5 text-sm text-zinc-500">{selected.source_type === "youtube" || selected.source_type === "youtube_url" ? "YouTube import" : "Uploaded video"}</p>
+                      <p className="mt-1.5 text-sm text-c-text-muted">{selected.source_type === "youtube" || selected.source_type === "youtube_url" ? "YouTube import" : "Uploaded video"}</p>
                     </div>
                     <StatusBadge video={selected} />
                   </div>
@@ -572,67 +595,51 @@ export function ProjectsPage() {
                       { label: "Source", value: selected.source_type === "youtube" || selected.source_type === "youtube_url" ? "YouTube" : "Upload" },
                       { label: "Pipeline", value: selected.pipeline_step ? selected.pipeline_step.replace(/_/g, " ") : "—" },
                     ].map(({ label, value }) => (
-                      <div key={label} className="rounded-[12px] border border-white/[.06] bg-white/[.025] p-3.5">
-                        <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">{label}</div>
+                      <div key={label} className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
+                        <div className="text-[10px] font-bold uppercase tracking-[.2em] text-c-text-muted">{label}</div>
                         <div className="mt-1.5 text-base font-bold capitalize text-white">{value}</div>
                       </div>
                     ))}
                   </div>
 
                   {/* Progress */}
-                  <div className="mt-3 rounded-[12px] border border-white/[.06] bg-white/[.02] p-3.5">
+                  <div className="mt-3 rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
                     <div className="mb-2.5 flex items-center justify-between">
-                      <div className="text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Progress</div>
+                      <div className="text-[10px] font-bold uppercase tracking-[.2em] text-c-text-muted">Progress</div>
                       <div className={cn("font-mono text-xs font-bold", selected.status === "failed" ? "text-red-300" : "text-emerald-300")}>{progressFor(selected)}%</div>
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-white/[.06]">
+                    <div className="h-2 overflow-hidden rounded-full [background:rgb(var(--surface-3))]">
                       <div className={cn("h-full rounded-full transition-all", selected.status === "failed" ? "bg-red-400" : "bg-emerald-400")} style={{ width: `${progressFor(selected)}%` }} />
                     </div>
                   </div>
 
                   {/* Clip config */}
                   {selected.clip_config && (
-                    <div className="mt-3 rounded-[12px] border border-white/[.06] bg-white/[.02] p-3.5">
-                      <div className="mb-3 text-[10px] font-bold uppercase tracking-[.2em] text-zinc-600">Clip config</div>
+                    <div className="mt-3 rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
+                      <div className="mb-3 text-[10px] font-bold uppercase tracking-[.2em] text-c-text-muted">Clip config</div>
                       <div className="space-y-2 text-[12px]">
-                        {selected.clip_config.platforms && selected.clip_config.platforms.length > 0 && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Platforms</span>
-                            <div className="flex gap-1">
-                              {selected.clip_config.platforms.map((p) => (
-                                <span key={p} className="rounded-full border border-white/[.06] bg-white/[.04] px-2 py-0.5 text-[10px] font-semibold capitalize text-zinc-300">{p}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                         {selected.clip_config.aspect_ratio && (
                           <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Aspect ratio</span>
-                            <span className="font-semibold text-zinc-300">{selected.clip_config.aspect_ratio}</span>
+                            <span className="text-c-text-muted">Aspect ratio</span>
+                            <span className="font-semibold text-c-text-secondary">{selected.clip_config.aspect_ratio}</span>
                           </div>
                         )}
                         {(selected.clip_config.duration_min != null || selected.clip_config.duration_max != null) && (
                           <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Duration</span>
-                            <span className="font-semibold text-zinc-300">{selected.clip_config.duration_min ?? "—"}–{selected.clip_config.duration_max ?? "—"}s</span>
+                            <span className="text-c-text-muted">Duration</span>
+                            <span className="font-semibold text-c-text-secondary">{selected.clip_config.duration_min ?? "—"}–{selected.clip_config.duration_max ?? "—"}s</span>
                           </div>
                         )}
                         {selected.clip_config.max_clips != null && (
                           <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Max clips</span>
-                            <span className="font-semibold text-zinc-300">{selected.clip_config.max_clips}</span>
-                          </div>
-                        )}
-                        {selected.clip_config.language && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Language</span>
-                            <span className="font-semibold uppercase text-zinc-300">{selected.clip_config.language}</span>
+                            <span className="text-c-text-muted">Max clips</span>
+                            <span className="font-semibold text-c-text-secondary">{selected.clip_config.max_clips}</span>
                           </div>
                         )}
                         {selected.clip_config.add_captions != null && (
                           <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Captions</span>
-                            <span className={cn("font-semibold", selected.clip_config.add_captions ? "text-emerald-400" : "text-zinc-500")}>
+                            <span className="text-c-text-muted">Captions</span>
+                            <span className={cn("font-semibold", selected.clip_config.add_captions ? "text-emerald-400" : "text-c-text-muted")}>
                               {selected.clip_config.add_captions ? "On" : "Off"}
                               {selected.clip_config.caption_style ? ` · ${selected.clip_config.caption_style}` : ""}
                             </span>
@@ -643,11 +650,11 @@ export function ProjectsPage() {
                   )}
 
                   {/* Actions */}
-                  <div className="sticky bottom-0 -mx-5 mt-5 border-t border-white/[.07] bg-[#0e1420]/95 p-5 backdrop-blur">
+                  <div className="sticky bottom-0 -mx-5 mt-5 border-t border-c-border bg-[#0e1420]/95 p-5 backdrop-blur">
                     <button onClick={() => navigate(`/projects/${selected.id}`)} className="h-12 w-full rounded-[12px] bg-[#ff3d6a] text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.22)] transition hover:bg-[#e8304f]">Show clips</button>
                     <div className="mt-3 grid grid-cols-2 gap-3">
-                      <button onClick={() => navigate(`/projects/${selected.id}`)} className="h-11 rounded-[12px] border border-white/[.08] bg-white/[.025] text-sm font-bold text-zinc-300 transition hover:bg-white/[.05] hover:text-white">Edit project</button>
-                      <button onClick={() => setDeleteTarget(selected)} className="h-11 rounded-[12px] border border-white/[.08] bg-white/[.025] text-sm font-bold text-zinc-500 transition hover:border-red-400/25 hover:bg-red-400/10 hover:text-red-300">Delete</button>
+                      <button onClick={() => navigate(`/projects/${selected.id}`)} className="h-11 rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] text-sm font-bold text-c-text-secondary transition hover:[background:rgb(var(--surface-3))] hover:text-c-text">Edit project</button>
+                      <button onClick={() => setDeleteTarget(selected)} className="h-11 rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] text-sm font-bold text-c-text-muted transition hover:border-red-400/25 hover:bg-red-400/10 hover:text-red-300">Delete</button>
                     </div>
                   </div>
                 </div>
@@ -658,4 +665,3 @@ export function ProjectsPage() {
     </>
   );
 }
-

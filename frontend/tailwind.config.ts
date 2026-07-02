@@ -37,6 +37,27 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+
+        /* ── Viralo design tokens ── */
+        surface: {
+          0: "rgb(var(--surface-0) / <alpha-value>)",
+          1: "rgb(var(--surface-1) / <alpha-value>)",
+          2: "rgb(var(--surface-2) / <alpha-value>)",
+          3: "rgb(var(--surface-3) / <alpha-value>)",
+          glass: "var(--surface-glass)",
+        },
+        "c-border":           "var(--c-border)",
+        "c-border-hover":     "var(--c-border-hover)",
+        "c-text":             "var(--c-text)",
+        "c-text-secondary":   "var(--c-text-secondary)",
+        "c-text-muted":       "var(--c-text-muted)",
+        brand: {
+          DEFAULT: "var(--brand)",
+          hover:   "var(--brand-hover)",
+        },
+        "c-success": "var(--c-success)",
+        "c-warning": "var(--c-warning)",
+        "c-error":   "var(--c-error)",
       },
       borderRadius: {
         lg: "var(--radius)",

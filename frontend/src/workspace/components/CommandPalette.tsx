@@ -24,7 +24,7 @@ function fmtDuration(sec: number | null): string {
 }
 
 function scoreColor(score: number | null): string {
-  if (score === null) return "text-zinc-600";
+  if (score === null) return "text-c-text-muted";
   if (score >= 7) return "text-[#34d399]";
   if (score >= 4) return "text-[#fbbf24]";
   return "text-[#f87171]";
@@ -34,7 +34,7 @@ function statusColor(status: string): string {
   if (status === "ready" || status === "completed") return "text-[#34d399]";
   if (status === "processing" || status === "uploading") return "text-[#fbbf24]";
   if (status === "failed" || status === "error") return "text-[#f87171]";
-  return "text-zinc-600";
+  return "text-c-text-muted";
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -132,29 +132,29 @@ export function CommandPalette() {
         .cmdk-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.07); border-radius: 2px; }
       `}</style>
       <div
-        className="fixed inset-0 z-50 flex items-start justify-center bg-black/65 backdrop-blur-sm pt-[12vh]"
+        className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 dark:bg-black/65 backdrop-blur-sm pt-[12vh]"
         onClick={close}
       >
         <div
-          className="cmdk-modal w-full max-w-[560px] mx-4 rounded-xl border border-white/[.10] bg-[#141926] shadow-[0_24px_64px_rgba(0,0,0,.65)] overflow-hidden"
+          className="cmdk-modal w-full max-w-[560px] mx-4 rounded-xl border border-c-border bg-surface-1 shadow-[0_24px_64px_rgba(0,0,0,.65)] overflow-hidden"
           onClick={e => e.stopPropagation()}
         >
           {/* Brand accent line */}
           <div className="h-px bg-gradient-to-r from-[#ff3d6a]/70 via-[#ff7a3d]/25 to-transparent" />
 
           {/* Input */}
-          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/[.07]">
-            <Icons.Search size={15} className="shrink-0 text-zinc-500" />
+          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-c-border">
+            <Icons.Search size={15} className="shrink-0 text-c-text-muted" />
             <input
               ref={inputRef}
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search videos, workflows…"
-              className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 outline-none"
+              className="flex-1 bg-transparent text-sm text-c-text placeholder-c-text-muted outline-none"
             />
             {loading
-              ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-zinc-700 border-t-zinc-400 shrink-0" />
-              : <kbd className="rounded-md border border-white/[.08] bg-white/[.04] px-1.5 py-0.5 text-[10px] text-zinc-600 font-mono">⌘K</kbd>
+              ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-c-border border-t-c-text-secondary shrink-0" />
+              : <kbd className="rounded-md border border-c-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-c-text-muted font-mono">⌘K</kbd>
             }
           </div>
 
@@ -162,8 +162,8 @@ export function CommandPalette() {
           <div ref={listRef} className="cmdk-scroll max-h-[360px] overflow-y-auto py-1.5">
             {items.length === 0 && !loading && (
               <div className="px-4 py-8 text-center">
-                <Icons.Search size={22} className="mx-auto mb-2.5 text-zinc-800" />
-                <p className="text-xs text-zinc-600">
+                <Icons.Search size={22} className="mx-auto mb-2.5 text-c-text-muted" />
+                <p className="text-xs text-c-text-muted">
                   {query ? "No results found" : "Type to search videos and clips"}
                 </p>
               </div>
@@ -177,16 +177,16 @@ export function CommandPalette() {
                   const Icon = Icons[item.icon];
                   return (
                     <Row key={item.href} idx={idx} active={activeIndex === idx} onHover={() => setActive(idx)} onClick={() => selectItem(item)}>
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/[.04] text-zinc-500">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-2 text-c-text-muted">
                         {Icon && <Icon size={13} />}
                       </span>
-                      <span className="flex-1 text-sm text-white">{item.label}</span>
+                      <span className="flex-1 text-sm text-c-text">{item.label}</span>
                       {item.badge && (
                         <span className="rounded-full bg-[#ff3d6a]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[#ff3d6a] uppercase tracking-wide">
                           {item.badge}
                         </span>
                       )}
-                      <Icons.ChevronR size={12} className="shrink-0 text-zinc-700" />
+                      <Icons.ChevronR size={12} className="shrink-0 text-c-text-muted" />
                     </Row>
                   );
                 })}
@@ -198,10 +198,10 @@ export function CommandPalette() {
               <Section label="Videos" count={videoHits.length}>
                 {items.map((item, idx) => item.kind !== "video" ? null : (
                   <Row key={item.hit.id} idx={idx} active={activeIndex === idx} onHover={() => setActive(idx)} onClick={() => selectItem(item)}>
-                    <div className="relative h-9 w-[60px] shrink-0 overflow-hidden rounded-md bg-white/[.04]">
+                    <div className="relative h-9 w-[60px] shrink-0 overflow-hidden rounded-md bg-surface-2">
                       {item.hit.thumbnail_url
                         ? <img src={item.hit.thumbnail_url} alt="" className="h-full w-full object-cover" />
-                        : <div className="flex h-full w-full items-center justify-center"><Icons.Film size={14} className="text-zinc-700" /></div>
+                        : <div className="flex h-full w-full items-center justify-center"><Icons.Film size={14} className="text-c-text-muted" /></div>
                       }
                       {item.hit.duration_sec != null && (
                         <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1 py-px text-[8px] font-mono text-white leading-none">
@@ -210,7 +210,7 @@ export function CommandPalette() {
                       )}
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate text-sm leading-tight text-white">{item.hit.title ?? "Untitled"}</span>
+                      <span className="truncate text-sm leading-tight text-c-text">{item.hit.title ?? "Untitled"}</span>
                       <span className={`text-[10px] capitalize ${statusColor(item.hit.status)}`}>{item.hit.status}</span>
                     </div>
                   </Row>
@@ -223,14 +223,14 @@ export function CommandPalette() {
               <Section label="Clips" count={clipHits.length}>
                 {items.map((item, idx) => item.kind !== "clip" ? null : (
                   <Row key={item.hit.id} idx={idx} active={activeIndex === idx} onHover={() => setActive(idx)} onClick={() => selectItem(item)}>
-                    <div className="relative h-9 w-[60px] shrink-0 overflow-hidden rounded-md bg-white/[.04]">
+                    <div className="relative h-9 w-[60px] shrink-0 overflow-hidden rounded-md bg-surface-2">
                       {item.hit.thumbnail_url
                         ? <img src={item.hit.thumbnail_url} alt="" className="h-full w-full object-cover" />
-                        : <div className="flex h-full w-full items-center justify-center"><Icons.Film size={14} className="text-zinc-700" /></div>
+                        : <div className="flex h-full w-full items-center justify-center"><Icons.Film size={14} className="text-c-text-muted" /></div>
                       }
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate text-sm leading-tight text-white">{item.hit.title ?? "Untitled"}</span>
+                      <span className="truncate text-sm leading-tight text-c-text">{item.hit.title ?? "Untitled"}</span>
                       <span className={`text-[10px] capitalize ${statusColor(item.hit.status)}`}>{item.hit.status}</span>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-0.5">
@@ -240,7 +240,7 @@ export function CommandPalette() {
                         </span>
                       )}
                       {item.hit.platform && (
-                        <span className="text-[9px] uppercase tracking-wide text-zinc-600">{item.hit.platform}</span>
+                        <span className="text-[9px] uppercase tracking-wide text-c-text-muted">{item.hit.platform}</span>
                       )}
                     </div>
                   </Row>
@@ -250,10 +250,10 @@ export function CommandPalette() {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center gap-4 border-t border-white/[.06] bg-white/[.015] px-4 py-2">
-            <span className="text-[10px] text-zinc-700">↑↓ navigate</span>
-            <span className="text-[10px] text-zinc-700">↵ select</span>
-            <span className="text-[10px] text-zinc-700">Esc close</span>
+          <div className="flex items-center gap-4 border-t border-c-border bg-surface-glass px-4 py-2">
+            <span className="text-[10px] text-c-text-muted">↑↓ navigate</span>
+            <span className="text-[10px] text-c-text-muted">↵ select</span>
+            <span className="text-[10px] text-c-text-muted">Esc close</span>
           </div>
         </div>
       </div>
@@ -266,8 +266,8 @@ function Section({ label, count, children }: { label: string; count: number; chi
   return (
     <div className="mb-1">
       <div className="flex items-center gap-2 px-4 py-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{label}</span>
-        <span className="rounded-full bg-white/[.05] px-1.5 py-px text-[9px] tabular-nums text-zinc-600">{count}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-c-text-muted">{label}</span>
+        <span className="rounded-full bg-surface-2 px-1.5 py-px text-[9px] tabular-nums text-c-text-muted">{count}</span>
       </div>
       {children}
     </div>
@@ -283,7 +283,7 @@ function Row({ idx, active, onHover, onClick, children }: {
       data-active={active}
       onMouseEnter={onHover}
       onClick={onClick}
-      className={`cmdk-row flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${active ? "bg-white/[.06]" : "hover:bg-white/[.03]"}`}
+      className={`cmdk-row flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
     >
       {children}
     </button>

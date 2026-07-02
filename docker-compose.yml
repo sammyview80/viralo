@@ -4,6 +4,12 @@ x-service-defaults: &service-defaults
   networks:
     - viralo-internal
   restart: unless-stopped
+  # Warm-shutdown window: on `restart`/`stop`/deploy, Docker sends SIGTERM and waits
+  # this long before SIGKILL. Lets a Celery worker finish a short in-flight task
+  # (download/transcribe) cleanly instead of being killed mid-task at the 10s default.
+  # Longer renders that exceed this are SIGKILLed and safely requeued
+  # (task_reject_on_worker_lost) + caught by reconcile_stuck_videos.
+  stop_grace_period: 120s
   env_file:
     - .env
   logging:
@@ -99,30 +105,6 @@ services:
 
   # ── API Services ──────────────────────────────────────────────────────────
 
-  migrate:
-    <<: *service-defaults
-    build:
-      context: .
-      dockerfile: services/core/Dockerfile
-    command: alembic upgrade head
-    restart: "no"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  seed:
-    <<: *service-defaults
-    build:
-      context: .
-      dockerfile: services/core/Dockerfile
-    command: python scripts/seed_dev_user.py
-    restart: "no"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-
   core-service:
     <<: *service-defaults
     build:
@@ -133,8 +115,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -150,19 +130,22 @@ services:
       dockerfile: services/video/Dockerfile
     ports:
       - "8003:8003"
-    mem_limit: 512m
-    memswap_limit: 512m
+    # 2g: the /youtube/formats probe runs yt-dlp + a Deno n-challenge solver
+    # in-process; Deno's V8 was OOM-killed (SIGKILL -9) under the old 512m cap.
+    mem_limit: 2g
+    memswap_limit: 2g
     environment:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      # /youtube/formats probes yt-dlp in-process; needs the PO-token server like the workers.
+      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -183,8 +166,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -205,8 +186,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -227,8 +206,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -240,6 +217,22 @@ services:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8006/health')\""]
 
   # ── Workers ───────────────────────────────────────────────────────────────
+
+  # PO Token provider — yt-dlp web/tv/mweb clients need PO tokens to return formats.
+  bgutil-pot:
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1
+    restart: unless-stopped
+    networks:
+      - viralo-internal
+    expose:
+      - "4416"
+    healthcheck:
+      # image has only node — no curl/wget
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4416/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   celery-video-pipeline:
     <<: *service-defaults
@@ -253,14 +246,14 @@ services:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
       MALLOC_ARENA_MAX: "2"
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -286,14 +279,14 @@ services:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
       MALLOC_ARENA_MAX: "2"
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -319,14 +312,14 @@ services:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
+      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
       MALLOC_ARENA_MAX: "2"
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -353,14 +346,14 @@ services:
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
       RAPIDAPI_TIKTOK_KEY: ${RAPIDAPI_TIKTOK_KEY:-}
+      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
       MALLOC_ARENA_MAX: "2"
     volumes:
       - video-temp:/tmp/viralo-video
       - video-storage:/tmp/viralo-storage
       - ./yt-cookies.txt:/app/yt-cookies.txt:ro
+      - yt-cookies-live:/var/lib/yt
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -383,8 +376,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -407,8 +398,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -431,8 +420,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -455,8 +442,6 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       postgres:
@@ -481,8 +466,6 @@ services:
     volumes:
       - celery-beat-data:/var/lib/celery
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       redis:
@@ -527,3 +510,4 @@ volumes:
   video-temp:
   video-storage:
   celery-beat-data:
+  yt-cookies-live:  # writable live YouTube cookie store; refreshed by keep-warm task

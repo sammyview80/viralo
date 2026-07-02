@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { type ClipApiResponse, type EditorData, videoApi } from "@/lib/api";
 import { Timeline, type EffectMarker } from "./editor/Timeline";
 import { TrimBar } from "./editor/TrimBar";
-import { CaptionEditor, type Caption } from "./editor/CaptionEditor";
+import { CaptionEditor, type Caption, type CaptionTemplate } from "./editor/CaptionEditor";
 import { SoundEffectPalette, PALETTE, type PaletteItem, type SoundType } from "./editor/SoundEffectPalette";
 import { RenderPanel } from "./editor/RenderPanel";
 
@@ -58,6 +58,92 @@ function fmt(s: number) {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function drawTemplateCaption(ctx: CanvasRenderingContext2D, cap: Caption, W: number, H: number, yPos: number) {
+  const uppercaseTemplates = new Set(["mr-beast", "news", "meme", "sports"]);
+  const text = uppercaseTemplates.has(cap.template) ? cap.text.toUpperCase() : cap.text;
+  const fontSize = cap.template === "mr-beast" ? Math.max(cap.fontSize, 32) : cap.fontSize;
+  ctx.font = `900 ${fontSize}px sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const metrics = ctx.measureText(text);
+  const boxW = Math.min(W * 0.86, metrics.width + 42);
+  const boxH = fontSize * 1.55;
+  const x = W / 2;
+  const radius = 12;
+
+  function roundRect(fill: string) {
+    ctx.fillStyle = fill;
+    const left = x - boxW / 2;
+    const top = yPos - boxH / 2;
+    ctx.beginPath();
+    ctx.roundRect(left, top, boxW, boxH, radius);
+    ctx.fill();
+  }
+
+  ctx.save();
+  const boxed: Partial<Record<Caption["template"], { bg: string; fg: string; stroke?: string }>> = {
+    default: { bg: "rgba(255,255,255,0.96)", fg: "#111827" },
+    modern: { bg: "rgba(0,0,0,0.92)", fg: "#ffea00" },
+    bouncy: { bg: "rgba(255,255,255,0.96)", fg: "#7c2dff" },
+    "mr-beast": { bg: "#ffd21f", fg: "#00a7b7", stroke: "rgba(0,0,0,0.35)" },
+    neon: { bg: "rgba(16,16,38,0.84)", fg: "#39ff14", stroke: "rgba(255,0,255,0.35)" },
+    podcast: { bg: "rgba(17,24,39,0.88)", fg: "#ffffff" },
+    gaming: { bg: "rgba(76,29,149,0.86)", fg: "#00e5ff" },
+    news: { bg: "rgba(225,29,72,0.92)", fg: "#ffffff" },
+    luxury: { bg: "rgba(5,5,5,0.8)", fg: "#d4af37" },
+    karaoke: { bg: "rgba(29,78,216,0.86)", fg: "#fff2a8" },
+    meme: { bg: "rgba(0,0,0,0.7)", fg: "#ffffff", stroke: "rgba(0,0,0,0.7)" },
+    documentary: { bg: "rgba(0,0,0,0.58)", fg: "#f5f5dc" },
+    sports: { bg: "rgba(17,17,17,0.86)", fg: "#ccff00" },
+    soft: { bg: "rgba(49,46,129,0.58)", fg: "#ffc7d8" },
+  };
+  const style = boxed[cap.template];
+  if (style) {
+    roundRect(style.bg);
+    ctx.fillStyle = style.fg;
+    if (style.stroke) {
+      ctx.strokeStyle = style.stroke;
+      ctx.lineWidth = 4;
+      ctx.strokeText(text, x, yPos);
+    }
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur = 6;
+  } else {
+    const plainColors: Partial<Record<Caption["template"], string>> = {
+      business: "#ffffff",
+      clean: "#ffffff",
+      cinematic: "#f5d76e",
+    };
+    ctx.fillStyle = plainColors[cap.template] ?? cap.color;
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = cap.template === "clean" ? 4 : 10;
+  }
+  ctx.fillText(text, x, yPos);
+  ctx.restore();
+}
+
+function parseSRT(srt: string, defaultTemplate: CaptionTemplate = "default"): Caption[] {
+  const blocks = srt.trim().split(/\n\s*\n/);
+  const captions: Caption[] = [];
+  blocks.forEach((block, index) => {
+    const lines = block.trim().split("\n");
+    if (lines.length < 2) return;
+    const timeLine = lines.find((l) => l.includes("-->"));
+    if (!timeLine) return;
+    const match = timeLine.match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
+    if (!match) return;
+    const toSec = (h: string, m: string, s: string, ms: string) =>
+      parseInt(h) * 3600 + parseInt(m) * 60 + parseInt(s) + parseInt(ms) / 1000;
+    const startSec = toSec(match[1], match[2], match[3], match[4]);
+    const endSec = toSec(match[5], match[6], match[7], match[8]);
+    const timeLineIdx = lines.indexOf(timeLine);
+    const textLines = lines.slice(timeLineIdx + 1).filter((l) => l.trim() && !l.match(/^\d+$/));
+    const text = textLines.join(" ").trim();
+    if (!text) return;
+    captions.push({ id: `${Date.now() + index}`, text, startSec, endSec, position: "bottom", color: "#ffffff", fontSize: 24, template: defaultTemplate });
+  });
+  return captions;
 }
 
 type EditorTab = "trim" | "captions" | "effects" | "export";
@@ -199,7 +285,6 @@ export function VideoEditor({
     function draw() {
       ctx.clearRect(0, 0, W, H);
       const video = videoRef.current;
-      if (video && video.readyState >= 2) ctx.drawImage(video, 0, 0, W, H);
       const nowMs = (video?.currentTime ?? 0) * 1000;
       for (const m of markersRef.current) {
         if (!triggeredRef.current.has(m.id) && nowMs >= m.timeMs && nowMs < m.timeMs + 200) {
@@ -233,13 +318,7 @@ export function VideoEditor({
       for (const cap of captionsRef.current) {
         if (nowSec >= cap.startSec && nowSec <= cap.endSec) {
           const yPos = cap.position === "top" ? H * 0.1 : cap.position === "center" ? H * 0.5 : H * 0.88;
-          ctx.save();
-          ctx.font = `bold ${cap.fontSize}px sans-serif`;
-          ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 8;
-          ctx.fillStyle = cap.color;
-          ctx.fillText(cap.text, W / 2, yPos);
-          ctx.restore();
+          drawTemplateCaption(ctx, cap, W, H, yPos);
         }
       }
       animRef.current = requestAnimationFrame(draw);
@@ -290,7 +369,10 @@ export function VideoEditor({
       if (ed.trim_start_sec !== undefined) setTrimStart(ed.trim_start_sec);
       if (ed.trim_end_sec != null) setTrimEnd(ed.trim_end_sec);
       if (ed.captions?.length) {
-        setCaptions(ed.captions.map((c) => ({ id: c.id, text: c.text, startSec: c.start_sec, endSec: c.end_sec, position: c.position, color: c.color, fontSize: c.font_size })));
+        setCaptions(ed.captions.map((c) => ({ id: c.id, text: c.text, startSec: c.start_sec, endSec: c.end_sec, position: c.position, color: c.color, fontSize: c.font_size, template: c.template ?? "default" })));
+      } else if (clip.caption_srt) {
+        const parsed = parseSRT(clip.caption_srt);
+        if (parsed.length) setCaptions(parsed);
       }
       if (ed.markers?.length) {
         setMarkers(ed.markers.map((m) => ({ id: m.id, timeMs: m.time_ms, sound: m.sound, emoji: m.emoji, label: m.label })));
@@ -304,7 +386,7 @@ export function VideoEditor({
     setSaving(true); setSaveStatus("idle");
     const editorData: EditorData = {
       trim_start_sec: trimStart, trim_end_sec: trimEnd || null,
-      captions: captions.map((c) => ({ id: c.id, text: c.text, start_sec: c.startSec, end_sec: c.endSec, position: c.position, color: c.color, font_size: c.fontSize })),
+      captions: captions.map((c) => ({ id: c.id, text: c.text, start_sec: c.startSec, end_sec: c.endSec, position: c.position, color: c.color, font_size: c.fontSize, template: c.template })),
       markers: markers.map((m) => ({ id: m.id, time_ms: m.timeMs, sound: m.sound, emoji: m.emoji, label: m.label })),
     };
     try {
@@ -451,7 +533,7 @@ export function VideoEditor({
                   crossOrigin="anonymous"
                   playsInline
                   preload="metadata"
-                  className="absolute inset-0 h-full w-full object-cover opacity-0 pointer-events-none"
+                  className="absolute inset-0 h-full w-full object-cover pointer-events-none"
                   onTimeUpdate={(e) => setCurrentTime((e.target as HTMLVideoElement).currentTime)}
                   onEnded={() => setPlaying(false)}
                   onLoadedMetadata={(e) => {
@@ -737,6 +819,7 @@ export function VideoEditor({
           selectedEffect={selected}
           trimStart={trimStart}
           trimEnd={trimEnd || duration}
+          videoSrc={clip.storage_url ?? undefined}
           onSeek={(t) => { const v = videoRef.current; if (v) { v.currentTime = t; triggeredRef.current.clear(); } }}
           onAddMarker={addMarker}
           onRemoveMarker={removeMarker}

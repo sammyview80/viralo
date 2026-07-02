@@ -3,7 +3,27 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any, Literal, get_args
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+EditorCaptionTemplate = Literal[
+    "default",
+    "modern",
+    "bouncy",
+    "mr-beast",
+    "business",
+    "clean",
+    "neon",
+    "podcast",
+    "cinematic",
+    "gaming",
+    "news",
+    "luxury",
+    "karaoke",
+    "meme",
+    "documentary",
+    "sports",
+    "soft",
+]
 
 
 class ClipConfig(BaseModel):
@@ -14,9 +34,6 @@ class ClipConfig(BaseModel):
 
     # Output format
     aspect_ratio: Literal["9:16", "1:1", "16:9", "4:5"] = Field(default="9:16", description="Output aspect ratio")
-    platforms: list[Literal["tiktok", "reels", "shorts", "twitter", "linkedin"]] = Field(
-        default=["tiktok", "reels", "shorts"], description="Target platforms for clip labelling"
-    )
 
     # AI scoring
     min_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Min virality score 0-1 (0.5 = balanced, 0.8 = viral only)")
@@ -30,16 +47,11 @@ class ClipConfig(BaseModel):
     )
 
     # Output quality
-    output_quality: Literal["source", "1080p", "720p", "480p"] = Field(
+    output_quality: Literal["source", "1080p", "720p", "480p", "360p"] = Field(
         default="1080p", description="Output resolution cap (source = no downscale)"
     )
 
-    # Content
-    language: str = Field(default="en", description="Spoken language (en, es, fr, ...)")
     topic_focus: str | None = Field(default=None, description="Guide AI to focus on specific topic")
-
-    # Precision mode
-    precision_mode: bool = False
 
     # Template / occasion-aware rendering
     template_id: Literal["sports-hype", "gaming-clutch", "cinematic", "music-vibe", "talking-head", "generic"] | None = Field(default=None, description="Template ID override (None = auto-detect from occasion)")
@@ -47,6 +59,14 @@ class ClipConfig(BaseModel):
     music_track: Literal["hype", "dramatic", "chill"] | None = Field(default=None, description="Music track key override (None = auto from template)")
     voiceover: bool = Field(default=False, description="Generate and mix AI narrator voiceover")
     occasion: Literal["football", "soccer", "sports", "cricket", "ufc", "boxing", "mma", "f1", "racing", "gaming", "esports", "podcast", "interview", "concert", "music", "wedding", "travel", "general"] | None = Field(default=None, description="Content occasion hint. None = auto-detect.")
+
+    @model_validator(mode="after")
+    def _check_duration_bounds(self) -> "ClipConfig":
+        # Frontend can send an inverted pair (e.g. slider race). Swap rather than
+        # 422 so a transient UI glitch never blocks a clip job.
+        if self.duration_min > self.duration_max:
+            self.duration_min, self.duration_max = self.duration_max, self.duration_min
+        return self
 
 
 class CaptionStyleInfo(BaseModel):
@@ -95,8 +115,15 @@ class VideoResponse(BaseModel):
     celery_task_id: str | None = None
     error_message: str | None = None
     created_at: Any
-    needs_browser_capture: bool = False
     model_config = {"from_attributes": True}
+
+    @field_validator("clip_config", mode="before")
+    @classmethod
+    def hide_destination_config(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            hidden = {"platforms", "language", "precision_mode"}
+            return {k: v for k, v in value.items() if k not in hidden}
+        return value
 
 
 class ClipResponse(BaseModel):
@@ -115,6 +142,7 @@ class ClipResponse(BaseModel):
     clip_metadata: dict | None = None
     upload_attempts: int | None = None
     upload_error: str | None = None
+    upscaled_storage_url: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
 
@@ -132,6 +160,7 @@ class EditorCaption(BaseModel):
     position: Literal["top", "center", "bottom"] = "bottom"
     color: str = "#ffffff"
     font_size: int = Field(default=24, ge=12, le=48)
+    template: EditorCaptionTemplate = "default"
 
     @field_validator("color")
     @classmethod
@@ -234,6 +263,22 @@ class YouTubeInspectResponse(BaseModel):
     upload_date: str | None = None
     description: str | None = None
     error: str | None = None
+
+
+class YouTubeFormatInfo(BaseModel):
+    height: int
+    fps: float | None = None
+    ext: str | None = None
+    filesize: int | None = None
+
+
+class YouTubeFormatsResponse(BaseModel):
+    url: str
+    qualities: list[str]          # subset of ["source","1080p","720p","480p","360p"]
+    max_height: int
+    title: str | None = None
+    duration: float | None = None
+    formats: list[YouTubeFormatInfo] = Field(default_factory=list)
 
 
 class SearchVideoHit(BaseModel):

@@ -206,7 +206,6 @@ export interface VideoResponse {
   error_message: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
-  needs_browser_capture?: boolean;
   source_url?: string | null;
 }
 
@@ -254,12 +253,32 @@ export interface ClipApiResponse {
   } | null;
   upload_attempts: number | null;
   upload_error: string | null;
+  upscaled_storage_url: string | null;
   created_at: string;
 }
 
 export type ClipListResponse = PaginatedResponse<ClipApiResponse>;
 
 /* ─── Editor types ─── */
+export type EditorCaptionTemplate =
+  | "default"
+  | "modern"
+  | "bouncy"
+  | "mr-beast"
+  | "business"
+  | "clean"
+  | "neon"
+  | "podcast"
+  | "cinematic"
+  | "gaming"
+  | "news"
+  | "luxury"
+  | "karaoke"
+  | "meme"
+  | "documentary"
+  | "sports"
+  | "soft";
+
 export interface EditorCaption {
   id: string;
   text: string;
@@ -268,6 +287,7 @@ export interface EditorCaption {
   position: "top" | "center" | "bottom";
   color: string;
   font_size: number;
+  template: EditorCaptionTemplate;
 }
 
 export interface EditorMarker {
@@ -305,18 +325,15 @@ function normalizePaginated<T>(data: PaginatedResponse<T> | T[] | null | undefin
 }
 
 export interface ClipConfig {
-  language?: string;
   max_clips?: number;
   min_score?: number;
-  platforms?: string[];
   topic_focus?: string | null;
   add_captions?: boolean;
   caption_style?: string | null;
   aspect_ratio?: string;
   duration_max?: number;
   duration_min?: number;
-  output_quality?: "source" | "1080p" | "720p" | "480p";
-  precision_mode?: boolean;
+  output_quality?: OutputQuality;
   template_id?: string | null;
   music?: boolean;
   music_track?: string | null;
@@ -331,6 +348,38 @@ export interface CaptionStyleInfo {
   family: "pill" | "reveal" | "pop" | "karaoke" | "outline" | "minimal";
   highlight: string;
   uppercase: boolean;
+}
+
+export type OutputQuality = "source" | "1080p" | "720p" | "480p" | "360p";
+
+export interface YouTubeInspectResponse {
+  valid: boolean;
+  url: string;
+  video_id?: string | null;
+  title?: string | null;
+  channel?: string | null;
+  duration_sec?: number | null;
+  thumbnail_url?: string | null;
+  view_count?: number | null;
+  upload_date?: string | null;
+  description?: string | null;
+  error?: string | null;
+}
+
+export interface YouTubeFormatInfo {
+  height: number;
+  fps?: number | null;
+  ext?: string | null;
+  filesize?: number | null;
+}
+
+export interface YouTubeFormatsResponse {
+  url: string;
+  qualities: OutputQuality[];
+  max_height: number;
+  title?: string | null;
+  duration?: number | null;
+  formats: YouTubeFormatInfo[];
 }
 
 export const videoApi = {
@@ -348,6 +397,10 @@ export const videoApi = {
       ...(title ? { title } : {}),
       ...(config ? { config } : {}),
     }),
+  youtubeFormats: (url: string) =>
+    videoReq<YouTubeFormatsResponse>("POST", "/youtube/formats", { url }),
+  youtubeInspect: (url: string) =>
+    videoReq<YouTubeInspectResponse>("POST", "/youtube/inspect", { url }),
   get:     (id: string) => videoReq<VideoResponse>("GET", `/videos/${id}`),
   list:    (page = 1, per_page = 20) =>
     videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos?page=${page}&per_page=${per_page}`)
@@ -371,15 +424,11 @@ export const videoApi = {
     videoReq<EditorDataResponse>("PATCH", `/clips/${clipId}/editor`, data),
   getEditorData: (clipId: string) =>
     videoReq<EditorDataResponse>("GET", `/clips/${clipId}/editor`),
-  browserUpload: (videoId: string, blob: Blob, filename = "capture.webm") => {
-    const fd = new FormData();
-    fd.append("file", blob, filename);
-    return videoReq<VideoResponse>("POST", `/videos/${videoId}/browser-upload`, fd);
-  },
   delete:  (id: string) => videoReq<void>("DELETE", `/videos/${id}`),
   cancel:  (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/cancel`),
   retry:        (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/retry`),
   fetchMetadata:(id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/fetch-metadata`),
+  previewProxy: (id: string) => videoReq<VideoResponse>("POST", `/videos/${id}/preview-proxy`),
   downloadZip: async (clipIds: string[], zipName?: string): Promise<Blob> => {
     const base = API_BASES.video;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -400,6 +449,8 @@ export const videoApi = {
     videoReq<{ task_id: string; message: string }>("POST", "/clips/merge-ai", { clip_ids: clipIds }),
   retryClipUpload: (clipId: string) =>
     videoReq<ClipApiResponse>("POST", `/clips/${clipId}/retry-upload`),
+  upscaleClip: (clipId: string, targetResolution: "1080p" | "4K" = "4K") =>
+    videoReq<ClipApiResponse>("POST", `/clips/${clipId}/upscale?target_resolution=${targetResolution}`),
   listRanking: (page = 1, per_page = 20) =>
     videoReq<VideoListResponse | VideoResponse[]>("GET", `/videos/ranking?page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<VideoResponse>(data, page, per_page)),
@@ -416,6 +467,8 @@ export const videoApi = {
       segment_title?: string;
     }>;
   }) => videoReq<{ video_id: string; job_id: string }>("POST", "/ranking", payload),
+  createRankingPreview: (url: string) =>
+    videoReq<{ preview_url: string; quality: string }>("POST", "/ranking/preview-source", { url }),
   suggestRankingTitle: (topic: string, segment_count: number) =>
     videoReq<{ title: string; highlight_words: string[] }>("POST", "/ranking/suggest-title", { topic, segment_count }),
 };

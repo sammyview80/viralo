@@ -4,32 +4,71 @@
 
 @layer base {
   :root {
+    /* ── Light mode (default) ── */
+    --background: 220 20% 97%;
+    --foreground: 222 20% 10%;
+    --card: 220 20% 95%;
+    --card-foreground: 222 20% 10%;
+    --primary: 346 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 90%;
+    --secondary-foreground: 222 20% 10%;
+    --muted: 220 15% 92%;
+    --muted-foreground: 222 8% 45%;
+    --accent: 346 100% 62%;
+    --accent-foreground: 0 0% 100%;
+    --border: 220 13% 88%;
+    --input: 220 13% 88%;
+    --ring: 346 100% 62%;
+    --radius: 9px;
+
+    --surface-0: 248 249 252;
+    --surface-1: 241 243 248;
+    --surface-2: 234 236 242;
+    --surface-3: 226 229 237;
+    --surface-glass: rgba(0, 0, 0, .025);
+    --border-subtle: rgba(0, 0, 0, .08);
+    --border-strong: rgba(0, 0, 0, .12);
+    --c-border: #dde1ea;
+    --c-border-hover: #c8cdd8;
+    --c-text: #111827;
+    --c-text-secondary: #374151;
+    --c-text-muted: #6B7280;
+
+    --brand: #ff3d6a;
+    --brand-hover: #ff5c8a;
+    --brand-2: #ff8040;
+    --brand-font: "Inter";
+    --c-success: #34D399;
+    --c-warning: #FACC15;
+    --c-error: #FB7185;
+  }
+
+  html.dark {
+    /* ── Dark mode ── */
     --background: 222 42% 4%;
     --foreground: 225 22% 95%;
     --card: 224 28% 8%;
     --card-foreground: 225 22% 95%;
-    --primary: 346 100% 62%;
-    --primary-foreground: 0 0% 100%;
     --secondary: 224 18% 12%;
     --secondary-foreground: 225 22% 95%;
     --muted: 224 16% 13%;
     --muted-foreground: 222 8% 56%;
-    --accent: 346 100% 62%;
-    --accent-foreground: 0 0% 100%;
-    --border: 0 0% 100%;
-    --input: 0 0% 100%;
-    --ring: 346 100% 62%;
-    --radius: 9px;
-    --surface-0: #080b12;
-    --surface-1: #0b101a;
-    --surface-2: #0e1420;
-    --surface-3: #141926;
+    --border: 220 13% 16%;
+    --input: 220 13% 16%;
+
+    --surface-0: 8 11 18;
+    --surface-1: 11 16 26;
+    --surface-2: 14 20 32;
+    --surface-3: 20 25 38;
     --surface-glass: rgba(255, 255, 255, .035);
     --border-subtle: rgba(255, 255, 255, .06);
     --border-strong: rgba(255, 255, 255, .10);
-    --brand: #ff3d6a;
-    --brand-2: #ff8040;
-    --brand-font: "Inter";
+    --c-border: rgba(255, 255, 255, 0.07);
+    --c-border-hover: rgba(255, 255, 255, 0.13);
+    --c-text: #F3F4F6;
+    --c-text-secondary: #A1AAB8;
+    --c-text-muted: #6B7280;
   }
 
   * {
@@ -48,7 +87,12 @@
   }
 
   html {
-    background: var(--surface-0);
+    background: rgb(var(--surface-0));
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   button, a, input, textarea, select {
@@ -65,14 +109,14 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, .10);
+    background: var(--c-border);
     border: 3px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, .16);
+    background: var(--c-border-hover);
     border: 3px solid transparent;
     background-clip: padding-box;
   }
@@ -88,7 +132,7 @@
     z-index: 0;
   }
 
-  body::after {
+  html.dark body::after {
     background-image: radial-gradient(circle, rgba(255,255,255,.028) 1px, transparent 1px);
     background-size: 28px 28px;
     content: "";
@@ -102,12 +146,12 @@
 
 @layer utilities {
   .surface {
-    background: rgba(14, 20, 32, .78);
+    background: rgb(var(--surface-2) / .78);
   }
 
   .glass {
-    background: rgba(255, 255, 255, .035);
-    border: 1px solid rgba(255, 255, 255, .07);
+    background: var(--surface-glass);
+    border: 1px solid var(--border-subtle);
   }
 
   .text-balance {
@@ -115,13 +159,19 @@
   }
 
   .app-card {
+    background: #ffffff;
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+  }
+
+  html.dark .app-card {
     background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
     border: 1px solid var(--border-subtle);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 16px 48px rgba(0,0,0,.18);
   }
 
   .app-panel {
-    background: rgba(14, 20, 32, .82);
+    background: rgb(var(--surface-1) / .82);
     border: 1px solid var(--border-subtle);
   }
 

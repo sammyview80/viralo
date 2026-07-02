@@ -39,23 +39,23 @@ export function Phone({ label = "5 habits that changed my mornings" }: { label?:
 }
 
 export function HeroBlock({ title, copy }: { title: string; copy: string }) {
-  return <Card className="p-4 sm:p-6"><div className="max-w-3xl"><div className="mb-3 text-[11px] font-bold uppercase tracking-[.16em] text-[#ff7a9a]">Viralo</div><h1 className="page-title font-display text-2xl font-extrabold sm:text-4xl">{title}</h1><p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-400 sm:mt-4">{copy}</p></div></Card>;
+  return <Card className="p-4 sm:p-6"><div className="max-w-3xl"><div className="mb-3 text-[11px] font-bold uppercase tracking-[.16em] text-[#ff7a9a]">Viralo</div><h1 className="page-title font-display text-2xl font-extrabold sm:text-4xl">{title}</h1><p className="mt-3 max-w-2xl text-sm leading-7 text-c-text-secondary sm:mt-4">{copy}</p></div></Card>;
 }
 
 export function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="app-panel rounded-[12px] p-4"><div className="mb-3 text-xs font-semibold tracking-[-0.01em] text-zinc-400">{title}</div>{children}</div>;
+  return <div className="app-panel rounded-[12px] p-4"><div className="mb-3 text-xs font-semibold tracking-[-0.01em] text-c-text-secondary">{title}</div>{children}</div>;
 }
 
 export function ChipRow({ items, active }: { items: string[]; active: string[] }) {
-  return <div className="flex flex-wrap gap-2">{items.map((x) => <span key={x} className={cn("rounded-lg border px-3 py-1.5 text-xs font-semibold transition", active.includes(x) ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-rose-200" : "border-white/[.07] bg-white/[.025] text-zinc-500 hover:border-white/[.12] hover:text-zinc-300")}>{x}</span>)}</div>;
+  return <div className="flex flex-wrap gap-2">{items.map((x) => <span key={x} className={cn("rounded-lg border px-3 py-1.5 text-xs font-semibold transition", active.includes(x) ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-rose-200" : "border-c-border bg-surface-1 text-c-text-muted hover:border-c-border-hover hover:text-c-text-secondary")}>{x}</span>)}</div>;
 }
 
 export function SelectLike({ value }: { value: string }) {
-  return <div className="rounded-[9px] border border-white/[.07] bg-white/[.035] px-3 py-2 text-sm text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]">{value}</div>;
+  return <div className="rounded-[9px] border border-c-border bg-surface-2 px-3 py-2 text-sm text-c-text-secondary shadow-[inset_0_1px_0_rgba(255,255,255,.025)]">{value}</div>;
 }
 
 export function Slider({ value }: { value: string }) {
-  return <div><div className="h-2 rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff3d6a]" style={{ width: `${value}%` }} /></div><div className="mt-2 text-right font-mono text-xs text-zinc-400">{value}</div></div>;
+  return <div><div className="h-2 rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-[#ff3d6a]" style={{ width: `${value}%` }} /></div><div className="mt-2 text-right font-mono text-xs text-c-text-secondary">{value}</div></div>;
 }
 
 export function Ring({ value }: { value: number }) {
@@ -64,23 +64,23 @@ export function Ring({ value }: { value: number }) {
 }
 
 export function UrlImport() {
-  return <div className="space-y-5"><div><label className="text-xs font-semibold text-zinc-400">YouTube URL</label><div className="mt-2 flex flex-col gap-3 sm:flex-row"><Input className="h-11" placeholder="https://youtube.com/watch?v=..." /><Button variant="secondary">Fetch</Button></div></div><Panel title="Clip count"><ChipRow items={["1", "3", "5"]} active={["3"]} /></Panel><Button className="w-full">Import & Clip</Button></div>;
+  return <div className="space-y-5"><div><label className="text-xs font-semibold text-c-text-secondary">YouTube URL</label><div className="mt-2 flex flex-col gap-3 sm:flex-row"><Input className="h-11" placeholder="https://youtube.com/watch?v=..." /><Button variant="secondary">Fetch</Button></div></div><Panel title="Clip count"><ChipRow items={["1", "3", "5"]} active={["3"]} /></Panel><Button className="w-full">Import & Clip</Button></div>;
 }
 
 export function UploadZone({ compact }: { compact?: boolean }) {
-  return <div className={cn("grid place-items-center rounded-[18px] border border-dashed border-white/15 bg-white/[.02] p-5 text-center transition hover:border-[#ff3d6a]/35 hover:bg-[#ff3d6a]/[.025] sm:p-8", compact ? "min-h-56" : "min-h-[260px] sm:min-h-[320px]")}><div><div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-xl font-black text-[#ff7a9a]">UP</div><h2 className="font-display text-xl font-bold sm:text-2xl">Drop your video here</h2><p className="mt-2 text-sm text-zinc-500">MP4, MOV, WebM up to 500 MB.</p><Button variant="secondary" className="mt-5">Browse files</Button></div></div>;
+  return <div className={cn("grid place-items-center rounded-[18px] border border-dashed border-c-border-hover bg-surface-1 p-5 text-center transition hover:border-[#ff3d6a]/35 hover:bg-[#ff3d6a]/[.025] sm:p-8", compact ? "min-h-56" : "min-h-[260px] sm:min-h-[320px]")}><div><div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-xl font-black text-[#ff7a9a]">UP</div><h2 className="font-display text-xl font-bold sm:text-2xl">Drop your video here</h2><p className="mt-2 text-sm text-c-text-muted">MP4, MOV, WebM up to 500 MB.</p><Button variant="secondary" className="mt-5">Browse files</Button></div></div>;
 }
 
 export function Row({ icon, title, sub }: { icon: string; title: string; sub: string }) {
-  return <div className="grid grid-cols-[40px_1fr_auto] items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3 transition hover:border-white/[.1] hover:bg-white/[.04]"><DotIcon label={icon} /><div className="min-w-0"><div className="truncate text-sm font-semibold">{title}</div><div className="truncate text-xs text-zinc-500">{sub}</div></div><span className="text-zinc-600">›</span></div>;
+  return <div className="grid grid-cols-[40px_1fr_auto] items-center gap-3 rounded-xl border border-c-border bg-surface-1 p-3 transition hover:border-c-border-hover hover:bg-surface-2"><DotIcon label={icon} /><div className="min-w-0"><div className="truncate text-sm font-semibold">{title}</div><div className="truncate text-xs text-c-text-muted">{sub}</div></div><span className="text-c-text-muted">›</span></div>;
 }
 
 export function Agent({ name, active }: { name: string; active: boolean }) {
-  return <Card className="p-5"><DotIcon label={name.slice(0, 2).toUpperCase()} tone={active ? "green" : "rose"} /><h3 className="mt-4 font-semibold">{name} agent</h3><p className="mt-2 text-sm text-zinc-500">{active ? "Running research pass." : "Ready."}</p></Card>;
+  return <Card className="p-5"><DotIcon label={name.slice(0, 2).toUpperCase()} tone={active ? "green" : "rose"} /><h3 className="mt-4 font-semibold">{name} agent</h3><p className="mt-2 text-sm text-c-text-muted">{active ? "Running research pass." : "Ready."}</p></Card>;
 }
 
 export function Idea({ title }: { title: string }) {
-  return <div className="rounded-xl border border-white/[.06] bg-white/[.025] p-4"><div className="text-sm font-semibold">{title}</div><div className="mt-3 flex gap-2"><Badge variant="ready">score 84</Badge><Badge>hook</Badge></div></div>;
+  return <div className="rounded-xl border border-c-border bg-surface-1 p-4"><div className="text-sm font-semibold">{title}</div><div className="mt-3 flex gap-2"><Badge variant="ready">score 84</Badge><Badge>hook</Badge></div></div>;
 }
 
 export function Bars({ tall }: { tall?: boolean }) {
@@ -90,5 +90,5 @@ export function Bars({ tall }: { tall?: boolean }) {
 }
 
 export function Trend({ title, score }: { title: string; score: number }) {
-  return <Card className="p-5"><div className="flex items-start justify-between"><DotIcon label="HOT" tone="orange" /><div className="font-display text-2xl font-bold">{score}</div></div><h3 className="mt-4 font-semibold">{title}</h3><p className="mt-2 text-sm text-zinc-500">Rising velocity across creator niches.</p></Card>;
+  return <Card className="p-5"><div className="flex items-start justify-between"><DotIcon label="HOT" tone="orange" /><div className="font-display text-2xl font-bold">{score}</div></div><h3 className="mt-4 font-semibold">{title}</h3><p className="mt-2 text-sm text-c-text-muted">Rising velocity across creator niches.</p></Card>;
 }

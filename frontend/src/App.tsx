@@ -13,7 +13,7 @@ import { Shell } from "@/workspace/Shell";
 const AUTH_ROUTES = ["/login", "/register"];
 
 const Splash = () => (
-  <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#080b12]">
+  <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background">
     <ViraloIcon size={40} />
     <div className="h-5 w-5 rounded-full border-2 border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
   </div>
@@ -58,12 +58,12 @@ export default function App() {
   }
 
   /* ── Workspace pages ── */
-  if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage page="billing" />;
-  if (path === "/notifications") return <WorkspacePage page="notifications" />;
-  if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage page="upload" />;
+  if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage key="billing" page="billing" />;
+  if (path === "/notifications") return <WorkspacePage key="notifications" page="notifications" />;
+  if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage key={path} page="upload" />;
 
   const page = routeToPage(path);
-  if (page) return <WorkspacePage page={page} />;
+  if (page) return <WorkspacePage key={page} page={page} />;
 
   /* ── Dashboard (Home) ── */
   if (path === "/") {

@@ -57,7 +57,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       onClick={() => onChange(!checked)}
       className={cn(
         "relative h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a]/40",
-        checked ? "bg-[#ff3d6a]" : "bg-zinc-700/60"
+        checked ? "bg-[#ff3d6a]" : "bg-surface-3"
       )}
     >
       <span className={cn(
@@ -76,11 +76,11 @@ function FieldRow({
   return (
     <div className={cn(
       "flex items-center justify-between gap-6 px-5 py-4",
-      border && "border-b border-white/[.055] last:border-0"
+      border && "border-b border-c-border last:border-0"
     )}>
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium text-zinc-200">{label}</p>
-        {hint && <p className="mt-0.5 text-[12px] text-zinc-500">{hint}</p>}
+        <p className="text-[13px] font-medium text-c-text">{label}</p>
+        {hint && <p className="mt-0.5 text-[12px] text-c-text-muted">{hint}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -97,7 +97,7 @@ function TextInput({ placeholder, value, onChange, mono, className }: {
       placeholder={placeholder}
       onChange={e => onChange?.(e.target.value)}
       className={cn(
-        "h-8 rounded-[8px] border border-white/[.08] bg-[#0e1420] px-3 text-[13px] text-zinc-200 placeholder-zinc-600",
+        "h-8 rounded-[8px] border border-c-border bg-surface-1 px-3 text-[13px] text-c-text placeholder:text-c-text-muted",
         "transition-colors focus:border-[#ff3d6a]/50 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20",
         mono && "font-mono text-xs tracking-tight",
         className
@@ -113,7 +113,7 @@ function OutlineBtn({ children, onClick, disabled }: {
     <button
       onClick={onClick}
       disabled={disabled}
-      className="h-8 cursor-pointer rounded-[8px] border border-white/[.08] px-3 text-[13px] font-medium text-zinc-400 transition-colors hover:border-white/[.14] hover:text-zinc-200 disabled:opacity-40"
+      className="h-8 cursor-pointer rounded-[8px] border border-c-border px-3 text-[13px] font-medium text-c-text-muted transition-colors hover:border-c-border-hover hover:text-c-text disabled:opacity-40"
     >
       {children}
     </button>
@@ -136,7 +136,7 @@ function PrimaryBtn({ children, onClick, disabled }: {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-[10px] border border-white/[.055] bg-[#0e1420]">
+    <div className="overflow-hidden rounded-[10px] border border-c-border bg-surface-1">
       {children}
     </div>
   );
@@ -146,12 +146,12 @@ function FieldSkeleton({ rows = 3 }: { rows?: number }) {
   return (
     <Card>
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex items-center justify-between px-5 py-4 border-b border-white/[.055] last:border-0">
+        <div key={i} className="flex items-center justify-between px-5 py-4 border-b border-c-border last:border-0">
           <div className="space-y-1.5">
-            <Skeleton className="h-3.5 w-32 bg-white/[.04]" />
-            <Skeleton className="h-3 w-48 bg-white/[.025]" />
+            <Skeleton className="h-3.5 w-32 bg-surface-glass" />
+            <Skeleton className="h-3 w-48 bg-surface-glass" />
           </div>
-          <Skeleton className="h-8 w-24 rounded-[8px] bg-white/[.04]" />
+          <Skeleton className="h-8 w-24 rounded-[8px] bg-surface-glass" />
         </div>
       ))}
     </Card>
@@ -202,7 +202,7 @@ function ProfileSection() {
           />
         </FieldRow>
         <FieldRow label="Email" hint="Login email — cannot be changed here." border={false}>
-          <span className="text-[13px] text-zinc-500">{data.email}</span>
+          <span className="text-[13px] text-c-text-muted">{data.email}</span>
         </FieldRow>
       </Card>
       <SaveBar onSave={save} saving={saving} />
@@ -234,11 +234,11 @@ function WorkspaceSection() {
           <TextInput value={data.display_name} onChange={v => setData(d => d && { ...d, display_name: v })} className="w-48" />
         </FieldRow>
         <FieldRow label="Workspace URL" hint="Used for sharing links.">
-          <div className="flex h-8 items-center rounded-[8px] border border-white/[.08] bg-[#0e1420] px-3 transition-colors focus-within:border-[#ff3d6a]/50">
-            <span className="text-[12px] text-zinc-600 select-none">viralo.co/</span>
+          <div className="flex h-8 items-center rounded-[8px] border border-c-border bg-surface-1 px-3 transition-colors focus-within:border-[#ff3d6a]/50">
+            <span className="text-[12px] text-c-text-muted select-none">viralo.co/</span>
             <input
               defaultValue={data.subdomain}
-              className="w-28 bg-transparent text-[13px] text-zinc-200 focus:outline-none"
+              className="w-28 bg-transparent text-[13px] text-c-text focus:outline-none"
             />
           </div>
         </FieldRow>
@@ -247,13 +247,13 @@ function WorkspaceSection() {
             <select
               value={data.timezone}
               onChange={e => setData(d => d && { ...d, timezone: e.target.value })}
-              className="h-8 cursor-pointer appearance-none rounded-[8px] border border-white/[.08] bg-[#0e1420] pl-3 pr-8 text-[13px] text-zinc-200 focus:border-[#ff3d6a]/50 focus:outline-none"
+              className="h-8 cursor-pointer appearance-none rounded-[8px] border border-c-border bg-surface-1 pl-3 pr-8 text-[13px] text-c-text focus:border-[#ff3d6a]/50 focus:outline-none"
             >
               {["UTC","America/New_York","America/Los_Angeles","Europe/London","Asia/Kolkata","Asia/Singapore","Asia/Tokyo"].map(tz => (
                 <option key={tz} value={tz}>{tz.replace("_", " ")}</option>
               ))}
             </select>
-            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-[10px]">▾</span>
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted text-[10px]">▾</span>
           </div>
         </FieldRow>
       </Card>
@@ -288,7 +288,7 @@ function BrandSection() {
       <Card>
         <FieldRow label="Primary color" hint="Used on exported clips, thumbnails, and overlays.">
           <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-[6px] border border-white/[.08]" style={{ background: data.primary_color }} />
+            <div className="h-7 w-7 rounded-[6px] border border-c-border" style={{ background: data.primary_color }} />
             <TextInput mono value={data.primary_color} onChange={v => setData(d => d && { ...d, primary_color: v })} className="w-24" />
           </div>
         </FieldRow>
@@ -303,11 +303,11 @@ function BrandSection() {
             <select
               value={data.font}
               onChange={e => setData(d => d && { ...d, font: e.target.value })}
-              className="h-8 cursor-pointer appearance-none rounded-[8px] border border-white/[.08] bg-[#0e1420] pl-3 pr-8 text-[13px] text-zinc-200 focus:border-[#ff3d6a]/50 focus:outline-none"
+              className="h-8 cursor-pointer appearance-none rounded-[8px] border border-c-border bg-surface-1 pl-3 pr-8 text-[13px] text-c-text focus:border-[#ff3d6a]/50 focus:outline-none"
             >
               {["Inter","Geist","DM Sans","Sora","Poppins"].map(f => <option key={f}>{f}</option>)}
             </select>
-            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-[10px]">▾</span>
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted text-[10px]">▾</span>
           </div>
         </FieldRow>
       </Card>
@@ -335,33 +335,33 @@ function BillingSection() {
     <Card>
       <div className="flex items-start justify-between gap-4 px-5 py-5">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-1">Current plan</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-c-text-muted mb-1">Current plan</p>
           {sub ? (
             <>
-              <p className="text-xl font-bold capitalize text-white tracking-tight">{sub.plan_name}</p>
+              <p className="text-xl font-bold capitalize text-c-text tracking-tight">{sub.plan_name}</p>
               {sub.current_period_end && (
-                <p className="mt-0.5 text-[12px] text-zinc-500">
+                <p className="mt-0.5 text-[12px] text-c-text-muted">
                   Renews {new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                 </p>
               )}
             </>
           ) : (
-            <Skeleton className="mt-1 h-6 w-16 bg-white/[.06]" />
+            <Skeleton className="mt-1 h-6 w-16 bg-surface-glass" />
           )}
         </div>
         <OutlineBtn>Manage plan</OutlineBtn>
       </div>
 
-      <div className="border-t border-white/[.055] px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-zinc-500 mb-4">Usage this period</p>
+      <div className="border-t border-c-border px-5 py-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-c-text-muted mb-4">Usage this period</p>
         <div className="space-y-3.5">
           {usageRows.map(({ label, used, total, suffix }) => (
             <div key={label}>
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-[13px] text-zinc-300">{label}</p>
-                <p className="tabular-nums text-[12px] text-zinc-500">{used}{suffix}<span className="text-zinc-700"> / {total}{suffix}</span></p>
+                <p className="text-[13px] text-c-text-secondary">{label}</p>
+                <p className="tabular-nums text-[12px] text-c-text-muted">{used}{suffix}<span className="text-c-text-muted opacity-50"> / {total}{suffix}</span></p>
               </div>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-white/[.05]">
+              <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{
@@ -452,7 +452,7 @@ function ApiKeysSection() {
         <div className="rounded-[10px] border border-emerald-800/40 bg-emerald-950/20 p-4">
           <p className="mb-2.5 text-[12px] font-semibold text-emerald-400">Copy this key — it won't be shown again.</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto rounded-[8px] bg-black/30 px-3 py-2 font-mono text-[12px] text-emerald-300">
+            <code className="flex-1 overflow-x-auto rounded-[8px] bg-surface-2 px-3 py-2 font-mono text-[12px] text-emerald-600 dark:text-emerald-300">
               {revealedKey}
             </code>
             <button
@@ -466,9 +466,9 @@ function ApiKeysSection() {
       )}
 
       <Card>
-        <div className="flex items-end gap-2 px-5 py-4 border-b border-white/[.055]">
+        <div className="flex items-end gap-2 px-5 py-4 border-b border-c-border">
           <div className="flex-1">
-            <p className="mb-1.5 text-[12px] text-zinc-500">Key name</p>
+            <p className="mb-1.5 text-[12px] text-c-text-muted">Key name</p>
             <TextInput placeholder="e.g. Production" value={newKeyName} onChange={setNewKeyName} className="w-full" />
           </div>
           <PrimaryBtn onClick={create} disabled={creating || !newKeyName.trim()}>
@@ -477,18 +477,18 @@ function ApiKeysSection() {
         </div>
 
         {keys === null ? (
-          <div className="px-5 py-4"><Skeleton className="h-12 rounded-[8px] bg-white/[.04]" /></div>
+          <div className="px-5 py-4"><Skeleton className="h-12 rounded-[8px] bg-surface-glass" /></div>
         ) : keys.length === 0 ? (
-          <p className="px-5 py-6 text-center text-[13px] text-zinc-600">No API keys yet.</p>
+          <p className="px-5 py-6 text-center text-[13px] text-c-text-muted">No API keys yet.</p>
         ) : (
           keys.map(k => (
-            <div key={k.id} className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[.055] last:border-0">
+            <div key={k.id} className="flex items-center gap-3 px-5 py-3.5 border-b border-c-border last:border-0">
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium text-zinc-200">{k.name}</p>
-                <p className="mt-0.5 font-mono text-[11px] text-zinc-500">{k.key_prefix}</p>
+                <p className="text-[13px] font-medium text-c-text">{k.name}</p>
+                <p className="mt-0.5 font-mono text-[11px] text-c-text-muted">{k.key_prefix}</p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <p className="text-[12px] text-zinc-600">{new Date(k.created_at).toLocaleDateString()}</p>
+                <p className="text-[12px] text-c-text-muted">{new Date(k.created_at).toLocaleDateString()}</p>
                 <button
                   onClick={() => revoke(k.id)}
                   disabled={revoking === k.id}
@@ -502,7 +502,7 @@ function ApiKeysSection() {
         )}
       </Card>
 
-      <p className="text-[12px] text-zinc-600">Never share API keys in client-side code or public repos — they grant full workspace access.</p>
+      <p className="text-[12px] text-c-text-muted">Never share API keys in client-side code or public repos — they grant full workspace access.</p>
     </div>
   );
 }
@@ -525,11 +525,11 @@ export function SettingsPage() {
   const section = SECTIONS.find(s => s.id === active)!;
 
   return (
-    <div className="flex min-h-[calc(100vh-116px)] overflow-hidden rounded-[12px] border border-white/[.055]">
+    <div className="flex min-h-[calc(100vh-116px)] overflow-hidden rounded-[12px] border border-c-border">
 
       {/* Sidebar */}
-      <nav className="hidden w-[200px] shrink-0 flex-col border-r border-white/[.055] bg-[#0e1420] p-2 sm:flex">
-        <p className="px-2.5 pt-3 pb-2 text-[9.5px] font-bold uppercase tracking-[.14em] text-zinc-600">Settings</p>
+      <nav className="hidden w-[200px] shrink-0 flex-col border-r border-c-border bg-surface-1 p-2 sm:flex">
+        <p className="px-2.5 pt-3 pb-2 text-[9.5px] font-bold uppercase tracking-[.14em] text-c-text-muted">Settings</p>
         {SECTIONS.map(s => (
           <button
             key={s.id}
@@ -537,8 +537,8 @@ export function SettingsPage() {
             className={cn(
               "relative mb-0.5 flex w-full cursor-pointer items-center gap-2.5 overflow-hidden rounded-[8px] px-2.5 py-2 text-left text-[13px] font-medium transition-colors",
               active === s.id
-                ? "bg-white/[.04] text-white before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
-                : "text-zinc-400 hover:bg-[#141926] hover:text-zinc-200"
+                ? "bg-surface-glass text-c-text before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
+                : "text-c-text-muted hover:bg-surface-2 hover:text-c-text"
             )}
           >
             <span className={cn("shrink-0 transition-opacity", active === s.id ? "opacity-100" : "opacity-60")}>
@@ -550,14 +550,14 @@ export function SettingsPage() {
       </nav>
 
       {/* Mobile strip */}
-      <div className="sm:hidden border-b border-white/[.055] bg-[#0e1420] flex overflow-x-auto gap-0.5 p-1.5">
+      <div className="sm:hidden border-b border-c-border bg-surface-1 flex overflow-x-auto gap-0.5 p-1.5">
         {SECTIONS.map(s => (
           <button
             key={s.id}
             onClick={() => setActive(s.id)}
             className={cn(
               "shrink-0 cursor-pointer rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-colors",
-              active === s.id ? "bg-white/[.06] text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+              active === s.id ? "bg-surface-glass text-c-text" : "text-c-text-muted hover:text-c-text"
             )}
           >
             {s.label}
@@ -566,14 +566,14 @@ export function SettingsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto bg-[#080d14]">
+      <div className="flex-1 overflow-y-auto bg-surface-0">
         {/* Section header */}
-        <div className="border-b border-white/[.055] px-7 py-5">
+        <div className="border-b border-c-border px-7 py-5">
           <div className="flex items-center gap-2.5 mb-0.5">
             <span className="text-[#ff3d6a]">{section.icon}</span>
-            <h1 className="text-[15px] font-semibold text-white">{section.label}</h1>
+            <h1 className="text-[15px] font-semibold text-c-text">{section.label}</h1>
           </div>
-          <p className="text-[13px] text-zinc-500">{section.desc}</p>
+          <p className="text-[13px] text-c-text-muted">{section.desc}</p>
         </div>
 
         {/* Section body */}

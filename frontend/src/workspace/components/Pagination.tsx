@@ -19,10 +19,8 @@ export function Pagination({
   const first = total === 0 ? 0 : (page - 1) * perPage + 1;
   const last = Math.min(total, page * perPage);
 
-  if (total <= perPage && page <= 1) return null;
-
   return (
-    <div className={cn("flex flex-col gap-3 border-t border-white/[.06] px-4 py-3 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between", className)}>
+    <div className={cn("flex flex-col gap-3 border-t border-c-border px-4 py-3 text-xs text-c-text-muted sm:flex-row sm:items-center sm:justify-between", className)}>
       <span>
         {first}-{last} of {total} {itemLabel} · Page {page} of {totalPages}
       </span>
@@ -31,7 +29,7 @@ export function Pagination({
           type="button"
           disabled={page <= 1}
           onClick={() => onPageChange(1)}
-          className="rounded-[8px] border border-white/[.07] bg-white/[.03] px-2.5 py-1.5 font-semibold text-zinc-400 transition hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-[8px] border border-c-border bg-surface-1 px-2.5 py-1.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
         >
           First
         </button>
@@ -39,7 +37,7 @@ export function Pagination({
           type="button"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
-          className="rounded-[8px] border border-white/[.07] bg-white/[.03] px-3 py-1.5 font-semibold text-zinc-400 transition hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-[8px] border border-c-border bg-surface-1 px-3 py-1.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Previous
         </button>
@@ -47,7 +45,7 @@ export function Pagination({
           type="button"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
-          className="rounded-[8px] border border-white/[.07] bg-white/[.03] px-3 py-1.5 font-semibold text-zinc-400 transition hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-[8px] border border-c-border bg-surface-1 px-3 py-1.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next
         </button>

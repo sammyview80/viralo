@@ -63,15 +63,15 @@ export function OAuthCallbackPage() {
   }, []);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-[#080b12] px-4">
-      <div className="w-full max-w-[380px] overflow-hidden rounded-[20px] border border-white/[.09] bg-[#0e1420] p-8 text-center shadow-[0_32px_80px_rgba(0,0,0,.6)]">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface-0 px-4">
+      <div className="w-full max-w-[380px] overflow-hidden rounded-[20px] border border-c-border bg-surface-1 p-8 text-center shadow-[0_32px_80px_rgba(0,0,0,.3)]">
         {status === "loading" && (
           <>
             <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[14px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10">
               <span className="block h-6 w-6 rounded-full border-[3px] border-[#ff3d6a]/30 border-t-[#ff3d6a] animate-spin" />
             </div>
-            <h2 className="font-display text-[18px] font-bold text-white">Connecting…</h2>
-            <p className="mt-2 text-[13px] text-zinc-500">{message}</p>
+            <h2 className="font-display text-[18px] font-bold text-c-text">Connecting…</h2>
+            <p className="mt-2 text-[13px] text-c-text-muted">{message}</p>
           </>
         )}
 
@@ -80,8 +80,8 @@ export function OAuthCallbackPage() {
             <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[14px] border border-emerald-300/25 bg-emerald-400/10 text-2xl text-emerald-300">
               ✓
             </div>
-            <h2 className="font-display text-[18px] font-bold text-white">{message}</h2>
-            <p className="mt-2 text-[13px] text-zinc-500">Redirecting to integrations…</p>
+            <h2 className="font-display text-[18px] font-bold text-c-text">{message}</h2>
+            <p className="mt-2 text-[13px] text-c-text-muted">Redirecting to integrations…</p>
           </>
         )}
 
@@ -90,11 +90,11 @@ export function OAuthCallbackPage() {
             <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[14px] border border-red-400/25 bg-red-400/10 text-2xl text-red-400">
               ✕
             </div>
-            <h2 className="font-display text-[18px] font-bold text-white">Connection failed</h2>
-            <p className="mt-2 text-[13px] text-zinc-500">{message}</p>
+            <h2 className="font-display text-[18px] font-bold text-c-text">Connection failed</h2>
+            <p className="mt-2 text-[13px] text-c-text-muted">{message}</p>
             <a
               href="/integrations"
-              className="mt-5 inline-block rounded-[9px] border border-white/[.08] bg-white/[.04] px-5 py-2 text-[13px] font-semibold text-zinc-300 transition hover:bg-white/[.08] hover:text-white"
+              className="mt-5 inline-block rounded-[9px] border border-c-border bg-surface-glass px-5 py-2 text-[13px] font-semibold text-c-text-secondary transition hover:bg-surface-2 hover:text-c-text"
             >
               ← Back to integrations
             </a>
@@ -103,7 +103,7 @@ export function OAuthCallbackPage() {
       </div>
 
       {platform && status === "loading" && (
-        <p className="text-[11.5px] text-zinc-600">
+        <p className="text-[11.5px] text-c-text-muted">
           Exchanging OAuth code for {platform} access token…
         </p>
       )}

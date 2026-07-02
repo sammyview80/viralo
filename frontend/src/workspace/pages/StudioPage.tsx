@@ -1,147 +1,188 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { platforms } from "../data";
-import { ChipRow, Panel, Phone, Ring, SelectLike } from "../components";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
 import { navigate } from "@/lib/router";
 import { videoApi, type ClipConfig, type VideoResponse } from "@/lib/api";
-import { ClipConfigPanel, DEFAULT_CONFIG, PLATFORM_OPTIONS, ASPECT_OPTIONS, LANG_OPTIONS, CAPTION_STYLES } from "./UploadPage";
-
-type StudioTab = "ai" | "upload";
-type YtStep = 0 | 1 | 2;
-type UploadStep = "source" | "destinations" | "clips" | "style" | "review";
-
-const YT_STEPS = ["Source", "Clips", "Style"] as const;
-
-// ── Template definitions ──────────────────────────────────────────────────────
-
-const TEMPLATE_DEFS = [
-  { id: null,            label: "Auto",     icon: "✦", desc: "Matched to content",   preview: "Adapts style\nto content type",      bg: "from-zinc-800 to-zinc-900",    accent: "#a1a1aa", captionStyle: "clean",    captionColor: "#fff",     captionBg: "rgba(0,0,0,.5)" },
-  { id: "sports-hype",  label: "Hype",     icon: "⚡", desc: "Bold text, blur bg",   preview: "Blurred BG\nBold white captions",   bg: "from-orange-950 to-zinc-900",  accent: "#fb923c", captionStyle: "bold",     captionColor: "#fff",     captionBg: "rgba(0,0,0,.0)" },
-  { id: "cinematic",    label: "Cinematic",icon: "🎬", desc: "Dramatic dark overlay", preview: "Dark overlay\nElegant thin text",   bg: "from-slate-950 to-zinc-900",   accent: "#94a3b8", captionStyle: "italic",   captionColor: "#e2e8f0",  captionBg: "rgba(0,0,0,.7)" },
-  { id: "gaming-clutch",label: "Clutch",   icon: "🎮", desc: "Neon gaming captions",  preview: "Neon outlines\nGaming font style",  bg: "from-violet-950 to-zinc-950",  accent: "#a855f7", captionStyle: "neon",     captionColor: "#e879f9",  captionBg: "rgba(0,0,0,.0)" },
-  { id: "talking-head", label: "Talk",     icon: "🎙", desc: "Clean, chill music",   preview: "Clean framing\nSubtle captions",    bg: "from-sky-950 to-zinc-900",     accent: "#38bdf8", captionStyle: "clean",    captionColor: "#bae6fd",  captionBg: "rgba(0,0,0,.4)" },
-  { id: "generic",      label: "Minimal",  icon: "◻", desc: "No extras, clean cut",  preview: "No music\nNo effects, pure cut",   bg: "from-zinc-900 to-black",       accent: "#71717a", captionStyle: "minimal",  captionColor: "#d4d4d8",  captionBg: "rgba(0,0,0,.6)" },
-] as const;
-
-type TemplateDef = typeof TEMPLATE_DEFS[number];
-
-function TemplatePreview({ templateId, thumbnail }: { templateId: string | null; thumbnail?: string }) {
-  const def: TemplateDef = (TEMPLATE_DEFS.find((t) => (t.id ?? null) === (templateId ?? null)) ?? TEMPLATE_DEFS[0]) as TemplateDef;
-
-  return (
-    <div className="relative mx-auto h-[260px] w-[130px] overflow-hidden rounded-[18px] border-[2.5px] border-white/[.12] bg-black shadow-[0_20px_60px_rgba(0,0,0,.6)]">
-      {/* Notch */}
-      <div className="absolute left-1/2 top-2 z-10 h-2.5 w-12 -translate-x-1/2 rounded-full bg-black/70" />
-
-      {/* Background */}
-      {thumbnail ? (
-        <img src={thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" style={{ filter: def.id === "sports-hype" ? "blur(4px) saturate(1.8)" : def.id === "cinematic" ? "brightness(.55) contrast(1.1)" : "brightness(.7)" }} />
-      ) : (
-        <div className={`absolute inset-0 bg-gradient-to-b ${def.bg}`} />
-      )}
-
-      {/* Overlay tint */}
-      <div className="absolute inset-0"
-        style={{ background: def.id === "cinematic" ? "rgba(0,0,0,.45)" : def.id === "sports-hype" ? "linear-gradient(to top, rgba(0,0,0,.8) 40%, transparent)" : "linear-gradient(to top, rgba(0,0,0,.7) 50%, transparent)" }}
-      />
-
-      {/* Accent bar — hype/clutch get a colored stripe */}
-      {(def.id === "sports-hype" || def.id === "gaming-clutch") && (
-        <div className="absolute left-0 top-0 h-full w-1" style={{ background: def.accent }} />
-      )}
-
-      {/* Mock caption */}
-      <div className="absolute bottom-10 left-0 right-0 px-3 text-center">
-        {def.captionStyle === "neon" ? (
-          <p className="text-[10px] font-black uppercase leading-tight"
-            style={{ color: def.captionColor, textShadow: `0 0 8px ${def.accent}, 0 0 20px ${def.accent}` }}>
-            THIS IS THE<br />CLUTCH MOMENT
-          </p>
-        ) : def.captionStyle === "bold" ? (
-          <p className="rounded-sm px-1 py-0.5 text-[11px] font-black uppercase leading-tight tracking-wide"
-            style={{ color: def.captionColor, WebkitTextStroke: "0.5px rgba(0,0,0,.4)" }}>
-            BIGGEST PLAY<br />OF THE NIGHT
-          </p>
-        ) : def.captionStyle === "italic" ? (
-          <p className="text-[9.5px] font-light italic leading-relaxed tracking-widest"
-            style={{ color: def.captionColor, textShadow: "0 1px 4px rgba(0,0,0,.8)" }}>
-            "The moment<br />everything changed"
-          </p>
-        ) : def.captionStyle === "minimal" ? (
-          <p className="rounded px-1.5 py-0.5 text-[9.5px] font-medium leading-tight"
-            style={{ color: def.captionColor, background: def.captionBg }}>
-            No edits, pure content
-          </p>
-        ) : (
-          <p className="rounded-md px-2 py-1 text-[9.5px] font-semibold leading-snug"
-            style={{ color: def.captionColor, background: def.captionBg }}>
-            Word by word<br />captions here
-          </p>
-        )}
-      </div>
-
-      {/* Bottom pill — simulates progress bar */}
-      <div className="absolute bottom-3 left-1/2 h-1 w-16 -translate-x-1/2 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full w-2/3 rounded-full" style={{ background: def.accent }} />
-      </div>
-    </div>
-  );
-}
+import { DEFAULT_CONFIG } from "./UploadPage";
 
 // ── YouTube Import Modal ──────────────────────────────────────────────────────
+
+type YtMeta = { title: string; thumbnail: string; duration: number | null; quality: string };
 
 interface YoutubeModalProps {
   onClose: () => void;
   initialUrl?: string;
+  prefetched?: YtMeta | null;
 }
 
-function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
-  const [step, setStep]           = useState<YtStep>(0);
+function fmtClock(sec: number | null): string {
+  if (!sec) return "--:--";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+// ── Config option sets ──────────────────────────────────────────────────────
+
+const RATIOS = ["9:16", "1:1", "16:9", "4:5"] as const;
+
+const CLIP_LENGTHS: { id: string; label: string; min?: number; max?: number }[] = [
+  { id: "any",    label: "Any length" },
+  { id: "<30",    label: "Under 30s", min: 5,  max: 30 },
+  { id: "30-60",  label: "30 – 60s",  min: 30, max: 60 },
+  { id: "60-90",  label: "60 – 90s",  min: 60, max: 90 },
+  { id: "90+",    label: "90s and up", min: 90, max: 180 },
+];
+
+const CLIP_COUNTS: { id: string; label: string; value?: number }[] = [
+  { id: "auto", label: "Auto" },
+  { id: "3",    label: "3",  value: 3 },
+  { id: "5",    label: "5",  value: 5 },
+  { id: "10",   label: "10", value: 10 },
+];
+
+const TEMPLATE_TABS = ["9:16 template", "My template", "Brand template"] as const;
+
+// Caption templates → backend caption_style. `cap` describes how the sample renders.
+type CaptionTemplate = {
+  id: string;
+  label: string;
+  caption_style: string;
+  bg: string;          // gradient bg for the preview phone
+  word: string;        // highlighted word color
+  box: boolean;        // white box behind caption
+  hl: string;          // highlight bg ("" = none)
+  italic?: boolean;
+  upper?: boolean;
+};
+
+const CAPTION_TEMPLATES: CaptionTemplate[] = [
+  { id: "default",  label: "Default",  caption_style: "classic",     bg: "from-zinc-700 to-zinc-900",     word: "#fff",     box: true,  hl: "" },
+  { id: "modern",   label: "Modern",   caption_style: "capcut",      bg: "from-amber-700 to-orange-900",  word: "#fde047", box: false, hl: "#000", upper: false },
+  { id: "bouncy",   label: "Bouncy",   caption_style: "capcut",      bg: "from-violet-600 to-fuchsia-800",word: "#fff",    box: true,  hl: "" },
+  { id: "mrbeast",  label: "Mr. Beast",caption_style: "capcut-bold", bg: "from-sky-600 to-blue-900",      word: "#22c55e", box: false, hl: "#facc15", upper: true },
+  { id: "business", label: "Business", caption_style: "minimal",     bg: "from-stone-500 to-stone-800",   word: "#e7e5e4", box: false, hl: "" },
+  { id: "clean",    label: "Clean",    caption_style: "minimal",     bg: "from-slate-600 to-slate-900",   word: "#fff",    box: false, hl: "" },
+  { id: "neon",     label: "Neon",     caption_style: "capcut-bold", bg: "from-indigo-700 to-violet-950", word: "#e879f9", box: false, hl: "" },
+];
+
+function CaptionCard({ tpl, selected, onSelect }: { tpl: CaptionTemplate; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="group shrink-0 cursor-pointer text-center"
+    >
+      <div className={cn(
+        "relative h-[200px] w-[118px] overflow-hidden rounded-[14px] border-2 bg-gradient-to-b transition",
+        tpl.bg,
+        selected ? "border-[#ff3d6a] shadow-[0_0_0_3px_rgba(255,61,106,.25)]" : "border-c-border group-hover:border-c-border-hover"
+      )}>
+        {/* top mock title */}
+        <div className="absolute left-1/2 top-3 -translate-x-1/2">
+          <span className="rounded-[4px] bg-black/55 px-1.5 py-0.5 text-[7px] font-bold text-white">Your video title</span>
+        </div>
+        {/* selected check */}
+        {selected && (
+          <span className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-[#ff3d6a] text-white shadow">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3.5}><path d="M20 6L9 17l-5-5"/></svg>
+          </span>
+        )}
+        {/* sample caption */}
+        <div className="absolute bottom-7 left-0 right-0 px-2 text-center">
+          <span
+            className={cn(
+              "inline-block text-[10px] font-black leading-tight",
+              tpl.upper && "uppercase",
+              tpl.italic && "italic",
+              tpl.box && "rounded-[4px] bg-white px-1.5 py-0.5 text-black"
+            )}
+            style={tpl.hl
+              ? { background: tpl.hl, color: tpl.word, padding: "1px 4px", borderRadius: 4, WebkitTextStroke: "0.4px rgba(0,0,0,.35)" }
+              : { color: tpl.word, textShadow: tpl.box ? "none" : "0 1px 3px rgba(0,0,0,.7)" }}
+          >
+            Here is your <span style={{ color: tpl.hl ? tpl.word : undefined }}>subtitle</span>
+          </span>
+        </div>
+      </div>
+      <p className={cn("mt-2 text-[12px] font-bold", selected ? "text-[#ff7a9a]" : "text-c-text-muted")}>{tpl.label}</p>
+    </button>
+  );
+}
+
+function FeatureCheck({ label, checked, onChange, badge }: { label: string; checked: boolean; onChange: () => void; badge?: boolean }) {
+  return (
+    <button type="button" onClick={onChange} className="flex cursor-pointer items-center gap-2 text-left">
+      <span className={cn("grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border transition", checked ? "border-[#ff3d6a] bg-[#ff3d6a]" : "border-c-border bg-surface-2")}>
+        {checked && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3.5}><path d="M20 6L9 17l-5-5"/></svg>}
+      </span>
+      <span className="text-[13px] font-semibold text-c-text">{label}</span>
+      {badge && <span className="text-[11px]">💎</span>}
+      <span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-c-border text-[8px] font-bold text-c-text-muted">i</span>
+    </button>
+  );
+}
+
+function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null }: YoutubeModalProps) {
   const [urlVal, setUrlVal]       = useState(initialUrl);
-  const [urlReady, setUrlReady]   = useState(false);
-  const [ytMeta, setYtMeta]       = useState<{ title: string; thumbnail: string } | null>(null);
-  const [ytMetaLoading, setYtMetaLoading] = useState(false);
-  const [precisionMode, setPrecisionMode] = useState(false);
-  const [clipConfig, setClipConfig] = useState<ClipConfig>(DEFAULT_CONFIG);
+  const [urlReady, setUrlReady]   = useState(Boolean(prefetched));
+  const [ytMeta, setYtMeta]       = useState<YtMeta | null>(prefetched);
+  // When metadata is prefetched on the homepage, the modal opens already populated.
+  const [ytMetaLoading, setYtMetaLoading] = useState(Boolean(initialUrl.trim()) && !prefetched);
+  // URL whose metadata we already hold — skip the effect's refetch for it.
+  const fetchedUrlRef = useRef(prefetched ? initialUrl.trim() : "");
   const [uploading, setUploading] = useState(false);
   const [error, setError]         = useState("");
 
+  // config state
+  const [ratio, setRatio]         = useState<string>("9:16");
+  const [clipLen, setClipLen]     = useState<string>("any");
+  const [clipCount, setClipCount] = useState<string>("auto");
+  const [tab, setTab]             = useState<typeof TEMPLATE_TABS[number]>("9:16 template");
+  const [template, setTemplate]   = useState<string>("mrbeast");
+  const [feat, setFeat]           = useState({ emoji: true, highlight: true, silences: false, brolls: false });
+  const [findMoment, setFindMoment] = useState("");
+  const [autoSchedule, setAutoSchedule] = useState(false);
+
+  const carouselRef = useRef<HTMLDivElement>(null);
+
   // validate + fetch metadata
   useEffect(() => {
-    if (!urlVal.trim()) { setUrlReady(false); setYtMeta(null); setError(""); return; }
+    if (!urlVal.trim()) { setUrlReady(false); setYtMeta(null); setYtMetaLoading(false); setError(""); return; }
+    // Already have this URL's metadata (prefetched on the homepage) — don't refetch.
+    if (urlVal.trim() === fetchedUrlRef.current) return;
+    let alive = true;
     const t = setTimeout(async () => {
-      const valid = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?.*v=|shorts\/|embed\/)|youtu\.be\/)[\w-]{11}/.test(urlVal.trim());
+      const v = urlVal.trim();
+      const valid = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?.*v=|shorts\/|embed\/)|youtu\.be\/)[\w-]{11}/.test(v);
       setUrlReady(valid);
-      if (!valid) { setError("Enter a valid YouTube URL"); setYtMeta(null); return; }
+      if (!valid) { setError("Enter a valid YouTube URL"); setYtMeta(null); setYtMetaLoading(false); return; }
       setError("");
+      setYtMeta(null);
       setYtMetaLoading(true);
+      const vidId = v.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1] ?? "";
+      const thumbnail = vidId ? `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg` : "";
       try {
-        const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(urlVal.trim())}&format=json`);
-        if (r.ok) {
-          const d = await r.json();
-          const vidId = urlVal.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1] ?? "";
-          setYtMeta({
-            title: d.title || "",
-            thumbnail: vidId ? `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg` : (d.thumbnail_url || ""),
-          });
+        const m = await videoApi.youtubeInspect(v);
+        if (!alive) return;
+        fetchedUrlRef.current = v;
+        setYtMeta({ title: m.title || "", thumbnail: m.thumbnail_url || thumbnail, duration: m.duration_sec ?? null, quality: "1080p" });
+      } catch {
+        try {
+          const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(v)}&format=json`);
+          const d = r.ok ? await r.json() : {};
+          if (!alive) return;
+          setYtMeta({ title: d.title || "", thumbnail: thumbnail || d.thumbnail_url || "", duration: null, quality: "1080p" });
+        } catch {
+          if (alive) setError("Could not load video details");
         }
-      } catch { /* non-fatal */ }
-      finally { setYtMetaLoading(false); }
+      } finally {
+        if (alive) setYtMetaLoading(false);
+      }
     }, 600);
-    return () => clearTimeout(t);
+    return () => { alive = false; clearTimeout(t); };
   }, [urlVal]);
-
-  // If opened with a prefilled URL, skip to step 1 once validated
-  useEffect(() => {
-    if (initialUrl && urlReady && step === 0) setStep(1);
-  }, [urlReady]);
 
   // ESC to close
   useEffect(() => {
@@ -151,417 +192,228 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
   }, [onClose]);
 
   const handleImport = useCallback(async () => {
-    if (!urlVal.trim()) return;
+    if (!urlVal.trim() || !urlReady) return;
     setUploading(true);
     setError("");
     try {
-      const cfg: ClipConfig = precisionMode ? { ...clipConfig, precision_mode: true } : clipConfig;
+      const tpl = CAPTION_TEMPLATES.find((t) => t.id === template);
+      const len = CLIP_LENGTHS.find((c) => c.id === clipLen);
+      const cnt = CLIP_COUNTS.find((c) => c.id === clipCount);
+      const cfg: ClipConfig = {
+        ...DEFAULT_CONFIG,
+        output_quality: "source",
+        aspect_ratio: ratio,
+        add_captions: true,
+        caption_style: tpl?.caption_style ?? DEFAULT_CONFIG.caption_style,
+        ...(len?.min != null ? { duration_min: len.min, duration_max: len.max } : {}),
+        ...(cnt?.value != null ? { max_clips: cnt.value } : {}),
+        ...(findMoment.trim() ? { topic_focus: findMoment.trim() } : {}),
+      };
       const video = await videoApi.youtube(urlVal.trim(), undefined, cfg);
       navigate(`/projects/${video.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, clipConfig, precisionMode]);
+  }, [urlVal, urlReady, ratio, clipLen, clipCount, template, findMoment]);
 
-  const back = () => setStep((s) => Math.max(0, s - 1) as YtStep);
+  const selectClass = "flex h-[50px] items-center gap-2 rounded-[12px] border border-c-border bg-surface-2 px-3.5 transition focus-within:border-[#ff3d6a]/50";
 
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
-      {/* Dialog */}
-      <div className="relative flex h-[760px] w-full max-w-[600px] flex-col overflow-hidden rounded-[24px] border border-white/[.09] bg-[#0b1018] shadow-[0_40px_120px_rgba(0,0,0,.7)]">
+      <div className="relative flex max-h-[92vh] w-full max-w-[680px] flex-col overflow-hidden rounded-[20px] border border-c-border bg-surface-0 shadow-[0_40px_120px_rgba(0,0,0,.7)]">
 
-        {/* Header */}
-        <div className="relative flex items-center gap-3 border-b border-white/[.07] bg-[radial-gradient(circle_at_8%_0%,rgba(248,113,113,.14),transparent_40%)] px-5 py-4">
-          {step > 0 && (
-            <button
-              onClick={back}
-              className="grid h-8 w-8 cursor-pointer place-items-center rounded-[9px] border border-white/[.08] bg-white/[.04] text-zinc-400 transition hover:bg-white/[.08] hover:text-white"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M15 18l-6-6 6-6"/></svg>
-            </button>
-          )}
-
-          {/* Step indicators */}
-          <div className="flex flex-1 items-center gap-0">
-            {YT_STEPS.map((label, i) => {
-              const done = i < step;
-              const active = i === step;
-              return (
-                <div key={label} className="flex min-w-0 flex-1 items-center">
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <div className={cn(
-                      "grid h-[22px] w-[22px] place-items-center rounded-full text-[10px] font-bold transition-all duration-200",
-                      done    ? "bg-[#ff3d6a] text-white shadow-[0_0_10px_rgba(255,61,106,.4)]"
-                      : active ? "border-2 border-[#ff3d6a] text-[#ff7a9a]"
-                      : "border border-white/[.12] text-zinc-600"
-                    )}>
-                      {done
-                        ? <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3.5}><path d="M20 6L9 17l-5-5"/></svg>
-                        : i + 1}
-                    </div>
-                    <span className={cn(
-                      "text-[11.5px] font-semibold transition",
-                      active ? "text-white" : done ? "text-zinc-500" : "text-zinc-600"
-                    )}>{label}</span>
-                  </div>
-                  {i < YT_STEPS.length - 1 && (
-                    <div className={cn(
-                      "mx-2.5 h-px flex-1 transition-all duration-300",
-                      done ? "bg-[#ff3d6a]/40" : "bg-white/[.06]"
-                    )} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Close */}
-          <button
-            onClick={onClose}
-            className="ml-2 grid h-8 w-8 cursor-pointer place-items-center rounded-full border border-white/[.08] bg-white/[.04] text-zinc-400 transition hover:bg-white/[.08] hover:text-white"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-
-        {/* ── Step 0: Source + Confirm ── */}
-        {step === 0 && (
-          <div className="flex-1 p-7">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-red-400/25 bg-red-400/[.10]">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
+        {/* URL input — only when no video and not loading */}
+        {!ytMeta && !ytMetaLoading && (
+          <div className="p-5">
+            <div className="mb-3 flex items-center gap-2.5">
+              <span className="grid h-9 w-9 place-items-center rounded-[11px] border border-red-400/25 bg-red-400/[.10]">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
+              </span>
+              <div className="min-w-0">
+                <h2 className="font-display text-[15px] font-bold text-c-text">Import from YouTube</h2>
+                <p className="text-[11.5px] text-c-text-muted">Paste a link to preview the video.</p>
               </div>
-              <div>
-                <h2 className="font-display text-[18px] font-bold text-white">Import from YouTube</h2>
-                <p className="text-[12px] text-zinc-500">Paste URL, confirm video, choose clip mode</p>
-              </div>
+              <button onClick={onClose} className="ml-auto grid h-8 w-8 place-items-center rounded-[9px] border border-c-border bg-surface-2 text-c-text-muted transition hover:bg-surface-3 hover:text-c-text">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
             </div>
-
-            {/* URL input */}
-            <div className="relative mb-3">
-              <Input
-                autoFocus
-                value={urlVal}
-                onChange={(e) => setUrlVal(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && urlReady && setStep(1)}
-                placeholder="https://youtube.com/watch?v=…"
-                aria-label="YouTube video URL"
-                className="h-[52px] rounded-[13px] border-white/[.09] bg-[#060b12] pr-28 text-[14px] font-medium placeholder:text-zinc-600 focus:border-[#ff3d6a]/50 focus:ring-4 focus:ring-[#ff3d6a]/10"
-              />
-              <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-full border border-white/[.07] bg-white/[.04] px-2.5 py-1 text-[10px] font-bold text-zinc-600 sm:block">YouTube</span>
-            </div>
-
-            {/* Video preview */}
-            {urlVal.trim() && (
-              <div className="mb-4">
-                {ytMetaLoading ? (
-                  <Card className="flex items-center gap-3 rounded-[14px] border-white/[.07] bg-white/[.03] p-3">
-                    <Skeleton className="h-14 w-24 flex-shrink-0 rounded-[8px] bg-zinc-800/80" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-3 w-3/4 rounded-full bg-zinc-800/80" />
-                      <Skeleton className="h-2.5 w-1/2 rounded-full bg-zinc-800/60" />
-                    </div>
-                  </Card>
-                ) : ytMeta ? (
-                  <div className="flex items-center gap-3 overflow-hidden rounded-[14px] border border-emerald-500/[.15] bg-[#081210] p-3">
-                    <div className="relative h-14 w-24 flex-shrink-0 overflow-hidden rounded-[8px] bg-zinc-800">
-                      <img src={ytMeta.thumbnail} alt={ytMeta.title} className="h-full w-full object-cover" />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-red-600/90">
-                          <svg viewBox="0 0 24 24" fill="white" className="ml-0.5 h-3 w-3"><path d="M8 5v14l11-7z"/></svg>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-bold text-white">{ytMeta.title}</p>
-                      <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold text-emerald-400">
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3.5}><path d="M20 6L9 17l-5-5"/></svg>
-                        Verified
-                      </span>
-                    </div>
-                  </div>
-                ) : error ? (
-                  <div className="flex items-center gap-2 rounded-[12px] border border-red-400/20 bg-red-400/[.07] px-3.5 py-2.5 text-[12px] font-medium text-red-400">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    {error}
-                  </div>
-                ) : null}
-              </div>
-            )}
-
-            {/* Clip mode */}
-            <div className="mb-5 grid grid-cols-2 gap-2">
-              {([
-                [false, "Multi Clip",      "Extract multiple viral moments"],
-                [true,  "Best Viral Clip", "Single clip · 9.5+ virality score"],
-              ] as [boolean, string, string][]).map(([isPrecision, label, desc]) => (
-                <button key={label} onClick={() => setPrecisionMode(isPrecision)}
-                  className={cn(
-                    "cursor-pointer rounded-[13px] border p-3.5 text-left transition",
-                    precisionMode === isPrecision
-                      ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
-                      : "border-white/[.07] bg-white/[.02] hover:border-white/[.12] hover:bg-white/[.035]"
-                  )}>
-                  <p className={cn("text-[13px] font-bold", precisionMode === isPrecision ? "text-white" : "text-zinc-300")}>{label}</p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">{desc}</p>
-                </button>
-              ))}
-            </div>
-
-            {/* Platforms */}
-            <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Destinations</p>
-            <div className="mb-4 grid grid-cols-3 gap-2">
-              {PLATFORM_OPTIONS.map((p) => {
-                const active = (clipConfig.platforms ?? []).includes(p.id);
-                return (
-                  <button key={p.id} type="button"
-                    onClick={() => {
-                      const cur = clipConfig.platforms ?? [];
-                      setClipConfig({ ...clipConfig, platforms: active ? cur.filter((x) => x !== p.id) : [...cur, p.id] });
-                    }}
-                    className={cn(
-                      "flex cursor-pointer items-center justify-center gap-1.5 rounded-[11px] border py-2.5 text-[12px] font-semibold transition",
-                      active ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:border-white/[.13] hover:text-zinc-200"
-                    )}>
-                    <span className="text-[13px]">{p.ltr}</span>{p.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Aspect ratio + Language */}
-            <div className="mb-5 grid grid-cols-2 gap-2">
-              <div className="rounded-[12px] border border-white/[.07] bg-white/[.025] p-3">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Aspect ratio</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {ASPECT_OPTIONS.map((r) => (
-                    <button key={r} type="button" onClick={() => setClipConfig({ ...clipConfig, aspect_ratio: r })}
-                      className={cn(
-                        "cursor-pointer rounded-[8px] border py-1.5 text-center text-[12px] font-semibold transition",
-                        clipConfig.aspect_ratio === r ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.07] bg-white/[.02] text-zinc-400 hover:border-white/[.13]"
-                      )}>{r}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-[12px] border border-white/[.07] bg-white/[.025] p-3">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Language</p>
-                <select value={clipConfig.language ?? "en"} onChange={(e) => setClipConfig({ ...clipConfig, language: e.target.value })}
-                  className="w-full rounded-[9px] border border-white/[.08] bg-[#060b12] px-3 py-2 text-[13px] text-zinc-100 outline-none focus:border-[#ff3d6a]/50">
-                  {LANG_OPTIONS.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <Button disabled={!urlReady} onClick={() => setStep(1)} className="h-[52px] w-full rounded-[13px] text-[14px] font-bold">
-              Continue to Clip settings
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="ml-1"><path d="M9 18l6-6-6-6"/></svg>
-            </Button>
-          </div>
-        )}
-
-        {/* ── Step 1: Clips ── */}
-        {step === 1 && (
-          <div className="flex-1 p-7">
-            <div className="mb-5">
-              <h2 className="font-display text-[18px] font-bold text-white">Clip settings</h2>
-              <p className="text-[12px] text-zinc-500">Control quantity, quality threshold, and focus.</p>
-            </div>
-
-            {/* Target length */}
-            <div className="mb-4 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <p className="mb-3 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Target length (seconds)</p>
-              <div className="grid grid-cols-[1fr_28px_1fr] items-center gap-2">
-                <input type="number" min={5} max={clipConfig.duration_max} value={clipConfig.duration_min}
-                  onChange={(e) => setClipConfig({ ...clipConfig, duration_min: Number(e.target.value) })}
-                  className="w-full rounded-[10px] border border-white/[.08] bg-[#060b12] px-3 py-2.5 text-center text-[14px] font-bold text-zinc-100 outline-none focus:border-[#ff3d6a]/50" />
-                <span className="text-center text-[11px] text-zinc-600">to</span>
-                <input type="number" min={clipConfig.duration_min} max={300} value={clipConfig.duration_max}
-                  onChange={(e) => setClipConfig({ ...clipConfig, duration_max: Number(e.target.value) })}
-                  className="w-full rounded-[10px] border border-white/[.08] bg-[#060b12] px-3 py-2.5 text-center text-[14px] font-bold text-zinc-100 outline-none focus:border-[#ff3d6a]/50" />
-              </div>
-            </div>
-
-            {/* Max clips */}
-            <div className="mb-4 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Max clips</p>
-                <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-0.5 text-[12px] font-bold text-[#ff5f86]">{clipConfig.max_clips}</span>
-              </div>
-              <input type="range" min={1} max={20} value={clipConfig.max_clips}
-                onChange={(e) => setClipConfig({ ...clipConfig, max_clips: Number(e.target.value) })}
-                className="w-full accent-[#ff3d6a]" />
-              <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>1 focused</span><span>20 batch</span></div>
-            </div>
-
-            {/* Viral score */}
-            <div className="mb-4 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Min virality score</p>
-                <span className="rounded-full border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 px-2.5 py-0.5 text-[12px] font-bold text-[#ff5f86]">{Math.round((clipConfig.min_score ?? 0.5) * 10)}/10</span>
-              </div>
-              <input type="range" min={0} max={10} step={1} value={Math.round((clipConfig.min_score ?? 0.5) * 10)}
-                onChange={(e) => setClipConfig({ ...clipConfig, min_score: Number(e.target.value) / 10 })}
-                className="w-full accent-[#ff3d6a]" />
-              <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any usable</span><span>Balanced</span><span>Viral only</span></div>
-            </div>
-
-            {/* Topic focus */}
-            <div className="mb-5 rounded-[13px] border border-white/[.07] bg-white/[.025] p-4">
-              <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Topic focus <span className="normal-case tracking-normal text-zinc-600">optional</span></p>
-              <input type="text"
-                placeholder="e.g. controversial moment, product demo…"
-                value={clipConfig.topic_focus ?? ""}
-                onChange={(e) => setClipConfig({ ...clipConfig, topic_focus: e.target.value || null })}
-                className="w-full rounded-[10px] border border-white/[.08] bg-[#060b12] px-3 py-2.5 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-[#ff3d6a]/50" />
-            </div>
-
-            <Button onClick={() => setStep(2)} className="h-[52px] w-full rounded-[13px] text-[14px] font-bold">
-              Next — Style & export
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="ml-1"><path d="M9 18l6-6-6-6"/></svg>
-            </Button>
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={handleImport}
-              className="mt-2.5 w-full cursor-pointer rounded-[13px] border border-white/[.07] bg-transparent py-3 text-[12.5px] font-semibold text-zinc-500 transition hover:border-white/[.13] hover:text-zinc-300 disabled:opacity-40"
-            >
-              Skip style — import with defaults
-            </button>
-          </div>
-        )}
-
-        {/* ── Step 2: Style ── */}
-        {step === 2 && (
-          <div className="flex flex-1 gap-0">
-            {/* Left: controls */}
-            <div className="flex flex-1 flex-col p-6">
-              <div className="mb-4">
-                <h2 className="font-display text-[18px] font-bold text-white">Style & export</h2>
-                <p className="text-[12px] text-zinc-500">Pick a template — preview updates live.</p>
-              </div>
-
-              {/* Template picker */}
-              <div className="mb-4">
-                <p className="mb-2.5 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Template</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {TEMPLATE_DEFS.map((t) => (
-                    <button key={String(t.id)} type="button"
-                      onClick={() => setClipConfig({ ...clipConfig, template_id: t.id })}
-                      className={cn(
-                        "cursor-pointer rounded-[11px] border p-2.5 text-left transition",
-                        (clipConfig.template_id ?? null) === t.id
-                          ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09]"
-                          : "border-white/[.07] bg-white/[.02] hover:border-white/[.13]"
-                      )}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[16px]">{t.icon}</span>
-                        <div>
-                          <p className={cn("text-[12px] font-bold", (clipConfig.template_id ?? null) === t.id ? "text-[#ff5f86]" : "text-zinc-200")}>{t.label}</p>
-                          <p className="text-[10px] leading-3 text-zinc-600">{t.desc}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Content type */}
-              <div className="mb-4">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Content type</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { id: null, label: "Auto" }, { id: "podcast", label: "Podcast" }, { id: "gaming", label: "Gaming" },
-                    { id: "football", label: "Football" }, { id: "concert", label: "Concert" }, { id: "general", label: "Other" },
-                  ].map((o) => (
-                    <button key={String(o.id)} type="button"
-                      onClick={() => setClipConfig({ ...clipConfig, occasion: o.id })}
-                      className={cn(
-                        "cursor-pointer rounded-[9px] border px-2 py-1.5 text-center text-[11px] font-semibold transition",
-                        (clipConfig.occasion ?? null) === o.id ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:border-white/[.13]"
-                      )}>{o.label}</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Toggles */}
-              <div className="mb-4 grid grid-cols-3 gap-2">
-                {([
-                  ["add_captions", "Captions",  "Subtitles"],
-                  ["music",        "Music",     "BG track"],
-                  ["voiceover",    "Voiceover", "AI narrator"],
-                ] as [keyof ClipConfig, string, string][]).map(([key, label, desc]) => {
-                  const val = key === "music" ? (clipConfig[key] ?? true) : !!(clipConfig[key] as boolean);
-                  return (
-                    <button key={key} type="button"
-                      onClick={() => setClipConfig({ ...clipConfig, [key]: !val })}
-                      className={cn(
-                        "cursor-pointer rounded-[10px] border p-2.5 text-left transition",
-                        val ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/[.07]" : "border-white/[.07] bg-white/[.025] hover:border-white/[.12]"
-                      )}>
-                      <div className={cn("relative mb-1.5 h-4 w-7 rounded-full transition-colors", val ? "bg-[#ff3d6a]" : "bg-white/[.12]")}>
-                        <span className={cn("absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-[left]", val ? "left-[calc(100%-14px)]" : "left-0.5")} />
-                      </div>
-                      <p className={cn("text-[11px] font-bold", val ? "text-white" : "text-zinc-400")}>{label}</p>
-                      <p className="text-[9.5px] text-zinc-600">{desc}</p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Quality */}
-              <div className="mb-auto">
-                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[.14em] text-zinc-500">Output quality</p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {(["source","1080p","720p","480p"] as const).map((q) => (
-                    <button key={q} type="button"
-                      onClick={() => setClipConfig({ ...clipConfig, output_quality: q })}
-                      className={cn(
-                        "cursor-pointer rounded-[8px] border py-1.5 text-center text-[11px] font-bold transition",
-                        clipConfig.output_quality === q ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.09] text-[#ff5f86]" : "border-white/[.06] text-zinc-500 hover:border-white/[.12]"
-                      )}>{q === "source" ? "Full" : q}</button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Right: live template preview */}
-            <div className="flex w-[200px] shrink-0 flex-col items-center justify-center border-l border-white/[.06] bg-[#070b12] px-4 py-6">
-              <TemplatePreview templateId={clipConfig.template_id ?? null} thumbnail={ytMeta?.thumbnail} />
-              <p className="mt-3 text-center text-[10.5px] font-semibold text-zinc-500">
-                {TEMPLATE_DEFS.find((t) => (t.id ?? null) === (clipConfig.template_id ?? null))?.label ?? "Auto"}
-              </p>
-              <p className="mt-0.5 text-center text-[9.5px] leading-4 text-zinc-700">
-                {TEMPLATE_DEFS.find((t) => (t.id ?? null) === (clipConfig.template_id ?? null))?.preview ?? ""}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 2 Import footer ── */}
-        {step === 2 && (
-          <div className="border-t border-white/[.07] bg-[#070b12] px-6 py-3.5">
-            <div className="flex items-center gap-3">
-              {ytMeta && (
-                <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] border border-white/[.07] bg-white/[.025] px-3 py-2">
-                  <div className="relative h-7 w-11 flex-shrink-0 overflow-hidden rounded-[5px] bg-zinc-800">
-                    <img src={ytMeta.thumbnail} alt="" className="h-full w-full object-cover" />
-                  </div>
-                  <p className="truncate text-[11.5px] font-semibold text-zinc-300">{ytMeta.title}</p>
-                </div>
-              )}
-              <Button disabled={uploading} onClick={handleImport} className="h-10 shrink-0 rounded-[11px] px-6 text-[13px] font-bold">
-                {uploading ? <><span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />Processing…</> : "Import & Clip"}
-              </Button>
-            </div>
+            <input
+              autoFocus
+              value={urlVal}
+              onChange={(e) => setUrlVal(e.target.value)}
+              placeholder="https://youtube.com/watch?v=…"
+              aria-label="YouTube video URL"
+              className="h-[46px] w-full rounded-[12px] border border-c-border bg-surface-1 px-3.5 text-[13.5px] font-medium text-c-text outline-none transition placeholder:text-c-text-muted focus:border-[#ff3d6a]/60 focus:ring-4 focus:ring-[#ff3d6a]/15"
+            />
             {error && <p className="mt-2 text-[11.5px] font-medium text-red-400">{error}</p>}
           </div>
+        )}
+
+        {/* ── Loading skeleton ── */}
+        {ytMetaLoading && (
+          <div className="animate-pulse p-5">
+            <div className="mb-4 h-[64px] rounded-[14px] border border-c-border bg-surface-1" />
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              <div className="h-[50px] rounded-[12px] border border-c-border bg-surface-2" />
+              <div className="h-[50px] rounded-[12px] border border-c-border bg-surface-2" />
+            </div>
+            <div className="flex gap-3">
+              {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-[200px] w-[118px] shrink-0 rounded-[14px] bg-surface-2" />)}
+            </div>
+          </div>
+        )}
+
+        {ytMeta && !ytMetaLoading && (
+          <>
+            {/* scroll body */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+
+              {/* ── Upload-success header ── */}
+              <div className="mb-4 flex items-center gap-3 rounded-[14px] border border-c-border bg-surface-1 p-3">
+                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-[10px] bg-surface-2">
+                  <img
+                    src={ytMeta.thumbnail}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    onError={(e) => { const i = e.currentTarget; if (i.src.includes("maxresdefault")) i.src = i.src.replace("maxresdefault", "hqdefault"); }}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-[13.5px] font-bold text-c-text">{ytMeta.title || "YouTube video"}</p>
+                    <span className="ml-auto shrink-0 rounded-[6px] bg-surface-2 px-2 py-0.5 text-[10.5px] font-bold text-c-text-muted">{ytMeta.quality}</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                    <div className="h-full w-full rounded-full bg-emerald-500" />
+                  </div>
+                  <p className="mt-1.5 text-[11px] font-semibold text-c-text-muted">Ready ({fmtClock(ytMeta.duration)})</p>
+                </div>
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3}><path d="M20 6L9 17l-5-5"/></svg>
+                </span>
+                <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] text-c-text-muted transition hover:bg-surface-2 hover:text-c-text">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+
+              {/* ── Ratio + Clip length + Number of clips ── */}
+              <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                <label className={selectClass}>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-c-text-muted">Ratio</span>
+                  <select value={ratio} onChange={(e) => setRatio(e.target.value)} className="flex-1 cursor-pointer appearance-none bg-transparent text-right text-[13px] font-bold text-c-text outline-none [&>option]:bg-surface-0">
+                    {RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2.2}><path d="M6 9l6 6 6-6"/></svg>
+                </label>
+                <label className={selectClass}>
+                  <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-c-text-muted">Length</span>
+                  <select value={clipLen} onChange={(e) => setClipLen(e.target.value)} className="flex-1 cursor-pointer appearance-none bg-transparent text-right text-[13px] font-bold text-c-text outline-none [&>option]:bg-surface-0">
+                    {CLIP_LENGTHS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2.2}><path d="M6 9l6 6 6-6"/></svg>
+                </label>
+                <label className={selectClass}>
+                  <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-c-text-muted">Clips</span>
+                  <select value={clipCount} onChange={(e) => setClipCount(e.target.value)} className="flex-1 cursor-pointer appearance-none bg-transparent text-right text-[13px] font-bold text-c-text outline-none [&>option]:bg-surface-0">
+                    {CLIP_COUNTS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2.2}><path d="M6 9l6 6 6-6"/></svg>
+                </label>
+              </div>
+
+              {/* ── Template tabs ── */}
+              <div className="mb-3 flex items-center gap-1 border-b border-c-border">
+                {TEMPLATE_TABS.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTab(t)}
+                    className={cn(
+                      "relative flex items-center gap-1 px-3 py-2 text-[12.5px] font-bold transition",
+                      tab === t ? "text-c-text" : "text-c-text-muted hover:text-c-text-secondary"
+                    )}
+                  >
+                    {t}{t === "Brand template" && <span className="text-[11px]">💎</span>}
+                    {tab === t && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-[#ff3d6a]" />}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Caption template carousel ── */}
+              {tab === "9:16 template" ? (
+                <div className="relative">
+                  <div ref={carouselRef} className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {CAPTION_TEMPLATES.map((tpl) => (
+                      <CaptionCard key={tpl.id} tpl={tpl} selected={template === tpl.id} onSelect={() => setTemplate(tpl.id)} />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => carouselRef.current?.scrollBy({ left: 280, behavior: "smooth" })}
+                    className="absolute right-1 top-[92px] grid h-8 w-8 place-items-center rounded-full border border-c-border bg-surface-0 text-c-text shadow-lg transition hover:bg-surface-3"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M9 18l6-6-6-6"/></svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid place-items-center rounded-[14px] border border-dashed border-c-border bg-surface-1 py-12 text-center">
+                  <p className="text-[12.5px] font-semibold text-c-text-muted">{tab === "My template" ? "No saved templates yet" : "Brand templates are a premium feature"}</p>
+                </div>
+              )}
+
+              {/* ── Feature toggles ── */}
+              <div className="mt-4 rounded-[14px] border border-c-border bg-surface-1 p-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <FeatureCheck label="Add emoji"         checked={feat.emoji}     onChange={() => setFeat((f) => ({ ...f, emoji: !f.emoji }))} />
+                  <FeatureCheck label="Highlight keywords" checked={feat.highlight} onChange={() => setFeat((f) => ({ ...f, highlight: !f.highlight }))} />
+                  <FeatureCheck label="Remove silences"    checked={feat.silences}  onChange={() => setFeat((f) => ({ ...f, silences: !f.silences }))} />
+                  <FeatureCheck label="Add B-rolls"        checked={feat.brolls}    onChange={() => setFeat((f) => ({ ...f, brolls: !f.brolls }))} badge />
+                </div>
+                <div className="mt-4 mb-1.5 flex items-center justify-between">
+                  <p className="text-[12px] font-bold text-c-text-secondary">Find clip moment <span className="font-medium text-c-text-muted">(optional)</span></p>
+                  <span className="text-[10.5px] font-semibold text-c-text-muted">Powered by Spark</span>
+                </div>
+                <input
+                  value={findMoment}
+                  onChange={(e) => setFindMoment(e.target.value)}
+                  placeholder="Only want specific parts? e.g. when they talk about the chorus."
+                  className="h-[44px] w-full rounded-[10px] border border-c-border bg-surface-1 px-3.5 text-[12.5px] text-c-text outline-none transition placeholder:text-c-text-muted focus:border-[#ff3d6a]/50"
+                />
+              </div>
+
+              {/* ── Auto schedule ── */}
+              <div className="mt-3 flex h-[52px] items-center gap-3 rounded-[14px] border border-c-border bg-surface-1 px-4">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth={1.8}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                <span className="flex-1 text-[13px] font-semibold text-c-text">Auto schedule and post to social account</span>
+                <button
+                  type="button"
+                  onClick={() => setAutoSchedule((v) => !v)}
+                  className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors", autoSchedule ? "bg-[#ff3d6a]" : "bg-surface-3")}
+                >
+                  <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]", autoSchedule ? "left-[calc(100%-22px)]" : "left-0.5")} />
+                </button>
+              </div>
+
+              {error && <p className="mt-3 text-center text-[11.5px] font-medium text-red-400">{error}</p>}
+            </div>
+
+            {/* ── Sticky footer: Get AI clips ── */}
+            <div className="shrink-0 border-t border-c-border bg-surface-0 p-4">
+              <Button
+                disabled={uploading}
+                onClick={handleImport}
+                className="h-[52px] w-full rounded-[13px] bg-gradient-to-r from-[#ff3d6a] via-[#ff5f86] to-[#ff7a3d] text-[14.5px] font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.30)] disabled:opacity-50"
+              >
+                {uploading ? <><span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent align-[-2px]" />Generating…</> : "✦ Get AI clips"}
+              </Button>
+            </div>
+          </>
         )}
       </div>
     </div>,
@@ -571,19 +423,108 @@ function YoutubeImportModal({ onClose, initialUrl = "" }: YoutubeModalProps) {
 
 // ── Studio Page ───────────────────────────────────────────────────────────────
 
+const YT_URL_RE = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?.*v=|shorts\/|embed\/)|youtu\.be\/)[\w-]{11}/;
+const RETENTION_DAYS = 7;
+
+function gradFromId(id: string) {
+  const grads = [
+    "from-[#FF3D6A] to-[#FF7A3D]",
+    "from-[#3DAAFF] to-[#7B66FF]",
+    "from-[#22C55E] to-[#3DAAFF]",
+    "from-[#A855F7] to-[#EC4899]",
+    "from-[#F59E0B] to-[#EF4444]",
+  ];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  return grads[Math.abs(hash) % grads.length];
+}
+
+function formatDuration(sec: number | null) {
+  if (!sec) return "—";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function formatFullDate(date: string) {
+  return new Date(date).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// Soft retention hint — videos are cleared from storage after RETENTION_DAYS.
+function expiryInfo(created_at: string): { label: string; expired: boolean } {
+  const created = new Date(created_at).getTime();
+  const expiresAt = created + RETENTION_DAYS * 86_400_000;
+  const daysLeft = Math.ceil((expiresAt - Date.now()) / 86_400_000);
+  if (daysLeft <= 0) return { label: "Expired", expired: true };
+  return { label: `Expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`, expired: false };
+}
+
+function initials(title: string | null) {
+  if (!title) return "•";
+  const words = title.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "•";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+function sourceLabel(source: string) {
+  return source === "youtube" || source === "youtube_url" ? "YOUTUBE"
+    : source === "ai" || source === "ai_generate" ? "AI"
+    : "UPLOAD";
+}
+
+function RecentTile({ video }: { video: VideoResponse }) {
+  const exp = expiryInfo(video.created_at);
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/projects/${video.id}`)}
+      className="group flex w-full flex-col text-left transition"
+    >
+      <div className={cn("relative aspect-video w-full overflow-hidden rounded-[12px] border border-c-border bg-gradient-to-br shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)] transition group-hover:border-[#ff3d6a]/40", gradFromId(video.id))}>
+        {video.thumbnail_url ? (
+          <img src={video.thumbnail_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-90" />
+        ) : (
+          <div className="absolute inset-0 grid place-items-center">
+            <span className="font-display text-3xl font-black tracking-tight text-white/85">{initials(video.title)}</span>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/15 transition group-hover:from-black/35" />
+        <span className="absolute left-2 top-2 rounded-[6px] bg-black/55 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-c-text backdrop-blur-md">
+          {sourceLabel(video.source_type)}
+        </span>
+        {exp.expired ? (
+          <span className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-bold text-c-text-secondary backdrop-blur-md">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Expired
+          </span>
+        ) : (
+          <span className="absolute bottom-2 right-2 rounded-[6px] bg-black/65 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-md">
+            {formatDuration(video.duration_sec)}
+          </span>
+        )}
+      </div>
+      <p className="mt-2 truncate text-[12.5px] font-bold text-c-text transition group-hover:text-c-text">{video.title || "Untitled"}</p>
+      <p className="mt-0.5 text-[11px] text-c-text-muted">{formatFullDate(video.created_at)}</p>
+      {!exp.expired && <p className="mt-0.5 text-[11px] font-semibold text-amber-400/90">{exp.label}</p>}
+    </button>
+  );
+}
+
 export function StudioPage() {
-  const [tab, setTab]             = useState<StudioTab>("upload");
-  const [uploadStep, setUploadStep] = useState<UploadStep>("source");
   const [ytModalOpen, setYtModalOpen] = useState(false);
   const [ytInitialUrl, setYtInitialUrl] = useState("");
-  const [tone, setTone]           = useState("Strong hook");
-  const [prompt, setPrompt]       = useState("Create a high-retention TikTok about 5 morning habits that changed my life.");
-  const [clipConfig, setClipConfig] = useState<ClipConfig>(DEFAULT_CONFIG);
+  const [ytPrefetch, setYtPrefetch] = useState<YtMeta | null>(null);
+  const [ytFetching, setYtFetching] = useState(false);
 
+  const [url, setUrl]             = useState("");
   const [drag, setDrag]           = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [recents, setRecents]     = useState<VideoResponse[]>([]);
+  const [recentsLoading, setRecentsLoading] = useState(true);
 
   // Open modal on ?type=youtube[&url=...]
   useEffect(() => {
@@ -594,10 +535,35 @@ export function StudioPage() {
     }
   }, []);
 
-  const openYtModal = () => { setYtInitialUrl(""); setYtModalOpen(true); };
-  const closeYtModal = () => setYtModalOpen(false);
+  // Load recent projects
+  useEffect(() => {
+    let alive = true;
+    videoApi.list(1, 10)
+      .then((res) => { if (alive) setRecents(res.items); })
+      .catch(() => { /* non-fatal */ })
+      .finally(() => { if (alive) setRecentsLoading(false); });
+    return () => { alive = false; };
+  }, []);
 
-  const startProcessing = (video: VideoResponse) => navigate(`/projects/${video.id}`);
+  const openYtModal = (prefill = "") => { setYtPrefetch(null); setYtInitialUrl(prefill); setYtModalOpen(true); };
+  const closeYtModal = () => { setYtModalOpen(false); setYtPrefetch(null); };
+
+  // Prefetch metadata HERE, then open the dialog already populated.
+  const openYtModalPrefetched = useCallback(async (v: string) => {
+    setYtFetching(true);
+    const vidId = v.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1] ?? "";
+    const fallbackThumb = vidId ? `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg` : "";
+    try {
+      const m = await videoApi.youtubeInspect(v);
+      setYtPrefetch({ title: m.title || "", thumbnail: m.thumbnail_url || fallbackThumb, duration: m.duration_sec ?? null, quality: "1080p" });
+    } catch {
+      setYtPrefetch(null); // modal will fetch/fallback itself
+    } finally {
+      setYtFetching(false);
+      setYtInitialUrl(v);
+      setYtModalOpen(true);
+    }
+  }, []);
 
   const handleFile = useCallback(async (files: FileList | null) => {
     if (!files?.length) return;
@@ -605,377 +571,192 @@ export function StudioPage() {
     setUploading(true);
     setUploadError("");
     try {
-      const video = await videoApi.upload(file, file.name.replace(/\.[^.]+$/, ""), clipConfig);
-      startProcessing(video);
+      const video = await videoApi.upload(file, file.name.replace(/\.[^.]+$/, ""), DEFAULT_CONFIG);
+      navigate(`/projects/${video.id}`);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
       setUploading(false);
     }
-  }, [clipConfig]);
+  }, []);
+
+  const pickFile = () => { if (!uploading) fileInputRef.current?.click(); };
+
+  // GET CLIPS: a YouTube URL opens the import modal; anything else opens the file picker.
+  const handleGetClips = () => {
+    const v = url.trim();
+    if (YT_URL_RE.test(v)) openYtModalPrefetched(v);
+    else pickFile();
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDrag(false);
+    if (e.dataTransfer.files?.length) handleFile(e.dataTransfer.files);
+  };
+  const dragProps = {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); setDrag(true); },
+    onDragLeave: () => setDrag(false),
+    onDrop,
+  };
 
   return (
     <>
       {ytModalOpen && (
-        <YoutubeImportModal
-          initialUrl={ytInitialUrl}
-          onClose={closeYtModal}
-        />
+        <YoutubeImportModal initialUrl={ytInitialUrl} prefetched={ytPrefetch} onClose={closeYtModal} />
       )}
 
-      <div className="flex flex-1 flex-col overflow-hidden rounded-[22px] border border-white/[.08] bg-[#0e1420] shadow-[0_28px_90px_rgba(0,0,0,.28)]">
+      <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
 
-        {/* ── Header ── */}
-        <div className="relative overflow-hidden border-b border-white/[.07] px-4 py-3.5 sm:px-6">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_0%,rgba(255,61,106,.18),transparent_31%),radial-gradient(circle_at_88%_0%,rgba(59,130,246,.10),transparent_28%)]" />
-          <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-              </div>
-              <div>
-                <h1 className="font-display text-[17px] font-bold tracking-[-.01em] text-white">Video Studio</h1>
-                <p className="text-[11.5px] text-zinc-500">Import · extract viral moments · export short-form</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Main tab switcher */}
-              <div className="grid grid-cols-2 gap-1 rounded-[13px] border border-white/[.08] bg-[#090e17]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.04)]">
-                {([["upload", "↑ Upload"], ["ai", "✦ AI Generate"]] as [StudioTab, string][]).map(([id, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => { setTab(id); setUploadError(""); }}
-                    className={cn(
-                      "cursor-pointer rounded-[10px] px-4 py-2 text-xs font-bold transition",
-                      tab === id ? "bg-[#ff3d6a] text-white shadow-[0_8px_20px_rgba(255,61,106,.32)]" : "text-zinc-500 hover:bg-white/[.04] hover:text-zinc-200"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {/* YouTube button — opens modal */}
+      <div
+        {...dragProps}
+        className="flex min-h-full flex-1 flex-col bg-surface-0"
+      >
+        {/* ── Hero ── */}
+        <div className="relative overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,61,106,.16),transparent_45%)]" />
+          <div className="relative mx-auto flex w-full max-w-[860px] flex-col items-center px-4 pb-7 pt-8 text-center">
+            <p className="text-[11px] font-bold uppercase tracking-[.22em] text-[#ff6f92]">Video Studio</p>
+            <h1 className="mt-3 font-display text-[34px] font-black leading-[1.08] tracking-[-.02em] text-c-text sm:text-[42px]">
+              Turn your long video into <span className="text-[#ff3d6a]">Viral Clips</span>
+            </h1>
+            <p className="mt-2.5 text-[13.5px] text-c-text-muted">Import · Extract viral moments · Export short-form</p>
+
+            {/* Search / drop bar */}
+            <div className={cn(
+              "relative mt-7 flex w-full max-w-[620px] items-center rounded-full border bg-surface-1 pl-5 pr-1.5 py-1.5 transition",
+              drag ? "border-[#ff3d6a]/60 shadow-[0_0_0_4px_rgba(255,61,106,.12)]" : "border-c-border shadow-[inset_0_1px_0_rgba(255,255,255,.04)]"
+            )}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2} className="mr-2.5 shrink-0"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleGetClips()}
+                placeholder={drag ? "Drop your video to upload" : "Paste YouTube link or drag your video here"}
+                aria-label="YouTube link"
+                className="min-w-0 flex-1 bg-transparent text-[14px] font-medium text-c-text outline-none placeholder:text-c-text-muted"
+              />
               <button
-                onClick={openYtModal}
-                className="flex cursor-pointer items-center gap-2 rounded-[11px] border border-red-400/25 bg-red-400/[.08] px-4 py-2 text-xs font-bold text-red-300 transition hover:bg-red-400/[.14] hover:text-red-200"
+                type="button"
+                onClick={handleGetClips}
+                disabled={uploading || ytFetching}
+                className="ml-2 flex shrink-0 items-center gap-2 rounded-full bg-[#ff3d6a] px-5 py-2.5 text-[12.5px] font-bold text-white shadow-[0_10px_26px_rgba(255,61,106,.30)] transition hover:bg-[#ff537b] disabled:opacity-50"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
+                {ytFetching && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />}
+                {uploading ? "Uploading…" : ytFetching ? "Fetching…" : "GET CLIPS"}
+              </button>
+            </div>
+
+            {/* Quick action pills */}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+              <button type="button" onClick={pickFile} className="flex cursor-pointer items-center gap-2 rounded-full border border-c-border bg-surface-2 px-4 py-2 text-[12.5px] font-bold text-c-text transition hover:bg-surface-3">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Upload local file
+              </button>
+              <button type="button" className="flex cursor-default items-center gap-2 rounded-full border border-c-border bg-surface-2/90 px-4 py-2 text-[12.5px] font-bold text-c-text-secondary">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                AI Generate
+              </button>
+              <button type="button" onClick={() => openYtModal()} className="flex cursor-pointer items-center gap-2 rounded-full border border-c-border bg-surface-2 px-4 py-2 text-[12.5px] font-bold text-c-text transition hover:bg-surface-3">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#ff0000"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
                 YouTube
               </button>
             </div>
           </div>
         </div>
 
-        {/* ── AI Generate ── */}
-        {tab === "ai" && (
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1fr_400px]">
-            <div className="overflow-y-auto border-b border-white/[.07] p-4 sm:p-6 lg:border-b-0 lg:border-r">
-              <div className="space-y-5">
-                <div>
-                  <label className="text-[12px] font-semibold text-zinc-400">What's your video about?</label>
-                  <textarea
-                    value={prompt} onChange={(e) => setPrompt(e.target.value)}
-                    className="mt-2 min-h-[120px] w-full resize-y rounded-[12px] border border-white/[.07] bg-[#1b2233] p-4 text-[13px] leading-7 text-zinc-100 outline-none transition focus:border-[#ff3d6a]/50 focus:ring-4 focus:ring-[#ff3d6a]/10"
-                    placeholder="e.g. 5 morning habits that completely changed my productivity…"
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Panel title="Platforms"><ChipRow items={platforms.map((p) => p[1])} active={["TikTok", "Reels"]} /></Panel>
-                  <Panel title="Duration"><ChipRow items={["30s", "60s", "90s"]} active={["60s"]} /></Panel>
-                  <Panel title="Voice"><SelectLike value="Alex (energetic)" /></Panel>
-                  <Panel title="Captions"><ChipRow items={["Word", "Line", "None"]} active={["Word"]} /></Panel>
-                </div>
-                <div>
-                  <label className="text-[12px] font-semibold text-zinc-400">Content style</label>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {["⚡ Strong hook", "📖 Storytelling", "🎓 Educational", "🔥 Controversial", "😂 Humorous", "✨ Inspiring"].map((x) => {
-                      const clean = x.replace(/^.. /, "");
-                      return (
-                        <button key={x} onClick={() => setTone(clean)}
-                          className={cn(
-                            "cursor-pointer rounded-[10px] border p-3 text-left text-[12.5px] font-semibold transition",
-                            tone === clean ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-white" : "border-white/[.07] bg-[#141926] text-zinc-400 hover:border-white/[.13]"
-                          )}>
-                          {x}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <Button className="h-11 w-full rounded-[12px]" size="default">✦ Generate Video</Button>
-              </div>
-            </div>
-            <div className="flex flex-col bg-[#0b101a]">
-              <div className="flex h-[48px] items-center gap-2 border-b border-white/[.07] px-5">
-                <span className="font-display text-[13px] font-bold">Preview</span>
-                <span className="text-[11.5px] text-zinc-500">{prompt.trim() ? "— estimated" : "— enter a prompt"}</span>
-                <a href="/clips" className="ml-auto cursor-pointer rounded-lg border border-white/[.07] px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:bg-white/[.04]">▣ All clips</a>
-              </div>
-              <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6">
-                <Phone label={prompt.trim() ? tone : "Enter a topic"} />
-                {prompt.trim() ? (
-                  <>
-                    <div className="grid w-full grid-cols-[56px_1fr] items-center gap-3 rounded-[12px] border border-white/[.07] bg-[#141926] p-3">
-                      <Ring value={prompt.length > 30 ? 62 : 41} />
-                      <div>
-                        <h4 className="text-[13px] font-semibold">Estimated virality</h4>
-                        <p className="mt-1 text-xs leading-5 text-zinc-500">{prompt.length > 30 ? "Good topic. Try a stronger hook for +10 pts." : "Add more detail for a better estimate."}</p>
-                      </div>
-                    </div>
-                    <div className="w-full">
-                      <div className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-zinc-600">Script preview</div>
-                      <div className="rounded-[12px] border border-white/[.07] bg-[#141926] p-3">
-                        {["[HOOK] 5 morning habits that changed...", "[BUILD] Here's exactly what changed when I started doing this every morning.", "[CTA] Save this. Your future self will thank you."].map((line, i) => (
-                          <p key={line} className={cn("text-xs leading-5", i === 0 ? "text-zinc-100" : "text-zinc-400")}>{line}</p>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="max-w-[210px] text-center text-[12.5px] leading-6 text-zinc-500">Enter a topic on the left and your video preview will appear here.</p>
-                )}
-              </div>
-            </div>
+        {/* ── Choose source ── */}
+        <div className="mx-auto w-full max-w-[1180px] border-t border-c-border px-5 py-6 sm:px-8">
+          <div className="mb-5">
+            <p className="text-[11px] font-bold uppercase tracking-[.18em] text-c-text-muted">Choose source</p>
           </div>
-        )}
 
-        {/* ── Upload ── */}
-        {tab === "upload" && (
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)]" style={{overflow:"hidden"}}>
-            <div className="overflow-y-auto border-b border-white/[.07] bg-[#0b101a] p-4 sm:p-5 lg:border-b-0 lg:border-r">
-              <div className="mb-5">
-                <p className="text-[10.5px] font-bold uppercase tracking-[.18em] text-[#ff6f92]">Upload workflow</p>
-                <h2 className="mt-1 font-display text-[18px] font-bold tracking-[-.02em] text-white">New source</h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            {/* AI Generate — disabled, no-op (does nothing on click) */}
+            <div className="flex flex-col rounded-[16px] border border-c-border bg-surface-1 p-5 opacity-60">
+              <div className="grid h-11 w-11 place-items-center rounded-[13px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08]">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6 7 18.2l1.9-5.8L4 8.8h6.1z"/></svg>
               </div>
-
-              <div className="space-y-1.5">
-                {([
-                  ["source",       "1", "Source",       "Upload file or YouTube"],
-                  ["destinations", "2", "Destinations", "Platforms & format"],
-                  ["clips",        "3", "Clips",        "Length, count, score"],
-                  ["style",        "4", "Style",        "AI, captions, quality"],
-                  ["review",       "5", "Review",       "Confirm & start"],
-                ] as [UploadStep, string, string, string][]).map(([id, number, label, hint]) => {
-                  const ORDER: UploadStep[] = ["source","destinations","clips","style","review"];
-                  const done   = ORDER.indexOf(id) < ORDER.indexOf(uploadStep);
-                  const active = uploadStep === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setUploadStep(id)}
-                      className={cn(
-                        "flex w-full cursor-pointer items-start gap-3 rounded-[13px] border p-3 text-left transition",
-                        active
-                          ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-white shadow-[0_14px_34px_rgba(255,61,106,.10)]"
-                          : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:border-white/[.13] hover:bg-white/[.04] hover:text-zinc-200"
-                      )}
-                    >
-                      <span className={cn(
-                        "grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold transition-all",
-                        active ? "bg-[#ff3d6a] text-white shadow-[0_0_8px_rgba(255,61,106,.4)]"
-                        : done  ? "bg-[#ff3d6a]/70 text-white"
-                        : "bg-white/[.06] text-zinc-500"
-                      )}>
-                        {done
-                          ? <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3.5}><path d="M20 6L9 17l-5-5"/></svg>
-                          : number}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-[12.5px] font-bold">{label}</span>
-                        <span className="mt-0.5 block text-[11px] leading-4 text-zinc-500">{hint}</span>
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="mt-3 flex items-center gap-2">
+                <h3 className="font-display text-[15px] font-bold text-c-text">AI Generate</h3>
+                <span className="rounded-full border border-c-border bg-surface-2 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-c-text-muted">Soon</span>
               </div>
-
-              <div className="mt-5 rounded-[14px] border border-white/[.07] bg-white/[.025] p-3 text-[11.5px] leading-5 text-zinc-500">
-                Settings are saved with the project when the source is uploaded.
+              <p className="mt-1.5 text-[12px] leading-5 text-c-text-muted">Describe a topic or paste a script. AI writes, voices, and assembles clips for you.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {["Script gen", "Voiceover", "Auto-edit"].map((t) => (
+                  <span key={t} className="rounded-full border border-[#ff3d6a]/15 bg-[#ff3d6a]/[.06] px-2 py-0.5 text-[10px] font-semibold text-[#ff7a9a]/70">{t}</span>
+                ))}
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-              <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
-
-              {uploadStep === "source" && (
-                <div className="space-y-5">
-                  <div>
-                    <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">Choose the source</h2>
-                    <p className="mt-1.5 max-w-2xl text-[13px] leading-6 text-zinc-500">Drop a long-form video or import from YouTube. Viralo opens the project as soon as the source is ready.</p>
-                  </div>
-
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-                    <div
-                      onClick={() => !uploading && fileInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                      onDragLeave={() => setDrag(false)}
-                      onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files); }}
-                      className={cn(
-                        "group relative flex min-h-[360px] cursor-pointer flex-col justify-between overflow-hidden rounded-[18px] border p-5 transition sm:p-7",
-                        uploading ? "cursor-default border-[#ff3d6a]/40 bg-[#ff3d6a]/[.04]"
-                        : drag    ? "scale-[1.01] border-[#ff3d6a]/60 bg-[#ff3d6a]/[.07] shadow-[0_24px_70px_rgba(255,61,106,.16)]"
-                        : "border-white/[.09] bg-[linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.018))] hover:border-[#ff3d6a]/35 hover:bg-white/[.04]"
-                      )}
-                    >
-                      <div className="pointer-events-none absolute inset-5 rounded-[14px] border border-dashed border-white/[.11] transition group-hover:border-[#ff3d6a]/35" />
-                      <div className="relative flex items-start justify-between gap-4">
-                        <div className="grid h-[52px] w-[52px] place-items-center rounded-[15px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/[.10]">
-                          {uploading ? (
-                            <span className="block h-6 w-6 animate-spin rounded-full border-[2px] border-[#ff3d6a]/30 border-t-[#ff3d6a]" />
-                          ) : (
-                            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#ff7a9a" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                          )}
-                        </div>
-                        <span className="rounded-full border border-white/[.08] bg-black/20 px-3 py-1.5 text-[11px] font-bold text-zinc-400">MP4 / MOV / WebM</span>
-                      </div>
-
-                      <div className="relative max-w-xl py-8 text-center sm:mx-auto">
-                        <h3 className="font-display text-3xl font-bold tracking-[-.03em] text-white sm:text-4xl">
-                          {uploading ? "Uploading your video..." : drag ? "Release to upload" : "Drop your video here"}
-                        </h3>
-                        <p className="mx-auto mt-3 max-w-md text-[13.5px] leading-6 text-zinc-500">
-                          {uploading ? "Keep this tab open. We will send you to the project when the source is ready." : "Use a clean long-form source: podcasts, webinars, tutorials, interviews, or raw camera clips."}
-                        </p>
-                        {!uploading && (
-                          <button type="button" className="mt-6 cursor-pointer rounded-[11px] bg-[#ff3d6a] px-6 py-3 text-[13px] font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.30)] transition hover:bg-[#ff537b]">
-                            Browse files
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="relative flex flex-wrap gap-2 text-[11.5px] font-semibold text-zinc-500">
-                        {["Auto captions", "Smart cuts", "Project review"].map((item) => (
-                          <span key={item} className="rounded-full border border-white/[.07] bg-black/15 px-3 py-1.5">{item}</span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <button
-                        type="button"
-                        onClick={openYtModal}
-                        className="group flex min-h-[178px] w-full cursor-pointer flex-col justify-between rounded-[16px] border border-red-400/20 bg-red-400/[.06] p-4 text-left transition hover:border-red-300/35 hover:bg-red-400/[.10]"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="grid h-10 w-10 place-items-center rounded-[11px] bg-red-400/[.12] text-red-300">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
-                          </span>
-                          <span className="text-[11px] font-bold text-red-200/70 transition group-hover:text-red-200">Open</span>
-                        </div>
-                        <div>
-                          <h3 className="font-display text-[16px] font-bold text-white">Import from YouTube</h3>
-                          <p className="mt-1 text-[12px] leading-5 text-zinc-500">Paste a link, preview metadata, then clip it with the active recipe.</p>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setUploadStep("destinations")}
-                        className="w-full cursor-pointer rounded-[12px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-left text-[12.5px] font-bold text-zinc-200 transition hover:bg-white/[.07]"
-                      >
-                        Tune recipe before upload
-                        <span className="mt-1 block text-[11.5px] font-medium text-zinc-500">Format, duration, captions, and platform targets.</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            {/* Upload Video */}
+            <button
+              type="button"
+              onClick={pickFile}
+              {...dragProps}
+              className={cn(
+                "flex cursor-pointer flex-col rounded-[16px] border p-5 text-left transition",
+                drag ? "border-[#ff3d6a]/55 bg-[#ff3d6a]/[.06]" : "border-c-border bg-surface-1 hover:border-[#ff3d6a]/35 hover:bg-surface-2"
               )}
+            >
+              <div className="grid h-11 w-11 place-items-center rounded-[13px] border border-amber-400/20 bg-amber-400/[.08]">
+                {uploading
+                  ? <span className="block h-5 w-5 animate-spin rounded-full border-2 border-amber-300/40 border-t-amber-300" />
+                  : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+              </div>
+              <h3 className="mt-3 font-display text-[15px] font-bold text-c-text">Upload Video</h3>
+              <p className="mt-1.5 text-[12px] leading-5 text-c-text-muted">Drop any MP4, MOV or WebM — podcast, webinar, tutorial — and clip it into viral shorts.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {["MP4 · MOV", "Smart cuts", "Captions"].map((t) => (
+                  <span key={t} className="rounded-full border border-amber-400/15 bg-amber-400/[.06] px-2 py-0.5 text-[10px] font-semibold text-amber-300/80">{t}</span>
+                ))}
+              </div>
+            </button>
 
-              {(uploadStep === "destinations" || uploadStep === "clips" || uploadStep === "style") && (() => {
-                const RECIPE_META: Record<string, { title: string; desc: string; panelStep: 1|2|3; prev: UploadStep; next: UploadStep; nextLabel: string }> = {
-                  destinations: { title: "Destinations",  desc: "Pick platforms, aspect ratio, and language for this session.", panelStep: 1, prev: "source",       next: "clips",  nextLabel: "Next — Clips" },
-                  clips:        { title: "Clips",          desc: "Set clip count, target length, and minimum viral score.",       panelStep: 2, prev: "destinations", next: "style",  nextLabel: "Next — Style" },
-                  style:        { title: "Style & quality",desc: "Choose AI enhancements, captions, and output quality.",         panelStep: 3, prev: "clips",        next: "review", nextLabel: "Review settings" },
-                };
-                const meta = RECIPE_META[uploadStep];
-                return (
-                  <div className="space-y-5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                      <div>
-                        <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">{meta.title}</h2>
-                        <p className="mt-1.5 max-w-xl text-[13px] leading-6 text-zinc-500">{meta.desc}</p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[18px] border border-white/[.07] bg-[#0b101a] px-5 py-5 sm:px-6">
-                      <ClipConfigPanel config={clipConfig} onChange={setClipConfig} step={meta.panelStep} />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={() => setUploadStep(meta.prev)}
-                        className="flex cursor-pointer items-center gap-1.5 rounded-[11px] border border-white/[.08] px-4 py-2.5 text-[12.5px] font-semibold text-zinc-400 transition hover:border-white/[.15] hover:text-zinc-200"
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M15 18l-6-6 6-6"/></svg>
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUploadStep(meta.next)}
-                        className="flex cursor-pointer items-center gap-1.5 rounded-[11px] bg-[#ff3d6a] px-5 py-2.5 text-[12.5px] font-bold text-white transition hover:bg-[#ff537b]"
-                      >
-                        {meta.nextLabel}
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M9 18l6-6-6-6"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {uploadStep === "review" && (
-                <div className="space-y-5">
-                  <div>
-                    <h2 className="font-display text-2xl font-bold tracking-[-.02em] text-white">Review and start</h2>
-                    <p className="mt-1.5 max-w-xl text-[13px] leading-6 text-zinc-500">Confirm the recipe, then choose a source. Uploads and imports start from the source step.</p>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {[
-                      ["Platforms", `${clipConfig.platforms?.length ?? 0} selected`],
-                      ["Format", clipConfig.aspect_ratio],
-                      ["Length", `${clipConfig.duration_min}-${clipConfig.duration_max}s`],
-                      ["Captions", clipConfig.add_captions ? "On" : "Off"],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-[14px] border border-white/[.08] bg-white/[.035] p-4">
-                        <p className="text-[11px] font-bold uppercase tracking-[.14em] text-zinc-600">{label}</p>
-                        <p className="mt-1.5 text-[14px] font-bold text-zinc-100">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex flex-col gap-3 rounded-[16px] border border-white/[.08] bg-[#0b101a] p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-[12.5px] leading-5 text-zinc-500">Ready to create a project? Pick a file or YouTube link on the source step.</p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setUploadStep("destinations")}
-                        className="h-10 cursor-pointer rounded-[11px] border border-white/[.08] px-4 text-[12.5px] font-bold text-zinc-300 transition hover:bg-white/[.05]"
-                      >
-                        Edit recipe
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUploadStep("source")}
-                        className="h-10 cursor-pointer rounded-[11px] bg-[#ff3d6a] px-4 text-[12.5px] font-bold text-white transition hover:bg-[#ff537b]"
-                      >
-                        Choose source
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {uploadError && (
-                <div className="mt-5 flex items-center gap-2.5 rounded-[12px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  {uploadError}
-                </div>
-              )}
-            </div>
+            {/* YouTube Import */}
+            <button
+              type="button"
+              onClick={() => openYtModal()}
+              className="flex cursor-pointer flex-col rounded-[16px] border border-c-border bg-surface-1 p-5 text-left transition hover:border-red-400/35 hover:bg-red-400/[.05]"
+            >
+              <div className="grid h-11 w-11 place-items-center rounded-[13px] border border-red-400/20 bg-red-400/[.08]">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="#f87171"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.28 8.28 0 0 0 4.84 1.56V6.79a4.85 4.85 0 0 1-1.07-.1z"/></svg>
+              </div>
+              <h3 className="mt-3 font-display text-[15px] font-bold text-c-text">YouTube Import</h3>
+              <p className="mt-1.5 text-[12px] leading-5 text-c-text-muted">Paste any YouTube URL. Preview metadata, choose format, clip with your active recipe.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {["URL paste", "Preview meta", "Auto-clip"].map((t) => (
+                  <span key={t} className="rounded-full border border-red-400/15 bg-red-400/[.06] px-2 py-0.5 text-[10px] font-semibold text-red-300/80">{t}</span>
+                ))}
+              </div>
+            </button>
           </div>
-        )}
 
+          {uploadError && (
+            <div className="mt-5 flex items-center gap-2.5 rounded-[12px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {uploadError}
+            </div>
+          )}
+        </div>
+
+        {/* ── Recent projects ── */}
+        <div className="mx-auto w-full max-w-[1180px] border-t border-c-border px-5 py-6 sm:px-8">
+          <div className="mb-5 flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-[.18em] text-c-text-muted">Recent projects</p>
+            <button type="button" onClick={() => navigate("/projects")} className="cursor-pointer text-[12px] font-semibold text-[#ff7a9a] transition hover:text-[#ff3d6a]">View all →</button>
+          </div>
+
+          {recentsLoading ? null : recents.length === 0 ? (
+            <div className="rounded-[14px] border border-dashed border-c-border bg-surface-1 px-5 py-10 text-center">
+              <p className="text-[13px] font-semibold text-c-text-muted">No projects yet</p>
+              <p className="mt-1 text-[12px] text-c-text-muted">Upload a video or import from YouTube to get started.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {recents.slice(0, 5).map((v) => <RecentTile key={v.id} video={v} />)}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

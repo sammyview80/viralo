@@ -22,7 +22,7 @@ const PLATFORM_CFG: Record<string, { color: string; icon: string; label: string 
   linkedin: { color: "#0A66C2", icon: "in", label: "LinkedIn" },
 };
 
-export type ClipCardAction = "publish" | "trim" | "edit" | "transcript" | "download" | "preview" | "regenerate";
+export type ClipCardAction = "publish" | "trim" | "edit" | "transcript" | "download" | "preview" | "regenerate" | "upscale";
 
 type ActionConfig = {
   id: ClipCardAction;
@@ -44,6 +44,7 @@ export function UniversalClipCard({
   posts = [],
   density = "comfortable",
   actions = [],
+  showTags = true,
   onClick,
   onSelect,
   onClipChange,
@@ -58,6 +59,7 @@ export function UniversalClipCard({
   posts?: ScheduledPost[];
   density?: "compact" | "comfortable";
   actions?: ActionConfig[];
+  showTags?: boolean;
   onClick?: (clip: ClipApiResponse) => void;
   onSelect?: (clip: ClipApiResponse) => void;
   onClipChange?: (clip: ClipApiResponse) => void;
@@ -133,7 +135,7 @@ export function UniversalClipCard({
   }
 
   function defaultIcon(id: ClipCardAction) {
-    return id === "publish" ? "↗" : id === "trim" ? "✂" : id === "edit" ? "✎" : id === "transcript" ? "☷" : id === "download" ? "↓" : id === "regenerate" ? "✦" : "▶";
+    return id === "publish" ? "↗" : id === "trim" ? "✂" : id === "edit" ? "✎" : id === "transcript" ? "☷" : id === "download" ? "↓" : id === "regenerate" ? "✦" : id === "upscale" ? "⬆" : "▶";
   }
 
   const primaryAction = actions.find((a) => a.primary) ?? actions.find((a) => a.id === "publish");
@@ -143,13 +145,13 @@ export function UniversalClipCard({
     <article
       onClick={() => onClick?.(localClip)}
       className={cn(
-        "group overflow-hidden rounded-[16px] border bg-[#0e1420] text-left transition hover:-translate-y-0.5 hover:border-white/[.13] hover:shadow-[0_18px_50px_rgba(0,0,0,.32)]",
+        "group overflow-hidden rounded-[16px] border bg-surface-1 text-left transition hover:-translate-y-0.5 hover:border-c-border-hover hover:shadow-[0_18px_50px_rgba(0,0,0,.32)]",
         onClick && "cursor-pointer",
-        active || selected ? "border-[#ff3d6a]/45 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-white/[.07]"
+        active || selected ? "border-[#ff3d6a]/45 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-c-border"
       )}
       style={{ animation: `fadeUp .28s ${delay}ms cubic-bezier(.22,.8,.4,1) both` }}
     >
-      <div className="relative aspect-video overflow-hidden bg-black">
+      <div className="relative aspect-[1/0.7] overflow-hidden bg-black">
         {hasVideo ? (
           <video ref={videoRef} src={localClip.storage_url!} poster={localClip.thumbnail_url ?? undefined} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
         ) : localClip.thumbnail_url ? (
@@ -215,27 +217,26 @@ export function UniversalClipCard({
       <div className={cn("space-y-3", p)}>
         <div className="space-y-1.5">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-white">{title}</h3>
-            <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/[.07] bg-white/[.025] px-2 py-1">
+            <h3 className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text">{title}</h3>
+            <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-c-border bg-surface-3 px-2 py-1">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: scoreColor }} />
               <span className="font-mono text-[11px] font-bold" style={{ color: scoreColor }}>{score}</span>
             </div>
           </div>
-          {description && <p className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-zinc-500">{description}</p>}
+          {description && <p className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted">{description}</p>}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted">
           <Badge variant={localClip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(localClip.status) ? "warn" : localClip.status === "upload_failed" ? "error" : localClip.status === "processing" ? "warn" : "muted"}>{localClip.status === "pending_upload" ? "queued" : localClip.status === "upload_failed" ? "failed" : localClip.status}</Badge>
-          <span className="rounded-full bg-white/[.035] px-2 py-1">{tags.length} tags</span>
-          <span className="rounded-full bg-white/[.035] px-2 py-1">{new Date(localClip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-          {clipStart && clipEnd && <span className="rounded-full bg-white/[.035] px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
-          <span className="rounded-full bg-white/[.035] px-2 py-1">9:16</span>
+          <span className="rounded-full bg-surface-3 px-2 py-1">{tags.length} tags</span>
+          <span className="rounded-full bg-surface-3 px-2 py-1">{new Date(localClip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+          {clipStart && clipEnd && <span className="rounded-full bg-surface-3 px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
+          <span className="rounded-full bg-surface-3 px-2 py-1">9:16</span>
         </div>
 
-        <div className="h-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
 
-        {(postedPlatforms.length > 0 || tags.length > 0) && (
-          <div className="space-y-2 border-t border-white/[.06] pt-3">
+        {(postedPlatforms.length > 0 || (showTags && tags.length > 0)) && (
+          <div className="space-y-2 border-t border-c-border pt-3">
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {postedPlatforms.slice(0, 2).map((post) => {
@@ -250,40 +251,40 @@ export function UniversalClipCard({
                 })}
               </div>
             )}
-            {tags.length > 0 && (
+            {showTags && tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {tags.slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-white/[.035] px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
-                {tags.length > 2 && <span className="rounded-full bg-white/[.03] px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 2}</span>}
+                {tags.slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-surface-3 px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
+                {tags.length > 2 && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 2}</span>}
               </div>
             )}
           </div>
         )}
 
         {showTranscript && localClip.caption_srt && (
-          <div className="max-h-28 overflow-y-auto rounded-[9px] border border-white/[.07] bg-white/[.025] px-3 py-2 font-mono text-[10.5px] leading-[1.55] text-zinc-500">
+          <div className="max-h-28 overflow-y-auto rounded-[9px] border border-c-border bg-surface-3 px-3 py-2 font-mono text-[10.5px] leading-[1.55] text-zinc-500">
             {localClip.caption_srt}
           </div>
         )}
 
         {actions.length > 0 && (
-          <div className="flex items-center gap-2 border-t border-white/[.06] pt-3">
+          <div className="flex items-center gap-2 border-t border-c-border pt-3">
             {primaryAction && (
               <button onClick={(e) => runAction(primaryAction, e)} disabled={primaryAction.disabled} className="flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.22)] transition hover:bg-[#ff527a] disabled:opacity-50">
                 <span>{primaryAction.icon ?? defaultIcon(primaryAction.id)}</span>{primaryAction.label ?? primaryAction.id}
               </button>
             )}
             {secondaryActions.slice(0, 2).map((action) => (
-              <button key={action.id} onClick={(e) => runAction(action, e)} disabled={action.disabled} className="min-h-8 rounded-[9px] border border-white/[.07] bg-white/[.025] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-white/[.06] hover:text-white disabled:opacity-50">
+              <button key={action.id} onClick={(e) => runAction(action, e)} disabled={action.disabled} className="min-h-8 rounded-[9px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-surface-2 hover:text-white disabled:opacity-50">
                 <span>{action.icon ?? defaultIcon(action.id)}</span><span className="sr-only">{action.label ?? action.id}</span>
               </button>
             ))}
             {secondaryActions.length > 2 && (
               <div className="relative">
-                <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className="min-h-8 rounded-[9px] border border-white/[.07] bg-white/[.025] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-white/[.06] hover:text-white">•••</button>
+                <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className="min-h-8 rounded-[9px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-surface-2 hover:text-white">•••</button>
                 {menuOpen && (
-                  <div className="absolute bottom-full right-0 z-30 mb-2 w-40 overflow-hidden rounded-[10px] border border-white/[.08] bg-[#0d1420] shadow-2xl">
+                  <div className="absolute bottom-full right-0 z-30 mb-2 w-40 overflow-hidden rounded-[10px] border border-c-border bg-white dark:bg-[#080b12] shadow-[0_8px_32px_rgba(0,0,0,.18)]">
                     {secondaryActions.slice(2).map((action) => (
-                      <button key={action.id} onClick={(e) => runAction(action, e)} disabled={action.disabled} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 hover:bg-white/[.05] hover:text-white disabled:opacity-50">
+                      <button key={action.id} onClick={(e) => runAction(action, e)} disabled={action.disabled} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold text-c-text-secondary hover:bg-surface-2 hover:text-c-text disabled:opacity-50">
                         <span>{action.icon ?? defaultIcon(action.id)}</span>{action.label ?? action.id}
                       </button>
                     ))}
