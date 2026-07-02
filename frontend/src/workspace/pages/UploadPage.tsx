@@ -3,7 +3,7 @@ import { cn, safeFilename, downloadBlob, downloadUrl, stripSrtTimecodes } from "
 import { navigate } from "@/lib/router";
 import { UniversalClipCard, type ClipCardAction } from "../components/UniversalClipCard";
 import { VirtualizedGrid } from "../components/VirtualizedCollection";
-import { videoApi, platformApi, token as authToken, API_BASES, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount, type ScheduledPost } from "@/lib/api";
+import { videoApi, platformApi, token as authToken, API_BASES, type VideoResponse, type ClipApiResponse, type ClipConfig, type SocialAccount, type ScheduledPost, type CaptionStyleInfo } from "@/lib/api";
 
 const VIDEO_SSE_BASE = API_BASES.video;
 
@@ -31,7 +31,7 @@ export const DEFAULT_CONFIG: ClipConfig = {
   platforms: ["tiktok","reels","shorts"],
   topic_focus: null,
   add_captions: false,
-  caption_style: "capcut",
+  caption_style: null,
   aspect_ratio: "9:16",
   duration_min: 20,
   duration_max: 60,
@@ -43,15 +43,93 @@ export const DEFAULT_CONFIG: ClipConfig = {
   occasion: null,
 };
 
-export const CAPTION_STYLES = [
-  { id:"capcut",      label:"CapCut",       desc:"Bold word-by-word, colored highlight" },
-  { id:"capcut-bold", label:"CapCut Bold",  desc:"Thicker strokes, high contrast" },
-  { id:"classic",     label:"Classic",      desc:"White subtitles, black outline" },
-  { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline" },
+export type CaptionStyleOption = {
+  id: string | null; label: string; desc: string;
+  family?: CaptionStyleInfo["family"]; highlight?: string; uppercase?: boolean;
+};
+
+// Static fallback — the picker refreshes this from GET /caption-styles so the
+// list always matches what the backend can actually render.
+export const CAPTION_STYLES: CaptionStyleOption[] = [
+  { id:null,          label:"Auto",         desc:"Matched to the selected template" },
+  { id:"tiktok",      label:"TikTok",       desc:"Words appear as spoken, dark box", family:"reveal",  highlight:"#ffffff" },
+  { id:"word-pop",    label:"Word Pop",     desc:"One big word at a time, centered", family:"pop",     highlight:"#ffffff", uppercase:true },
+  { id:"capcut",      label:"CapCut",       desc:"Word pills, yellow highlight",     family:"pill",    highlight:"#f5c518" },
+  { id:"capcut-bold", label:"CapCut Bold",  desc:"Thicker strokes, high contrast",   family:"pill",    highlight:"#f5c518" },
+  { id:"hormozi",     label:"Hormozi",      desc:"Bold caps pills, green highlight", family:"pill",    highlight:"#39ff14", uppercase:true },
+  { id:"beast",       label:"Beast",        desc:"Big bold caps, red highlight",     family:"pill",    highlight:"#ff2d2d", uppercase:true },
+  { id:"neon",        label:"Neon",         desc:"Cyan highlight on dark band",      family:"pill",    highlight:"#00e5ff" },
+  { id:"karaoke",     label:"Karaoke",      desc:"Full line, word-by-word color",    family:"karaoke", highlight:"#f5c518" },
+  { id:"classic",     label:"Classic",      desc:"White subtitles, black outline",   family:"outline", highlight:"#ffffff" },
+  { id:"impact",      label:"Impact",       desc:"Huge meme-style outlined caps",    family:"outline", highlight:"#ffffff", uppercase:true },
+  { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline",    family:"minimal", highlight:"#ffffff" },
 ];
+
+/* Mini mock of how each caption style renders on video — pure CSS, no assets */
+function CaptionPreview({ s }: { s: CaptionStyleOption }) {
+  const base = "flex h-12 items-center justify-center gap-1 rounded-[8px] bg-gradient-to-b from-[#2a2f3d] to-[#1c202b] px-1.5 overflow-hidden";
+  const outlineShadow = "0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000";
+  if (!s.id) {
+    return <div className={base}><span className="text-[11px] font-bold text-emerald-400">✨ Auto</span></div>;
+  }
+  const hl = s.highlight ?? "#f5c518";
+  const tx = (w: string) => (s.uppercase ? w.toUpperCase() : w);
+  // black text on bright pills, white on dark ones (matches backend luminance rule)
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hl.slice(i, i + 2), 16));
+  const pillText = 0.299 * r + 0.587 * g + 0.114 * b > 140 ? "#000" : "#fff";
+  switch (s.family) {
+    case "pill":
+      return (
+        <div className={base}>
+          <span className="text-[9px] font-bold text-white/80" style={{ textShadow: "1px 1px 0 #000" }}>{tx("so")}</span>
+          <span className="rounded-[4px] px-1 py-0.5 text-[9px] font-bold" style={{ background: hl, color: pillText }}>{tx("viral")}</span>
+          <span className="text-[9px] font-bold text-white/80" style={{ textShadow: "1px 1px 0 #000" }}>{tx("now")}</span>
+        </div>
+      );
+    case "reveal":
+      return (
+        <div className={base}>
+          <span className="rounded-[5px] bg-black/80 px-1.5 py-0.5 text-[9.5px] font-bold text-white">so viral</span>
+        </div>
+      );
+    case "pop":
+      return (
+        <div className={base}>
+          <span className="text-[15px] font-black text-white" style={{ textShadow: outlineShadow }}>VIRAL</span>
+        </div>
+      );
+    case "karaoke":
+      return (
+        <div className={cn(base)}>
+          <span className="rounded-[4px] bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-white">
+            so <span style={{ color: hl }}>viral</span> now
+          </span>
+        </div>
+      );
+    case "outline":
+      return (
+        <div className={base}>
+          <span className={cn("font-black text-white", s.uppercase ? "text-[11px]" : "text-[9.5px]")}
+            style={{ textShadow: outlineShadow }}>{tx("so viral now")}</span>
+        </div>
+      );
+    default: // minimal
+      return (
+        <div className={base}>
+          <span className="text-[9px] font-semibold text-zinc-300">so viral now</span>
+        </div>
+      );
+  }
+}
 
 export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig; onChange: (c: ClipConfig) => void; step?: 1 | 2 | 3 }) {
   const set = (patch: Partial<ClipConfig>) => onChange({ ...config, ...patch });
+  const [captionStyles, setCaptionStyles] = useState<CaptionStyleOption[]>(CAPTION_STYLES);
+  useEffect(() => {
+    videoApi.captionStyles()
+      .then((list) => setCaptionStyles([CAPTION_STYLES[0], ...list]))
+      .catch(() => {}); // keep the static fallback if the endpoint is unreachable
+  }, []);
   const togglePlat = (id: string) => {
     const cur = config.platforms ?? [];
     set({ platforms: cur.includes(id) ? cur.filter((p) => p !== id) : [...cur, id] });
@@ -196,13 +274,17 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
 
         {s2 && config.add_captions && (
           <div className="border-t border-[#ff3d6a]/15 pt-5">
-            <label className={labelCls}>Caption style</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {CAPTION_STYLES.map((s) => (
-                <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
-                  className={cn("rounded-[11px] border px-3 py-2.5 text-left transition",
-                    config.caption_style === s.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
-                  <div className={cn("text-[12px] font-bold", config.caption_style === s.id ? "text-[#ff5f86]" : "text-zinc-200")}>{s.label}</div>
+            <div className="flex items-center gap-2">
+              <label className={labelCls}>Caption style</label>
+              {!config.caption_style && <span className="mb-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">AUTO</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              {captionStyles.map((s) => (
+                <button key={String(s.id)} type="button" onClick={() => set({ caption_style: s.id })}
+                  className={cn("rounded-[11px] border px-2.5 py-2.5 text-left transition",
+                    (config.caption_style ?? null) === s.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10" : "border-white/[.07] bg-white/[.03] hover:border-white/[.12]")}>
+                  <CaptionPreview s={s} />
+                  <div className={cn("mt-1.5 text-[12px] font-bold", (config.caption_style ?? null) === s.id ? "text-[#ff5f86]" : "text-zinc-200")}>{s.label}</div>
                   <div className="mt-0.5 text-[10.5px] leading-4 text-zinc-500">{s.desc}</div>
                 </button>
               ))}
@@ -3145,7 +3227,7 @@ export function UploadPage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-zinc-500">Captions</span>
-                          <span className="font-semibold text-zinc-200">{clipConfig.add_captions ? `On · ${clipConfig.caption_style}` : "Off"}</span>
+                          <span className="font-semibold text-zinc-200">{clipConfig.add_captions ? `On · ${clipConfig.caption_style ?? "auto"}` : "Off"}</span>
                         </div>
                       </div>
                     </div>
