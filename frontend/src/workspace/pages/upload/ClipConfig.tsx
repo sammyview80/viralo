@@ -1,8 +1,83 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import type { ClipConfig } from "@/lib/api";
-import { ASPECT_OPTIONS, ASPECT_DETAILS, LENGTH_PRESETS, CAPTION_STYLES } from "./constants";
+import { videoApi, type ClipConfig } from "@/lib/api";
+import { ASPECT_OPTIONS, ASPECT_DETAILS, LENGTH_PRESETS, CAPTION_STYLES, type CaptionStyleOption } from "./constants";
 import { formatClipTime } from "./helpers";
+
+/* 9:16 phone-frame mock of how each caption style renders on video — the
+   caption sits where the real burn-in places it (TikTok-style lower-center,
+   mid-frame for word-pop, lower-third for minimal). Pure CSS, no assets. */
+export function CaptionPreview({ s, selected }: { s: CaptionStyleOption; selected: boolean }) {
+  const outlineShadow = "0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000";
+  const frame = "relative aspect-[9/16] w-full overflow-hidden rounded-[10px] bg-gradient-to-b from-[#2b303e] to-[#141824]";
+  const check = selected && (
+    <span className="absolute right-1 top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-[#ff3d6a] text-[9px] font-bold text-white">✓</span>
+  );
+
+  if (!s.id) {
+    return (
+      <div className={frame}>
+        {check}
+        <div className="flex h-full flex-col items-center justify-center gap-1">
+          <span className="text-[16px]">✨</span>
+          <span className="text-[9px] font-bold text-emerald-400">Best match</span>
+        </div>
+      </div>
+    );
+  }
+
+  const hl = s.highlight ?? "#f5c518";
+  const tx = (w: string) => (s.uppercase ? w.toUpperCase() : w);
+  // black text on bright pills, white on dark ones (matches backend luminance rule)
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hl.slice(i, i + 2), 16));
+  const pillText = 0.299 * r + 0.587 * g + 0.114 * b > 140 ? "#000" : "#fff";
+
+  const caption = (() => {
+    switch (s.family) {
+      case "pill":
+        return (
+          <div className="flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5">
+            <span className="text-[8px] font-bold text-white/85" style={{ textShadow: "1px 1px 0 #000" }}>{tx("here is")}</span>
+            <span className="rounded-[3px] px-1 py-px text-[8px] font-black" style={{ background: hl, color: pillText }}>{tx("your")}</span>
+            <span className="text-[8px] font-bold text-white/85" style={{ textShadow: "1px 1px 0 #000" }}>{tx("subtitle")}</span>
+          </div>
+        );
+      case "reveal":
+        return (
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="rounded-[4px] bg-black/85 px-1.5 py-0.5 text-[8px] font-bold text-white">Here is your</span>
+            <span className="rounded-[4px] bg-black/85 px-1.5 py-0.5 text-[8px] font-bold text-white">subtitle</span>
+          </div>
+        );
+      case "pop":
+        return <span className="text-[14px] font-black text-white" style={{ textShadow: outlineShadow }}>WOW</span>;
+      case "karaoke":
+        return (
+          <span className="whitespace-nowrap rounded-[3px] bg-black/75 px-1.5 py-0.5 text-[8px] font-bold text-white">
+            here is <span style={{ color: hl }}>your</span> subtitle
+          </span>
+        );
+      case "outline":
+        return (
+          <span className={cn("text-center font-black leading-tight text-white", s.uppercase ? "text-[9.5px]" : "text-[8.5px]")}
+            style={{ textShadow: outlineShadow }}>{tx("Here is your subtitle")}</span>
+        );
+      default: // minimal
+        return <span className="text-[8px] font-semibold text-zinc-300">here is your subtitle</span>;
+    }
+  })();
+
+  const pos = s.family === "pop" ? "top-[42%]" : s.family === "minimal" ? "top-[78%]" : "top-[62%]";
+  return (
+    <div className={frame}>
+      {check}
+      <div className="absolute inset-x-0 top-[12%] text-center text-[7.5px] font-semibold leading-tight text-white/60">
+        Your video<br />title
+      </div>
+      <div className={cn("absolute inset-x-0 flex justify-center px-1", pos)}>{caption}</div>
+    </div>
+  );
+}
 
 export function AspectPreview({ ratio, active }: { ratio: string; active: boolean }) {
   return (
@@ -168,6 +243,12 @@ export function TargetLengthControl({
 
 export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig; onChange: (c: ClipConfig) => void; step?: 1 | 2 | 3 }) {
   const set = (patch: Partial<ClipConfig>) => onChange({ ...config, ...patch });
+  const [captionStyles, setCaptionStyles] = useState<CaptionStyleOption[]>(CAPTION_STYLES);
+  useEffect(() => {
+    videoApi.captionStyles()
+      .then((list) => setCaptionStyles([CAPTION_STYLES[0], ...list]))
+      .catch(() => {}); // keep the static fallback if the endpoint is unreachable
+  }, []);
 
   const virality = Math.round((config.min_score ?? 0.5) * 10);
   const durationLabel = `${config.duration_min ?? 20}-${config.duration_max ?? 60}s`;
@@ -268,16 +349,24 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
 
         {s2 && config.add_captions && (
           <div className="border-t border-white/[.06] pt-5">
-            <label className={labelCls}>Caption style</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {CAPTION_STYLES.map((s) => (
-                <button key={s.id} type="button" onClick={() => set({ caption_style: s.id })}
-                  className={cn("rounded-[10px] border px-3 py-2.5 text-left transition",
-                    config.caption_style === s.id ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08]" : "border-white/[.08] bg-white/[.025] hover:border-white/[.14]")}>
-                  <div className={cn("text-[12px] font-bold", config.caption_style === s.id ? "text-[#ff7a9a]" : "text-zinc-200")}>{s.label}</div>
-                  <div className="mt-0.5 text-[10.5px] leading-4 text-zinc-500">{s.desc}</div>
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <label className={labelCls}>Caption style</label>
+              {!config.caption_style && <span className="mb-2 rounded-full border border-emerald-400/20 bg-emerald-400/[.08] px-2 py-0.5 text-[10px] font-bold text-emerald-300">Auto</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+              {captionStyles.map((s) => {
+                const sel = (config.caption_style ?? null) === s.id;
+                return (
+                  <button key={String(s.id)} type="button" onClick={() => set({ caption_style: s.id })}
+                    className={cn("rounded-[13px] border p-1 text-center transition",
+                      sel ? "border-[#ff3d6a]/70 bg-[#ff3d6a]/[.06] shadow-[0_0_0_1px_rgba(255,61,106,.45)]"
+                          : "border-white/[.07] bg-white/[.02] hover:border-white/[.18]")}>
+                    <CaptionPreview s={s} selected={sel} />
+                    <div className={cn("mt-1.5 text-[11px] font-bold", sel ? "text-[#ff7a9a]" : "text-zinc-200")}>{s.label}</div>
+                    <div className="mb-0.5 mt-0.5 px-0.5 text-[9.5px] leading-3 text-zinc-500">{s.desc}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

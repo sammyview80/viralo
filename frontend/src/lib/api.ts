@@ -329,7 +329,7 @@ export interface ClipConfig {
   min_score?: number;
   topic_focus?: string | null;
   add_captions?: boolean;
-  caption_style?: string;
+  caption_style?: string | null;
   aspect_ratio?: string;
   duration_max?: number;
   duration_min?: number;
@@ -339,6 +339,15 @@ export interface ClipConfig {
   music_track?: string | null;
   voiceover?: boolean;
   occasion?: string | null;
+}
+
+export interface CaptionStyleInfo {
+  id: string;
+  label: string;
+  desc: string;
+  family: "pill" | "reveal" | "pop" | "karaoke" | "outline" | "minimal";
+  highlight: string;
+  uppercase: boolean;
 }
 
 export type OutputQuality = "source" | "1080p" | "720p" | "480p" | "360p";
@@ -374,6 +383,7 @@ export interface YouTubeFormatsResponse {
 }
 
 export const videoApi = {
+  captionStyles: () => videoReq<CaptionStyleInfo[]>("GET", "/caption-styles"),
   upload: (file: File, title: string, config?: ClipConfig) => {
     const fd = new FormData();
     fd.append("file", file);

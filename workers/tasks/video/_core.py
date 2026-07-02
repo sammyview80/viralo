@@ -50,6 +50,9 @@ __all__ = [
     'QUALITY_CAP',
     'CAPTION_STYLE_CFG',
     'CAPCUT_STYLES',
+    'BOLD_PILL_STYLES',
+    'UPPERCASE_PILL_STYLES',
+    '_effective_caption_style',
     'FONT_PATHS',
     'redis_client',
     'engine',
@@ -145,12 +148,35 @@ QUALITY_CAP = {
 
 CAPTION_STYLE_CFG = {
     # style: (text_rgba, highlight_rgba, context_alpha, font_size, bg_rgba)
+    # highlight_rgba drives the active-word pill fill for word-by-word styles
     "capcut":      ((255, 255, 255, 255), (245, 197, 24, 255),  0.45, 62, (0, 0, 0, 160)),
-    "capcut-bold": ((255, 230, 0, 255),   (255, 255, 255, 255), 0.40, 68, (0, 0, 0, 0)),
+    "capcut-bold": ((255, 230, 0, 255),   (245, 197, 24, 255),  0.40, 68, (0, 0, 0, 0)),
+    "tiktok":      ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  56, (0, 0, 0, 170)),
+    "word-pop":    ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  84, (0, 0, 0, 0)),
+    "hormozi":     ((255, 255, 255, 255), (57, 255, 20, 255),   0.40, 66, (0, 0, 0, 0)),
+    "beast":       ((255, 255, 255, 255), (255, 45, 45, 255),   0.40, 70, (0, 0, 0, 0)),
+    "neon":        ((255, 255, 255, 255), (0, 229, 255, 255),   0.45, 62, (0, 0, 0, 140)),
+    "karaoke":     ((255, 255, 255, 255), (245, 197, 24, 255),  1.0,  56, (0, 0, 0, 150)),
     "classic":     ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  52, (0, 0, 0, 140)),
+    "impact":      ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  72, (0, 0, 0, 0)),
     "minimal":     ((200, 200, 200, 255), (255, 255, 255, 255), 0.8,  44, (0, 0, 0, 0)),
 }
-CAPCUT_STYLES = {"capcut", "capcut-bold"}
+# Styles rendered word-by-word (need word-level caption timeline)
+CAPCUT_STYLES = {"capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke"}
+# Word-pill styles drawn with the larger highlight font
+BOLD_PILL_STYLES = {"capcut-bold", "hormozi", "beast"}
+# Pill styles drawn in ALL CAPS (their signature look)
+UPPERCASE_PILL_STYLES = {"hormozi", "beast"}
+
+
+def _effective_caption_style(cfg: dict) -> str:
+    """Resolve the caption style: explicit user choice wins, unset = auto from template."""
+    style = cfg.get("caption_style")
+    if not style:
+        from workers.tasks.templates import resolve_template
+        tmpl = resolve_template(cfg.get("occasion"), cfg.get("template_id"))
+        style = tmpl.get("caption_style", "capcut")
+    return style if style in CAPTION_STYLE_CFG else "capcut"
 
 FONT_PATHS = [
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",

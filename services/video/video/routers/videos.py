@@ -28,6 +28,8 @@ from shared.plan_gate import check_storage_quota, increment_storage_used
 from shared.schemas.auth import TokenPayload
 from video.models import Clip, Video
 from video.schemas import (
+    CAPTION_STYLE_CATALOG,
+    CaptionStyleInfo,
     ClipConcatRequest,
     ClipConfig,
     ClipListResponse,
@@ -115,6 +117,13 @@ def _ytdlp_fetch_json(url: str, timeout: int = 30) -> dict:
 
 
 router = APIRouter(tags=["video"])
+
+
+@router.get("/caption-styles", response_model=list[CaptionStyleInfo])
+async def list_caption_styles():
+    """Static catalog of caption styles — the frontend picker renders from this."""
+    return CAPTION_STYLE_CATALOG
+
 
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 _TIKTOK_HOSTS = {"tiktok.com", "www.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"}
