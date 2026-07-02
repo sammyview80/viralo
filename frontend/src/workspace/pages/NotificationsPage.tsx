@@ -31,6 +31,7 @@ const Icons = {
   Error:    () => <Svg><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></Svg>,
   Brain:    () => <Svg><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14zm5 0a2.5 2.5 0 0 0-2.5 2.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14z"/></Svg>,
   Refresh:  () => <Svg><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></Svg>,
+  Trim:     () => <Svg><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></Svg>,
 };
 
 // ── Type config ───────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ type TypeCfg = { icon: React.ReactNode; accent: string; bg: string; label: strin
 const TYPE_CFG: Record<string, TypeCfg> = {
   video_ready:       { icon: <Icons.Video />,    accent: "text-emerald-400", bg: "bg-emerald-500/15", label: "Video ready",      filterLabel: "Videos" },
   video_failed:      { icon: <Icons.Error />,    accent: "text-red-400",     bg: "bg-red-500/15",     label: "Processing failed",filterLabel: "Videos" },
+  video_trimmed:     { icon: <Icons.Trim />,     accent: "text-amber-400",   bg: "bg-amber-500/15",   label: "Video trimmed",    filterLabel: "Videos" },
   post_published:    { icon: <Icons.Post />,     accent: "text-emerald-400", bg: "bg-emerald-500/15", label: "Post live",        filterLabel: "Posts" },
   post_failed:       { icon: <Icons.Error />,    accent: "text-red-400",     bg: "bg-red-500/15",     label: "Post failed",      filterLabel: "Posts" },
   channel_video:     { icon: <Icons.Channel />,  accent: "text-red-400",     bg: "bg-red-500/15",     label: "New video",        filterLabel: "Channels" },
@@ -276,7 +278,7 @@ export function NotificationsPage() {
   const unreadByFilter: Record<FilterKey, number> = {
     all:      items.filter((n) => !n.is_read).length,
     unread:   items.filter((n) => !n.is_read).length,
-    Videos:   items.filter((n) => !n.is_read && ["video_ready","video_failed"].includes(n.type ?? "")).length,
+    Videos:   items.filter((n) => !n.is_read && ["video_ready","video_failed","video_trimmed"].includes(n.type ?? "")).length,
     Posts:    items.filter((n) => !n.is_read && ["post_published","post_failed"].includes(n.type ?? "")).length,
     Channels: items.filter((n) => !n.is_read && n.type === "channel_video").length,
     System:   items.filter((n) => !n.is_read && ["workflow_complete","workflow_failed","session_complete","quota_warning"].includes(n.type ?? "")).length,

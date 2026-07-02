@@ -54,6 +54,19 @@ function VideoFailIcon() {
   );
 }
 
+function VideoTrimIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
+      strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <line x1="20" y1="4" x2="8.12" y2="15.88" />
+      <line x1="14.47" y1="14.48" x2="20" y2="20" />
+      <line x1="8.12" y1="8.12" x2="12" y2="12" />
+    </svg>
+  );
+}
+
 function PostLiveIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
@@ -119,6 +132,7 @@ function BrainIcon() {
 const TYPE_CONFIG: Record<string, TypeConfig> = {
   video_ready:      { icon: <VideoReadyIcon />, accent: "text-emerald-400", bg: "bg-emerald-500/15", label: "Video ready" },
   video_failed:     { icon: <VideoFailIcon />,  accent: "text-red-400",     bg: "bg-red-500/15",     label: "Processing failed" },
+  video_trimmed:    { icon: <VideoTrimIcon />,  accent: "text-amber-400",   bg: "bg-amber-500/15",   label: "Video trimmed" },
   post_published:   { icon: <PostLiveIcon />,   accent: "text-emerald-400", bg: "bg-emerald-500/15", label: "Post live" },
   post_failed:      { icon: <PostFailIcon />,   accent: "text-red-400",     bg: "bg-red-500/15",     label: "Post failed" },
   channel_video:    { icon: <ChannelIcon />,    accent: "text-red-400",     bg: "bg-red-500/15",     label: "New video" },
