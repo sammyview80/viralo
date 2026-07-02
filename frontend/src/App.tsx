@@ -9,6 +9,8 @@ import { useAuth, hydrate } from "@/stores/auth";
 import { usePathname } from "@/lib/router";
 import { ViraloIcon } from "@/components/ViraloLogo";
 import { Shell } from "@/workspace/Shell";
+import { VeroagenListPage } from "@/veroagen/ProjectListPage";
+import { VeroagenWorkspacePage } from "@/veroagen/WorkspacePage";
 
 const AUTH_ROUTES = ["/login", "/register"];
 
@@ -61,6 +63,9 @@ export default function App() {
   if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage key="billing" page="billing" />;
   if (path === "/notifications") return <WorkspacePage key="notifications" page="notifications" />;
   if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage key={path} page="upload" />;
+  if (path === "/veroagen") return <VeroagenListPage />;
+  const veroagenMatch = path.match(/^\/veroagen\/([^/]+)$/);
+  if (veroagenMatch) return <VeroagenWorkspacePage projectId={veroagenMatch[1]} />;
 
   const page = routeToPage(path);
   if (page) return <WorkspacePage key={page} page={page} />;
