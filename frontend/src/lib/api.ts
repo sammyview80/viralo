@@ -324,7 +324,17 @@ export interface ClipConfig {
   occasion?: string | null;
 }
 
+export interface CaptionStyleInfo {
+  id: string;
+  label: string;
+  desc: string;
+  family: "pill" | "reveal" | "pop" | "karaoke" | "outline" | "minimal";
+  highlight: string;
+  uppercase: boolean;
+}
+
 export const videoApi = {
+  captionStyles: () => videoReq<CaptionStyleInfo[]>("GET", "/caption-styles"),
   upload: (file: File, title: string, config?: ClipConfig) => {
     const fd = new FormData();
     fd.append("file", file);

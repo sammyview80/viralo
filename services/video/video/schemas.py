@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -47,6 +47,38 @@ class ClipConfig(BaseModel):
     music_track: Literal["hype", "dramatic", "chill"] | None = Field(default=None, description="Music track key override (None = auto from template)")
     voiceover: bool = Field(default=False, description="Generate and mix AI narrator voiceover")
     occasion: Literal["football", "soccer", "sports", "cricket", "ufc", "boxing", "mma", "f1", "racing", "gaming", "esports", "podcast", "interview", "concert", "music", "wedding", "travel", "general"] | None = Field(default=None, description="Content occasion hint. None = auto-detect.")
+
+
+class CaptionStyleInfo(BaseModel):
+    """Caption style catalog entry — drives the frontend picker and its preview."""
+    id: str
+    label: str
+    desc: str
+    family: Literal["pill", "reveal", "pop", "karaoke", "outline", "minimal"]
+    highlight: str  # hex color of the active-word highlight / pill fill
+    uppercase: bool = False
+
+
+CAPTION_STYLE_CATALOG: list[CaptionStyleInfo] = [
+    CaptionStyleInfo(id="tiktok",      label="TikTok",      desc="Words appear as spoken, dark box", family="reveal",  highlight="#ffffff"),
+    CaptionStyleInfo(id="word-pop",    label="Word Pop",    desc="One big word at a time, centered", family="pop",     highlight="#ffffff", uppercase=True),
+    CaptionStyleInfo(id="capcut",      label="CapCut",      desc="Word pills, yellow highlight",     family="pill",    highlight="#f5c518"),
+    CaptionStyleInfo(id="capcut-bold", label="CapCut Bold", desc="Thicker strokes, high contrast",   family="pill",    highlight="#f5c518"),
+    CaptionStyleInfo(id="hormozi",     label="Hormozi",     desc="Bold caps pills, green highlight", family="pill",    highlight="#39ff14", uppercase=True),
+    CaptionStyleInfo(id="beast",       label="Beast",       desc="Big bold caps, red highlight",     family="pill",    highlight="#ff2d2d", uppercase=True),
+    CaptionStyleInfo(id="neon",        label="Neon",        desc="Cyan highlight on dark band",      family="pill",    highlight="#00e5ff"),
+    CaptionStyleInfo(id="karaoke",     label="Karaoke",     desc="Full line, word-by-word color",    family="karaoke", highlight="#f5c518"),
+    CaptionStyleInfo(id="classic",     label="Classic",     desc="White subtitles, black outline",   family="outline", highlight="#ffffff"),
+    CaptionStyleInfo(id="impact",      label="Impact",      desc="Huge meme-style outlined caps",    family="outline", highlight="#ffffff", uppercase=True),
+    CaptionStyleInfo(id="minimal",     label="Minimal",     desc="Clean lower-third, no outline",    family="minimal", highlight="#ffffff"),
+]
+
+# Import-time drift guard: the catalog must exactly match ClipConfig's Literal
+_style_literal = next(
+    a for a in get_args(ClipConfig.model_fields["caption_style"].annotation) if a is not type(None)
+)
+assert {s.id for s in CAPTION_STYLE_CATALOG} == set(get_args(_style_literal)), \
+    "CAPTION_STYLE_CATALOG out of sync with ClipConfig.caption_style Literal"
 
 
 class VideoResponse(BaseModel):
