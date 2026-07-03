@@ -57,6 +57,11 @@ const TEMPLATE_BG: Record<string, string> = {
   "beast":       "from-sky-600 to-blue-900",
   "neon":        "from-indigo-700 to-violet-950",
   "karaoke":     "from-fuchsia-700 to-purple-950",
+  "bounce":      "from-yellow-600 to-amber-950",
+  "glow":        "from-cyan-800 to-slate-950",
+  "shadow":      "from-pink-700 to-rose-950",
+  "highlighter": "from-lime-700 to-emerald-950",
+  "rainbow":     "from-purple-600 to-indigo-950",
   "classic":     "from-zinc-600 to-zinc-900",
   "impact":      "from-stone-600 to-stone-900",
   "minimal":     "from-slate-600 to-slate-900",
@@ -101,6 +106,43 @@ function CaptionCard({ s, selected, onSelect }: { s: CaptionStyleOption; selecte
         return (
           <span className={cn("font-black leading-tight text-white", s.uppercase ? "text-[10px]" : "text-[9.5px]")}
             style={{ textShadow: outlineShadow }}>{tx("Here is your subtitle")}</span>
+        );
+      case "bounce":
+        return (
+          <span className="inline-flex items-end justify-center gap-1 font-black" style={{ textShadow: outlineShadow }}>
+            <span className="text-[9px] text-white">here is</span>
+            <span className="text-[12px]" style={{ color: hl }}>your</span>
+            <span className="text-[9px] text-white">subtitle</span>
+          </span>
+        );
+      case "glow":
+        return (
+          <span className="text-[9.5px] font-black text-white"
+            style={{ textShadow: `0 0 5px ${hl}, 0 0 10px ${hl}, 0 0 2px #000` }}>
+            here is <span style={{ color: hl }}>your</span> subtitle
+          </span>
+        );
+      case "shadow":
+        return (
+          <span className="text-[10.5px] font-black uppercase leading-tight text-white"
+            style={{ textShadow: `3px 3px 0 ${hl}, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000` }}>
+            here is your subtitle
+          </span>
+        );
+      case "highlighter":
+        return (
+          <span className="inline-flex flex-wrap items-center justify-center gap-1 text-[9px] font-black text-white" style={{ textShadow: "1px 1px 0 #000" }}>
+            here is <span className="rounded-[3px] px-1 py-px" style={{ background: hl, color: pillText }}>your</span> subtitle
+          </span>
+        );
+      case "rainbow":
+        return (
+          <span className="inline-flex flex-wrap justify-center gap-1 text-[9.5px] font-black" style={{ textShadow: outlineShadow }}>
+            <span style={{ color: "#ff5252" }}>here</span>
+            <span style={{ color: "#ffa528" }}>is</span>
+            <span style={{ color: "#fadc32" }}>your</span>
+            <span style={{ color: "#46c8ff" }}>subtitle</span>
+          </span>
         );
       default: // minimal
         return <span className="text-[9px] font-semibold text-zinc-200/90">here is your subtitle</span>;
