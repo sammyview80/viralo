@@ -41,7 +41,8 @@ class ClipConfig(BaseModel):
     # Captions
     add_captions: bool = Field(default=True, description="Burn captions into clip")
     caption_style: Literal[
-        "capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke", "classic", "impact", "minimal"
+        "capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke",
+        "bounce", "glow", "shadow", "highlighter", "rainbow", "classic", "impact", "minimal"
     ] | None = Field(
         default=None, description="Caption visual style (None = auto from template)"
     )
@@ -74,7 +75,8 @@ class CaptionStyleInfo(BaseModel):
     id: str
     label: str
     desc: str
-    family: Literal["pill", "reveal", "pop", "karaoke", "outline", "minimal"]
+    family: Literal["pill", "reveal", "pop", "karaoke", "outline", "minimal",
+                    "bounce", "glow", "shadow", "highlighter", "rainbow"]
     highlight: str  # hex color of the active-word highlight / pill fill
     uppercase: bool = False
 
@@ -88,6 +90,11 @@ CAPTION_STYLE_CATALOG: list[CaptionStyleInfo] = [
     CaptionStyleInfo(id="beast",       label="Beast",       desc="Big bold caps, red highlight",     family="pill",    highlight="#ff2d2d", uppercase=True),
     CaptionStyleInfo(id="neon",        label="Neon",        desc="Cyan highlight on dark band",      family="pill",    highlight="#00e5ff"),
     CaptionStyleInfo(id="karaoke",     label="Karaoke",     desc="Full line, word-by-word color",    family="karaoke", highlight="#f5c518"),
+    CaptionStyleInfo(id="bounce",      label="Bounce",      desc="Spoken word pops bigger",          family="bounce",  highlight="#f5c518"),
+    CaptionStyleInfo(id="glow",        label="Glow",        desc="Neon halo around every word",      family="glow",    highlight="#00e5ff"),
+    CaptionStyleInfo(id="shadow",      label="Shadow",      desc="Bold caps, hard color shadow",     family="shadow",  highlight="#ff3d6a"),
+    CaptionStyleInfo(id="highlighter", label="Highlighter", desc="Marker swipe on the spoken word",  family="highlighter", highlight="#facc15"),
+    CaptionStyleInfo(id="rainbow",     label="Rainbow",     desc="Every word a different color",     family="rainbow", highlight="#f5c518"),
     CaptionStyleInfo(id="classic",     label="Classic",     desc="White subtitles, black outline",   family="outline", highlight="#ffffff"),
     CaptionStyleInfo(id="impact",      label="Impact",      desc="Huge meme-style outlined caps",    family="outline", highlight="#ffffff", uppercase=True),
     CaptionStyleInfo(id="minimal",     label="Minimal",     desc="Clean lower-third, no outline",    family="minimal", highlight="#ffffff"),

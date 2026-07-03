@@ -62,6 +62,42 @@ export function CaptionPreview({ s, selected }: { s: CaptionStyleOption; selecte
           <span className={cn("text-center font-black leading-tight text-white", s.uppercase ? "text-[9.5px]" : "text-[8.5px]")}
             style={{ textShadow: outlineShadow }}>{tx("Here is your subtitle")}</span>
         );
+      case "bounce":
+        return (
+          <span className="inline-flex items-end gap-1 font-black" style={{ textShadow: outlineShadow }}>
+            <span className="text-[8px] text-white">so</span>
+            <span className="text-[11px]" style={{ color: hl }}>viral</span>
+            <span className="text-[8px] text-white">now</span>
+          </span>
+        );
+      case "glow":
+        return (
+          <span className="text-[9px] font-black text-white"
+            style={{ textShadow: `0 0 4px ${hl}, 0 0 8px ${hl}, 0 0 2px #000` }}>
+            so <span style={{ color: hl }}>viral</span> now
+          </span>
+        );
+      case "shadow":
+        return (
+          <span className="text-[10px] font-black uppercase text-white"
+            style={{ textShadow: `3px 3px 0 ${hl}, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000` }}>
+            so viral now
+          </span>
+        );
+      case "highlighter":
+        return (
+          <span className="inline-flex items-center gap-1 text-[8.5px] font-black text-white" style={{ textShadow: "1px 1px 0 #000" }}>
+            so <span className="rounded-[3px] px-1 py-px" style={{ background: hl, color: pillText }}>viral</span> now
+          </span>
+        );
+      case "rainbow":
+        return (
+          <span className="inline-flex gap-1 text-[9px] font-black" style={{ textShadow: outlineShadow }}>
+            <span style={{ color: "#ff5252" }}>so</span>
+            <span style={{ color: "#fadc32" }}>viral</span>
+            <span style={{ color: "#46c8ff" }}>now</span>
+          </span>
+        );
       default: // minimal
         return <span className="text-[8px] font-semibold text-zinc-300">here is your subtitle</span>;
     }
