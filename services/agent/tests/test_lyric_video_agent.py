@@ -54,3 +54,31 @@ def test_missing_rights_confirmation_adds_warning():
 
     assert plan["rights"]["status"] == "unknown"
     assert "rights_not_confirmed" in plan["warnings"]
+
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+
+def test_lyric_video_plan_route_returns_plan():
+    from agent.routers.lyric_videos import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    response = client.post(
+        "/lyric-videos/plan",
+        json={
+            "source": {"type": "upload", "title": "Demo"},
+            "rights_confirmed": True,
+            "transcript_text": "Line one\nLine two",
+            "aspect_ratio": "9:16",
+            "template_hint": "minimal-black",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["lyrics"][0]["text"] == "Line one"
+    assert data["template"]["id"] == "minimal-black"
