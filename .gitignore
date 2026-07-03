@@ -77,6 +77,7 @@ media/
 .agents/
 .claude/
 .superpowers/
+.worktrees/
 skills-lock.json
 yt-cookies.txt
 AGENTS.md
