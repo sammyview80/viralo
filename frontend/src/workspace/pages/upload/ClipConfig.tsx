@@ -119,39 +119,39 @@ export function AspectPreview({ ratio, active }: { ratio: string; active: boolea
   return (
     <div className={cn(
       "mx-auto grid h-12 place-items-center rounded-[8px] border transition",
-      active ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/[.07]" : "border-white/[.08] bg-black/10"
+      active ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/[.07]" : "border-c-border bg-surface-2"
     )}>
       {ratio === "9:16" ? (
         <div className={cn(
           "relative h-10 w-6 overflow-hidden rounded-[6px] border",
-          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-white/[.18] bg-white/[.055]"
+          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-c-border bg-surface-3"
         )}>
-          <div className="absolute inset-x-1 top-1 h-1 rounded-full bg-white/30" />
-          <div className="absolute bottom-1 left-1 right-2 h-0.5 rounded-full bg-white/55" />
-          <div className="absolute bottom-2 left-1 right-1 h-0.5 rounded-full bg-white/25" />
+          <div className="absolute inset-x-1 top-1 h-1 rounded-full bg-c-text-muted" />
+          <div className="absolute bottom-1 left-1 right-2 h-0.5 rounded-full bg-c-text-secondary" />
+          <div className="absolute bottom-2 left-1 right-1 h-0.5 rounded-full bg-c-text-muted" />
           <div className="absolute right-1 top-3 flex flex-col gap-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-white/40" />
-            <span className="h-1.5 w-1.5 rounded-full bg-white/30" />
+            <span className="h-1.5 w-1.5 rounded-full bg-c-text-muted" />
+            <span className="h-1.5 w-1.5 rounded-full bg-c-text-muted" />
           </div>
         </div>
       ) : ratio === "1:1" ? (
         <div className={cn(
           "relative h-9 w-9 overflow-hidden rounded-[6px] border",
-          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-white/[.18] bg-white/[.055]"
+          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-c-border bg-surface-3"
         )}>
-          <div className="absolute inset-x-1 top-1 h-4 rounded bg-white/15" />
-          <div className="absolute bottom-2 left-1 right-1 h-0.5 rounded-full bg-white/45" />
-          <div className="absolute bottom-1 left-1 right-3 h-0.5 rounded-full bg-white/25" />
+          <div className="absolute inset-x-1 top-1 h-4 rounded bg-c-border" />
+          <div className="absolute bottom-2 left-1 right-1 h-0.5 rounded-full bg-c-text-secondary" />
+          <div className="absolute bottom-1 left-1 right-3 h-0.5 rounded-full bg-c-text-muted" />
         </div>
       ) : (
         <div className={cn(
           "relative h-7 w-12 overflow-hidden rounded-[6px] border",
-          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-white/[.18] bg-white/[.055]"
+          active ? "border-[#ff7a9a]/70 bg-[#ff3d6a]/15" : "border-c-border bg-surface-3"
         )}>
           <div className="absolute inset-0 grid place-items-center">
-            <span className="h-0 w-0 border-y-[5px] border-l-[8px] border-y-transparent border-l-white/55" />
+            <span className="h-0 w-0 border-y-[5px] border-l-[8px] border-y-transparent border-l-c-text-secondary" />
           </div>
-          <div className="absolute bottom-1 left-1 right-1 h-0.5 rounded-full bg-white/35" />
+          <div className="absolute bottom-1 left-1 right-1 h-0.5 rounded-full bg-c-text-muted" />
         </div>
       )}
     </div>
@@ -161,7 +161,7 @@ export function AspectPreview({ ratio, active }: { ratio: string; active: boolea
 export function AspectRatioSelector({
   value,
   onChange,
-  labelClassName = "mb-2 block text-[11px] font-semibold text-zinc-400",
+  labelClassName = "mb-2 block text-[11px] font-semibold text-c-text-secondary",
 }: {
   value?: string;
   onChange: (ratio: string) => void;
@@ -178,11 +178,11 @@ export function AspectRatioSelector({
             <button key={r} type="button" onClick={() => onChange(r)}
               className={cn(
                 "cursor-pointer rounded-[9px] border p-2 text-center transition",
-                active ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.075] text-[#ff7a9a]" : "border-white/[.09] bg-white/[.025] text-zinc-400 hover:border-white/[.15] hover:bg-white/[.04]"
+                active ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.075] text-[#ff7a9a]" : "border-c-border bg-surface-1 text-c-text-secondary hover:border-c-border-hover hover:bg-surface-2"
               )}>
               <AspectPreview ratio={r} active={active} />
               <div className="mt-1.5 text-[12px] font-bold">{r}</div>
-              <div className={cn("mt-0.5 truncate text-[10.5px] font-semibold", active ? "text-zinc-100" : "text-zinc-400")}>{detail.title}</div>
+              <div className={cn("mt-0.5 truncate text-[10.5px] font-semibold", active ? "text-c-text" : "text-c-text-secondary")}>{detail.title}</div>
             </button>
           );
         })}
@@ -195,8 +195,8 @@ export function TargetLengthControl({
   min,
   max,
   onChange,
-  labelClassName = "mb-2 block text-[11px] font-semibold text-zinc-400",
-  inputClassName = "w-full rounded-[10px] border border-white/[.10] bg-white/[.04] px-3 py-2.5 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#ff3d6a]/45 focus:bg-white/[.055] focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]",
+  labelClassName = "mb-2 block text-[11px] font-semibold text-c-text-secondary",
+  inputClassName = "w-full rounded-[10px] border border-c-border bg-surface-2 px-3 py-2.5 text-[13px] text-c-text outline-none transition placeholder:text-c-text-muted focus:border-[#ff3d6a]/45 focus:bg-surface-3 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]",
 }: {
   min?: number;
   max?: number;
@@ -217,7 +217,7 @@ export function TargetLengthControl({
     <div>
       <div className="mb-2 flex items-center justify-between gap-3">
         <label className={cn(labelClassName, "mb-0")}>Target length</label>
-        <span className="rounded-full border border-white/[.08] bg-white/[.035] px-2.5 py-1 text-[11px] font-semibold text-zinc-300">
+        <span className="rounded-full border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-c-text-secondary">
           {formatClipTime(durationMin)}-{formatClipTime(durationMax)}
         </span>
       </div>
@@ -237,36 +237,36 @@ export function TargetLengthControl({
             }}
             className={cn(
               "cursor-pointer rounded-[10px] border px-3 py-2.5 text-left transition",
-              selectedPreset === preset.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.075]" : "border-white/[.09] bg-white/[.025] hover:border-white/[.15] hover:bg-white/[.04]"
+              selectedPreset === preset.id ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/[.075]" : "border-c-border bg-surface-2 hover:border-c-border-hover hover:bg-surface-3"
             )}
           >
-            <div className={cn("text-[12px] font-bold", selectedPreset === preset.id ? "text-[#ff7a9a]" : "text-zinc-200")}>{preset.label}</div>
-            <div className="mt-0.5 text-[10.5px] text-zinc-500">{preset.hint}</div>
+            <div className={cn("text-[12px] font-bold", selectedPreset === preset.id ? "text-[#ff7a9a]" : "text-c-text")}>{preset.label}</div>
+            <div className="mt-0.5 text-[10.5px] text-c-text-muted">{preset.hint}</div>
           </button>
         ))}
       </div>
 
       {!manualOpen ? (
-        <div className="mt-3 rounded-[11px] border border-white/[.08] bg-white/[.025] px-3 py-2.5">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500">
+        <div className="mt-3 rounded-[11px] border border-c-border bg-surface-2 px-3 py-2.5">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-c-text-muted">
             <span>Selected range</span>
-            <span className="text-zinc-300">{formatClipTime(durationMin)} to {formatClipTime(durationMax)}</span>
+            <span className="text-c-text-secondary">{formatClipTime(durationMin)} to {formatClipTime(durationMax)}</span>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.08]">
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
             <div className="h-full rounded-full bg-[#ff3d6a]" style={{ width: `${Math.min(100, Math.max(12, (durationMax / 300) * 100))}%` }} />
           </div>
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 rounded-[11px] border border-white/[.08] bg-white/[.025] p-3">
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 rounded-[11px] border border-c-border bg-surface-2 p-3">
           <div>
-            <span className="mb-1 block text-[10px] font-semibold text-zinc-600">Minimum seconds</span>
+            <span className="mb-1 block text-[10px] font-semibold text-c-text-muted">Minimum seconds</span>
             <input type="number" min={5} max={durationMax} value={durationMin}
               onChange={(e) => updateMin(Number(e.target.value))}
               className={inputClassName} />
           </div>
-          <span className="pb-3 text-sm text-zinc-600">to</span>
+          <span className="pb-3 text-sm text-c-text-muted">to</span>
           <div>
-            <span className="mb-1 block text-[10px] font-semibold text-zinc-600">Maximum seconds</span>
+            <span className="mb-1 block text-[10px] font-semibold text-c-text-muted">Maximum seconds</span>
             <input type="number" min={durationMin} max={300} value={durationMax}
               onChange={(e) => updateMax(Number(e.target.value))}
               className={inputClassName} />
@@ -288,10 +288,10 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
 
   const virality = Math.round((config.min_score ?? 0.5) * 10);
   const durationLabel = `${config.duration_min ?? 20}-${config.duration_max ?? 60}s`;
-  const labelCls = "mb-2 block text-[11px] font-semibold text-zinc-400";
-  const inputCls = "w-full rounded-[10px] border border-white/[.10] bg-white/[.04] px-3 py-2.5 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#ff3d6a]/45 focus:bg-white/[.055] focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]";
+  const labelCls = "mb-2 block text-[11px] font-semibold text-c-text-secondary";
+  const inputCls = "w-full rounded-[10px] border border-c-border bg-surface-1 px-3 py-2.5 text-[13px] text-c-text outline-none transition placeholder:text-c-text-muted focus:border-[#ff3d6a]/45 focus:bg-surface-2 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]";
   const chipOn  = "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.10] text-[#ff6f92]";
-  const chipOff = "border-white/[.09] bg-white/[.03] text-zinc-400 hover:border-white/[.16] hover:bg-white/[.05] hover:text-zinc-200";
+  const chipOff = "border-c-border bg-surface-1 text-c-text-secondary hover:border-c-border-hover hover:bg-surface-2 hover:text-c-text";
 
   const showAll = !step;
   const s1 = showAll || step === 1;
@@ -303,11 +303,11 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
       {showAll && (
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="font-display text-[15px] font-bold text-white">Clip settings</h3>
-            <p className="mt-0.5 text-[12px] text-zinc-500">Applied to every generated clip from this source.</p>
+            <h3 className="font-display text-[15px] font-bold text-c-text">Clip settings</h3>
+            <p className="mt-0.5 text-[12px] text-c-text-muted">Applied to every generated clip from this source.</p>
           </div>
-          <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-300">
-            <span className="rounded-full border border-white/[.08] bg-white/[.035] px-2.5 py-1">{durationLabel}</span>
+          <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-c-text-secondary">
+            <span className="rounded-full border border-c-border bg-surface-1 px-2.5 py-1">{durationLabel}</span>
             <span className="rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08] px-2.5 py-1 text-[#ff7a9a]">Score {virality}/10+</span>
           </div>
         </div>
@@ -315,12 +315,12 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
 
       <div className="space-y-5">
         {/* Step 1: Aspect ratio + Target length */}
-        {s1 && <div className={showAll ? "border-t border-white/[.06] pt-5" : ""}>
+        {s1 && <div className={showAll ? "border-t border-c-border pt-5" : ""}>
           <div className="flex flex-col gap-4">
-            <div className="rounded-[12px] border border-white/[.07] bg-white/[.018] p-3">
+            <div className="rounded-[12px] border border-c-border bg-surface-1 p-3">
               <AspectRatioSelector value={config.aspect_ratio} onChange={(aspect_ratio) => set({ aspect_ratio })} labelClassName={labelCls} />
             </div>
-            <div className="rounded-[12px] border border-white/[.07] bg-white/[.018] p-3">
+            <div className="rounded-[12px] border border-c-border bg-surface-1 p-3">
               <TargetLengthControl
                 min={config.duration_min}
                 max={config.duration_max}
@@ -333,7 +333,7 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
         </div>}
 
         {/* Step 2: Max clips + Viral score */}
-        {s2 && <div className={cn("grid grid-cols-1 gap-4 lg:grid-cols-2", showAll && "border-t border-white/[.06] pt-5")}>
+        {s2 && <div className={cn("grid grid-cols-1 gap-4 lg:grid-cols-2", showAll && "border-t border-c-border pt-5")}>
           <div>
             <div className="mb-2 flex items-center justify-between">
               <label className={cn(labelCls, "mb-0")}>Max clips</label>
@@ -342,7 +342,7 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
             <input type="range" min={1} max={20} value={config.max_clips}
               onChange={(e) => set({ max_clips: Number(e.target.value) })}
               className="w-full accent-[#ff3d6a]" />
-            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Focused</span><span>Batch</span></div>
+            <div className="mt-1 flex justify-between text-[10px] text-c-text-muted"><span>Focused</span><span>Batch</span></div>
           </div>
 
           <div>
@@ -353,30 +353,30 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
             <input type="range" min={0} max={10} step={1} value={virality}
               onChange={(e) => set({ min_score: Number(e.target.value) / 10 })}
               className="w-full accent-[#ff3d6a]" />
-            <div className="mt-1 flex justify-between text-[10px] text-zinc-600"><span>Any</span><span>Balanced</span><span>Strict</span></div>
+            <div className="mt-1 flex justify-between text-[10px] text-c-text-muted"><span>Any</span><span>Balanced</span><span>Strict</span></div>
           </div>
         </div>}
 
         {/* Step 2 continued: Topic focus + Auto captions */}
-        {s2 && <div className={cn("grid grid-cols-1 gap-4 lg:grid-cols-[1fr_.9fr]", showAll && "border-t border-white/[.06] pt-5")}>
+        {s2 && <div className={cn("grid grid-cols-1 gap-4 lg:grid-cols-[1fr_.9fr]", showAll && "border-t border-c-border pt-5")}>
           <div>
-            <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-zinc-600">optional</span></label>
+            <label className={labelCls}>Topic focus <span className="normal-case tracking-normal text-c-text-muted">optional</span></label>
             <input type="text" placeholder="e.g. controversial moment, product demo, founder story…"
               value={config.topic_focus ?? ""}
               onChange={(e) => set({ topic_focus: e.target.value || null })}
               className={inputCls} />
-            <p className="mt-2 text-[11.5px] text-zinc-600">Use this to bias clip selection without changing the source video.</p>
+            <p className="mt-2 text-[11.5px] text-c-text-muted">Use this to bias clip selection without changing the source video.</p>
           </div>
 
-          <div className="flex items-start justify-between gap-3 rounded-[12px] border border-white/[.08] bg-white/[.025] p-3.5">
+          <div className="flex items-start justify-between gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5">
             <div>
-              <div className="text-[13px] font-bold text-zinc-100">Auto captions</div>
-              <div className="mt-0.5 text-[11.5px] text-zinc-500">Burn readable subtitles into every clip.</div>
+              <div className="text-[13px] font-bold text-c-text">Auto captions</div>
+              <div className="mt-0.5 text-[11.5px] text-c-text-muted">Burn readable subtitles into every clip.</div>
             </div>
             <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
               aria-pressed={!!config.add_captions}
               className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
-                config.add_captions ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                config.add_captions ? "bg-[#ff3d6a]" : "bg-surface-3")}>
               <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
                 config.add_captions ? "left-[calc(100%-24px)]" : "left-1")} />
             </button>
@@ -384,7 +384,7 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
         </div>}
 
         {s2 && config.add_captions && (
-          <div className="border-t border-white/[.06] pt-5">
+          <div className="border-t border-c-border pt-5">
             <div className="flex items-center gap-2">
               <label className={labelCls}>Caption style</label>
               {!config.caption_style && <span className="mb-2 rounded-full border border-emerald-400/20 bg-emerald-400/[.08] px-2 py-0.5 text-[10px] font-bold text-emerald-300">Auto</span>}
@@ -396,10 +396,10 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
                   <button key={String(s.id)} type="button" onClick={() => set({ caption_style: s.id })}
                     className={cn("rounded-[13px] border p-1 text-center transition",
                       sel ? "border-[#ff3d6a]/70 bg-[#ff3d6a]/[.06] shadow-[0_0_0_1px_rgba(255,61,106,.45)]"
-                          : "border-white/[.07] bg-white/[.02] hover:border-white/[.18]")}>
+                          : "border-c-border bg-surface-1 hover:border-c-border-hover")}>
                     <CaptionPreview s={s} selected={sel} />
-                    <div className={cn("mt-1.5 text-[11px] font-bold", sel ? "text-[#ff7a9a]" : "text-zinc-200")}>{s.label}</div>
-                    <div className="mb-0.5 mt-0.5 px-0.5 text-[9.5px] leading-3 text-zinc-500">{s.desc}</div>
+                    <div className={cn("mt-1.5 text-[11px] font-bold", sel ? "text-[#ff7a9a]" : "text-c-text")}>{s.label}</div>
+                    <div className="mb-0.5 mt-0.5 px-0.5 text-[9.5px] leading-3 text-c-text-muted">{s.desc}</div>
                   </button>
                 );
               })}
@@ -408,13 +408,13 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
         )}
 
         {/* Step 3: AI enhancements */}
-        {s3 && <div className={cn("space-y-4", showAll && "border-t border-white/[.06] pt-5")}>
+        {s3 && <div className={cn("space-y-4", showAll && "border-t border-c-border pt-5")}>
           <label className={labelCls}>AI enhancements</label>
 
           <div className={cn(!showAll && "grid gap-4 lg:grid-cols-2")}>
             <div>
               <div className="mb-1.5 flex items-center gap-2">
-                <div className="text-[12px] font-bold text-zinc-100">Content type</div>
+                <div className="text-[12px] font-bold text-c-text">Content type</div>
                 {!config.occasion && <span className="rounded-full border border-emerald-400/20 bg-emerald-400/[.08] px-2 py-0.5 text-[10px] font-bold text-emerald-300">Auto</span>}
               </div>
               <div className="grid grid-cols-3 gap-1.5">
@@ -434,16 +434,16 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
                     className={cn("cursor-pointer rounded-[8px] border px-2 py-1.5 text-center text-[10.5px] font-medium transition-colors",
                       (config.occasion ?? null) === o.id
                         ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08] text-[#ff7a9a]"
-                        : "border-white/[.08] bg-white/[.025] text-zinc-400 hover:border-white/[.14]")}>
+                        : "border-c-border bg-surface-1 text-c-text-secondary hover:border-c-border-hover")}>
                     {o.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className={cn(showAll && "border-t border-white/[.05] pt-3")}>
+            <div className={cn(showAll && "border-t border-c-border pt-3")}>
               <div className="mb-1.5 flex items-center gap-2">
-                <div className="text-[12px] font-bold text-zinc-100">Style</div>
+                <div className="text-[12px] font-bold text-c-text">Style</div>
                 {!config.template_id && <span className="rounded-full border border-emerald-400/20 bg-emerald-400/[.08] px-2 py-0.5 text-[10px] font-bold text-emerald-300">Auto</span>}
               </div>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -460,41 +460,41 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
                     className={cn("cursor-pointer rounded-[8px] border px-2 py-1.5 text-left transition-colors",
                       (config.template_id ?? null) === t.id
                         ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08]"
-                        : "border-white/[.08] bg-white/[.025] hover:border-white/[.14]")}>
-                    <div className={cn("text-[10.5px] font-bold", (config.template_id ?? null) === t.id ? "text-[#ff7a9a]" : "text-zinc-200")}>{t.label}</div>
-                    <div className="mt-0.5 text-[9.5px] leading-tight text-zinc-500">{t.desc}</div>
+                        : "border-c-border bg-surface-1 hover:border-c-border-hover")}>
+                    <div className={cn("text-[10.5px] font-bold", (config.template_id ?? null) === t.id ? "text-[#ff7a9a]" : "text-c-text")}>{t.label}</div>
+                    <div className="mt-0.5 text-[9.5px] leading-tight text-c-text-muted">{t.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
-          <div className={cn("grid gap-3 border-t border-white/[.05] pt-4", !showAll ? "lg:grid-cols-2" : "grid-cols-1")}>
-            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-white/[.08] bg-white/[.025] p-3.5">
+          <div className={cn("grid gap-3 border-t border-c-border pt-4", !showAll ? "lg:grid-cols-2" : "grid-cols-1")}>
+            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5">
               <div>
-                <div className="text-[12px] font-bold text-zinc-100">Background music</div>
-                <div className="mt-0.5 text-[11px] text-zinc-500">Royalty-free hype/chill track.</div>
+                <div className="text-[12px] font-bold text-c-text">Background music</div>
+                <div className="mt-0.5 text-[11px] text-c-text-muted">Royalty-free hype/chill track.</div>
               </div>
               <button type="button" onClick={() => set({ music: !(config.music ?? true) })}
                 aria-pressed={config.music ?? true}
                 className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
-                  (config.music ?? true) ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                  (config.music ?? true) ? "bg-[#ff3d6a]" : "bg-surface-3")}>
                 <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
                   (config.music ?? true) ? "left-[calc(100%-22px)]" : "left-0.5")} />
               </button>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-white/[.08] bg-white/[.025] p-3.5">
+            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5">
               <div>
                 <div className="flex items-center gap-1.5">
-                  <div className="text-[12px] font-bold text-zinc-100">AI voiceover</div>
+                  <div className="text-[12px] font-bold text-c-text">AI voiceover</div>
                   <span className="rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.08] px-1.5 py-0.5 text-[9.5px] font-bold text-[#ff7a9a]">New</span>
                 </div>
-                <div className="mt-0.5 text-[11px] text-zinc-500">Narrator script over clip.</div>
+                <div className="mt-0.5 text-[11px] text-c-text-muted">Narrator script over clip.</div>
               </div>
               <button type="button" onClick={() => set({ voiceover: !config.voiceover })}
                 aria-pressed={!!config.voiceover}
                 className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
-                  config.voiceover ? "bg-[#ff3d6a]" : "bg-white/[.13]")}>
+                  config.voiceover ? "bg-[#ff3d6a]" : "bg-surface-3")}>
                 <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
                   config.voiceover ? "left-[calc(100%-22px)]" : "left-0.5")} />
               </button>
@@ -502,7 +502,7 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
           </div>
 
           {/* Output quality */}
-          <div className="border-t border-white/[.05] pt-4">
+          <div className="border-t border-c-border pt-4">
             <label className={labelCls}>Output quality</label>
             <div className="grid grid-cols-4 gap-1.5">
               {(["source","1080p","720p","480p"] as const).map((q) => (

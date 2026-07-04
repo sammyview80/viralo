@@ -190,7 +190,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
         {/* ── Right: header + tabs + content + footer ── */}
         <div className="flex min-w-0 flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex shrink-0 items-start gap-3 border-b border-c-border [background:rgb(var(--surface-1))] px-5 py-4">
+          <div className="flex shrink-0 items-start gap-3 border-b border-c-border bg-surface-1 px-5 py-4">
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-[16px] font-bold leading-tight tracking-[-0.01em] text-c-text">
                 {clip.clip_metadata?.ai_title ?? clip.title ?? "Untitled clip"}
@@ -202,7 +202,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
             <div className="flex shrink-0 items-center gap-2">
               <span className={cn(
                 "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                clip.status === "ready" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-white/[.07] text-zinc-500"
+                clip.status === "ready" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-c-border text-c-text-muted"
               )}>{clip.status}</span>
               <button
                 onClick={onClose}
@@ -223,13 +223,13 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
                 className={cn(
                   "flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer",
                   tab === t.id
-                    ? "bg-gray-100 dark:bg-white/[.07] text-c-text"
+                    ? "bg-surface-2 text-c-text"
                     : "text-c-text-muted hover:text-c-text-secondary"
                 )}
               >
                 {t.label}
                 {t.count != null && t.count > 0 && (
-                  <span className={cn("rounded-full px-1.5 py-px text-[10px] font-bold", tab === t.id ? "bg-[#ff3d6a]/20 text-[#ff6a8a]" : "bg-white/[.04] text-zinc-600")}>
+                  <span className={cn("rounded-full px-1.5 py-px text-[10px] font-bold", tab === t.id ? "bg-[#ff3d6a]/20 text-[#ff6a8a]" : "bg-surface-2 text-c-text-muted")}>
                     {t.count}
                   </span>
                 )}
@@ -245,18 +245,18 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
               <div className="flex h-full flex-col gap-3 p-4">
                 {/* Score + Duration */}
                 <div className="grid grid-cols-2 gap-2.5">
-                  <div className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3">
+                  <div className="rounded-[12px] border border-c-border bg-surface-2 p-3">
                     <p className="text-[9px] font-bold uppercase tracking-[.13em] text-c-text-muted">Score</p>
                     <div className="mt-2 flex items-end gap-2">
                       <span className="font-mono text-[26px] font-black leading-none" style={{ color: scoreColor }}>
                         {clip.score != null ? clip.score.toFixed(1) : "--"}
                       </span>
-                      <div className="mb-1 h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200 dark:bg-white/[.06]">
+                      <div className="mb-1 h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
                         <div className="h-full rounded-full transition-all" style={{ width: `${scorePct}%`, background: scoreColor }} />
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3">
+                  <div className="rounded-[12px] border border-c-border bg-surface-2 p-3">
                     <p className="text-[9px] font-bold uppercase tracking-[.13em] text-c-text-muted">Duration</p>
                     <p className="mt-2 font-mono text-[26px] font-black leading-none text-white">{fmt(durMs / 1000)}</p>
                   </div>
@@ -265,7 +265,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
                 {/* 4-cell meta */}
                 <div className="grid grid-cols-2 gap-2">
                   {([["Platform", clip.platform ?? "—"], ["Format", "9:16"], ["Timeline", `${clipStart}–${clipEnd}`], ["Created", new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })]] as [string,string][]).map(([label, value]) => (
-                    <div key={label} className="rounded-[10px] border border-c-border [background:rgb(var(--surface-2))] px-3 py-2">
+                    <div key={label} className="rounded-[10px] border border-c-border bg-surface-2 px-3 py-2">
                       <p className="text-[9px] font-bold uppercase tracking-[.1em] text-c-text-muted">{label}</p>
                       <p className="mt-0.5 truncate text-[13px] font-semibold text-c-text capitalize">{value}</p>
                     </div>
@@ -274,7 +274,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
 
                 {/* Primary hashtags */}
                 {primaryTags.length > 0 && (
-                  <div className="min-h-0 flex-1 rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3">
+                  <div className="min-h-0 flex-1 rounded-[12px] border border-c-border bg-surface-2 p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-[9px] font-bold uppercase tracking-[.13em] text-c-text-muted">Primary hashtags</p>
                       <span className="text-[10px] text-c-text-muted">{primaryTags.length}</span>
@@ -334,7 +334,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
                           >
                             <span className="grid h-4 w-4 place-items-center rounded-[3px] text-[9px] font-black text-white" style={{ background: pcfg.color }}>{pcfg.icon}</span>
                             <span className="capitalize">{plat}</span>
-                            <span className="rounded-full bg-gray-200 dark:bg-white/[.06] px-1 text-[10px] text-c-text-muted">{(allPlatformEntries[i][1] as { tags: string[] }).tags?.length ?? 0}</span>
+                            <span className="rounded-full bg-surface-2 px-1 text-[10px] text-c-text-muted">{(allPlatformEntries[i][1] as { tags: string[] }).tags?.length ?? 0}</span>
                           </button>
                         );
                       })}
@@ -344,14 +344,14 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
                     {activePlatContent && activePlatCfg && (
                       <div className="flex flex-1 flex-col gap-3 overflow-hidden px-4 pb-4">
                         {/* Description */}
-                        <div className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
+                        <div className="rounded-[12px] border border-c-border bg-surface-2 p-3.5">
                           <p className="mb-2 text-[9px] font-bold uppercase tracking-[.13em] text-c-text-muted">Description</p>
                           <p className="text-[13px] leading-[1.6] text-c-text">{activePlatContent.description}</p>
                         </div>
 
                         {/* Tags */}
                         {activePlatContent.tags?.length > 0 && (
-                          <div className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
+                          <div className="rounded-[12px] border border-c-border bg-surface-2 p-3.5">
                             <p className="mb-2 text-[9px] font-bold uppercase tracking-[.13em] text-c-text-muted">Tags · {activePlatContent.tags.length}</p>
                             <div className="flex flex-wrap gap-1.5">
                               {activePlatContent.tags.map((tag) => (
@@ -375,7 +375,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
               <div className="flex h-full flex-col gap-3 overflow-hidden p-4">
                 {/* Caption preview */}
                 {cleanCaptionPreview && (
-                  <div className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
+                  <div className="rounded-[12px] border border-c-border bg-surface-2 p-3.5">
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-[9px] font-bold uppercase tracking-[.13em] text-c-text-muted">Transcript preview</p>
                       {captionLineCount > 0 && <span className="text-[10px] text-c-text-muted">{captionLineCount} captions</span>}
@@ -388,14 +388,14 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
                 <div className="grid grid-cols-2 gap-2">
                   {clip.storage_url && (
                     <a href={clip.storage_url} target="_blank" rel="noreferrer"
-                      className="flex items-center justify-center gap-2 rounded-[10px] border border-c-border [background:rgb(var(--surface-2))] py-3 text-[12px] font-semibold text-c-text-secondary transition hover:border-c-border-hover hover:bg-gray-100 dark:hover:bg-white/[.04] hover:text-c-text cursor-pointer">
+                      className="flex items-center justify-center gap-2 rounded-[10px] border border-c-border bg-surface-2 py-3 text-[12px] font-semibold text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-2 hover:text-c-text cursor-pointer">
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                       Open video
                     </a>
                   )}
                   {clip.thumbnail_url && (
                     <a href={clip.thumbnail_url} target="_blank" rel="noreferrer"
-                      className="flex items-center justify-center gap-2 rounded-[10px] border border-c-border [background:rgb(var(--surface-2))] py-3 text-[12px] font-semibold text-c-text-secondary transition hover:border-c-border-hover hover:bg-gray-100 dark:hover:bg-white/[.04] hover:text-c-text cursor-pointer">
+                      className="flex items-center justify-center gap-2 rounded-[10px] border border-c-border bg-surface-2 py-3 text-[12px] font-semibold text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-2 hover:text-c-text cursor-pointer">
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
                       Thumbnail
                     </a>
@@ -404,7 +404,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
 
                 {/* Published posts in assets tab */}
                 {posts.length > 0 && (
-                  <div className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
+                  <div className="rounded-[12px] border border-c-border bg-surface-2 p-3.5">
                     <p className="mb-2.5 text-[9px] font-bold uppercase tracking-[.13em] text-c-text-muted">Published / Scheduled</p>
                     <div className="space-y-2">
                       {posts.map((p) => {
@@ -435,7 +435,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
           </div>
 
           {/* Footer actions */}
-          <div className="shrink-0 border-t border-c-border [background:rgb(var(--surface-1))] px-4 py-3">
+          <div className="shrink-0 border-t border-c-border bg-surface-1 px-4 py-3">
             <div className="flex items-center gap-2">
               <button
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-[#ff3d6a] py-2.5 text-[13px] font-semibold text-white shadow-[0_2px_16px_rgba(255,61,106,.3)] transition hover:bg-[#e8304f] hover:shadow-[0_4px_24px_rgba(255,61,106,.4)] cursor-pointer"
@@ -445,13 +445,13 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
                 {isPosted ? "Publish again" : isScheduled ? "Reschedule" : "Publish"}
               </button>
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-c-border [background:rgb(var(--surface-2))] text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-c-border bg-surface-2 text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer"
                 aria-label="Edit clip"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-c-border [background:rgb(var(--surface-2))] text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-c-border bg-surface-2 text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                 disabled={!clip.storage_url}
                 aria-label="Download"
                 onClick={() => { if (clip.storage_url) void downloadUrl(clip.storage_url, safeFilename(clip.title, "mp4")); }}
@@ -510,13 +510,13 @@ function DownloadMenu({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
   ];
 
   return (
-    <div ref={ref} className="absolute bottom-[calc(100%+6px)] right-0 z-50 w-48 overflow-hidden rounded-[11px] border border-white/[.10] bg-[#141926] shadow-[0_16px_40px_rgba(0,0,0,.5)]"
+    <div ref={ref} className="absolute bottom-[calc(100%+6px)] right-0 z-50 w-48 overflow-hidden rounded-[11px] border border-c-border bg-surface-1 shadow-[0_16px_40px_rgba(0,0,0,.5)]"
       onClick={(e) => e.stopPropagation()}>
       {items.map((item, i) => {
-        const cls = `flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] transition ${item.disabled ? "cursor-not-allowed opacity-40 text-zinc-500" : "text-zinc-300 hover:bg-white/[.05] hover:text-white"}`;
+        const cls = `flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] transition ${item.disabled ? "cursor-not-allowed opacity-40 text-c-text-muted" : "text-c-text-secondary hover:bg-surface-2 hover:text-c-text"}`;
         return (
           <div key={item.label}>
-            {i === 3 && <div className="mx-3 border-t border-white/[.07]" />}
+            {i === 3 && <div className="mx-3 border-t border-c-border" />}
             <button onClick={item.disabled ? undefined : item.onClick} disabled={item.disabled} className={cls}>
               <span>{item.icon}</span>{item.label}
             </button>

@@ -212,10 +212,10 @@ function DayDrawer({
   const isToday = new Date(date + "T12:00:00").toDateString() === new Date().toDateString();
 
   const modalCls = expanded
-    ? "fixed inset-0 z-10 flex flex-col bg-[#0b0f1a] shadow-2xl"
+    ? "fixed inset-0 z-10 flex flex-col bg-surface-0 shadow-2xl"
     : cn(
         "relative z-10 flex flex-col w-full max-w-4xl rounded-t-[20px] sm:rounded-[18px]",
-        "border border-white/[.08] bg-[#0b0f1a] shadow-2xl overflow-hidden transition-all duration-200"
+        "border border-c-border bg-surface-0 shadow-2xl overflow-hidden transition-all duration-200"
       );
 
   const modalStyle = expanded
@@ -246,15 +246,15 @@ function DayDrawer({
             className="absolute top-0 left-1/2 -translate-x-1/2 w-16 flex justify-center pt-1.5 z-20 cursor-ns-resize"
             onPointerDown={onDragStart}
           >
-            <div className="w-8 h-1 rounded-full bg-white/10 hover:bg-white/20 transition" />
+            <div className="w-8 h-1 rounded-full bg-c-border hover:bg-c-border-hover transition" />
           </div>
         )}
 
         {/* ── Header ── */}
-        <div className="shrink-0 flex items-center justify-between border-b border-white/[.06] bg-[#0d1219] px-5 py-3.5">
+        <div className="shrink-0 flex items-center justify-between border-b border-c-border bg-surface-1 px-5 py-3.5">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-zinc-600">Day View</p>
-            <p className="text-[16px] font-bold text-white leading-tight mt-0.5">{label}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-c-text-muted">Day View</p>
+            <p className="text-[16px] font-bold text-c-text leading-tight mt-0.5">{label}</p>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             {statusOrder.filter((s) => grouped[s]?.length).map((s) => (
@@ -274,7 +274,7 @@ function DayDrawer({
             {/* Expand/collapse toggle */}
             <button
               onClick={() => { setExpanded((v) => !v); setCustomHeight(null); }}
-              className="ml-1 rounded-lg p-1.5 text-zinc-500 hover:bg-white/[.06] hover:text-zinc-200 transition cursor-pointer"
+              className="ml-1 rounded-lg p-1.5 text-c-text-muted hover:bg-surface-2 hover:text-c-text transition cursor-pointer"
               title={expanded ? "Collapse" : "Expand to full screen"}
             >
               {expanded ? (
@@ -289,7 +289,7 @@ function DayDrawer({
             </button>
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-zinc-600 hover:bg-white/[.06] hover:text-zinc-300 transition cursor-pointer"
+              className="rounded-lg p-1.5 text-c-text-muted hover:bg-surface-2 hover:text-c-text transition cursor-pointer"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
@@ -301,7 +301,7 @@ function DayDrawer({
           <div className="flex flex-1 overflow-y-auto" ref={gridScrollRef}>
 
             {/* Time gutter — height matches dynamic hour heights */}
-            <div className="w-[52px] shrink-0 select-none bg-[#0b0f1a]">
+            <div className="w-[52px] shrink-0 select-none bg-surface-0">
               {HOURS.map((h) => (
                 <div
                   key={h}
@@ -310,7 +310,7 @@ function DayDrawer({
                 >
                   <span className={cn(
                     "text-[9px] font-semibold tabular-nums whitespace-nowrap",
-                    isToday && h === new Date().getHours() ? "text-[#ff3d6a]" : "text-zinc-700"
+                    isToday && h === new Date().getHours() ? "text-[#ff3d6a]" : "text-c-text-muted"
                   )}>
                     {fmtHour(h)}
                   </span>
@@ -319,20 +319,20 @@ function DayDrawer({
             </div>
 
             {/* Events pane */}
-            <div className="relative flex-1 border-l border-white/[.04]" style={{ height: totalGridHeight }}>
+            <div className="relative flex-1 border-l border-c-border" style={{ height: totalGridHeight }}>
               {/* Hour rows — fixed height */}
               {HOURS.map((h) => (
                 <div
                   key={h}
                   style={{ position: "absolute", top: h * HOUR_HEIGHT, left: 0, right: 0, height: HOUR_HEIGHT }}
                   className={cn(
-                    "border-b border-white/[.035]",
+                    "border-b border-c-border",
                     isToday && h === new Date().getHours() ? "bg-[#ff3d6a]/[.02]" : ""
                   )}
                 >
                   {/* Half-hour tick */}
                   <div
-                    className="absolute left-0 right-0 border-b border-dashed border-white/[.015]"
+                    className="absolute left-0 right-0 border-b border-dashed border-c-border"
                     style={{ top: HOUR_HEIGHT / 2 }}
                   />
                 </div>
@@ -392,7 +392,7 @@ function DayDrawer({
                         }}
                         title={`${post.caption || "No caption"} · ${post.status}`}
                         className={cn(
-                          "absolute rounded-[6px] border-l-[3px] border border-white/[.06] px-2 text-left overflow-hidden",
+                          "absolute rounded-[6px] border-l-[3px] border border-c-border px-2 text-left overflow-hidden",
                           "transition-all duration-150 cursor-pointer hover:z-30",
                           "hover:brightness-110 hover:shadow-[0_4px_16px_rgba(0,0,0,.5)]",
                           ACCENT_BAR[post.status] ?? "border-l-zinc-600",
@@ -416,7 +416,7 @@ function DayDrawer({
                                 {STATUS_ICON[post.status]}
                               </span>
                             </div>
-                            <p className="text-[11px] text-zinc-500 truncate">
+                            <p className="text-[11px] text-c-text-muted truncate">
                               {PLATFORM_LABELS[post.platform] ?? post.platform} · {time}
                               {isPosted && post.posted_at && (
                                 <span className="text-emerald-400 ml-1">
@@ -446,10 +446,10 @@ function DayDrawer({
                         width: `calc(${colPct}% - 5px)`,
                         height: Math.min(CARD_H, maxCardH),
                       }}
-                      className="absolute rounded-[6px] border border-dashed border-white/[.12] bg-white/[.02] flex flex-col items-center justify-center gap-0.5 cursor-pointer hover:bg-white/[.05] hover:border-white/[.22] transition z-10"
+                      className="absolute rounded-[6px] border border-dashed border-c-border bg-surface-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer hover:bg-surface-2 hover:border-c-border-hover transition z-10"
                     >
-                      <span className="text-[13px] font-bold text-zinc-400">+{hidden.length}</span>
-                      <span className="text-[9px] text-zinc-600 uppercase tracking-wide">more</span>
+                      <span className="text-[13px] font-bold text-c-text-secondary">+{hidden.length}</span>
+                      <span className="text-[9px] text-c-text-muted uppercase tracking-wide">more</span>
                     </button>
                   ),
                 ].filter(Boolean);
@@ -459,36 +459,36 @@ function DayDrawer({
         </div>
 
         {/* ── Footer ── */}
-        <div className="shrink-0 border-t border-white/[.05] bg-[#0d1219] px-5 py-2.5 flex items-center justify-between">
-          <p className="text-[11px] text-zinc-600">Click a post · drag top handle to resize</p>
-          <button onClick={onClose} className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 transition cursor-pointer">Done</button>
+        <div className="shrink-0 border-t border-c-border bg-surface-1 px-5 py-2.5 flex items-center justify-between">
+          <p className="text-[11px] text-c-text-muted">Click a post · drag top handle to resize</p>
+          <button onClick={onClose} className="text-[11px] font-semibold text-c-text-muted hover:text-c-text transition cursor-pointer">Done</button>
         </div>
 
         {/* ── Overflow mini-list ── */}
         {overflow && (
           <div
-            className="absolute inset-x-4 bottom-16 z-50 rounded-[14px] border border-white/[.1] bg-[#131b29] shadow-2xl overflow-hidden"
+            className="absolute inset-x-4 bottom-16 z-50 rounded-[14px] border border-c-border bg-surface-3 shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[.06]">
-              <p className="text-[11px] font-bold text-zinc-300">{overflow.list.length} more at this time</p>
-              <button onClick={() => setOverflow(null)} className="text-zinc-600 hover:text-zinc-300 transition cursor-pointer">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-c-border">
+              <p className="text-[11px] font-bold text-c-text-secondary">{overflow.list.length} more at this time</p>
+              <button onClick={() => setOverflow(null)} className="text-c-text-muted hover:text-c-text-secondary transition cursor-pointer">
                 <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
             </div>
-            <div className="max-h-52 overflow-y-auto divide-y divide-white/[.04]">
+            <div className="max-h-52 overflow-y-auto divide-y divide-c-border">
               {overflow.list.map((post) => (
                 <button
                   key={post.id}
                   onClick={() => { onSelect(post); onClose(); setOverflow(null); }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-white/[.04] transition cursor-pointer"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-2 transition cursor-pointer"
                 >
                   <div className={cn("w-1 h-8 rounded-full shrink-0", ACCENT_BAR[post.status]?.replace("border-l-", "bg-") ?? "bg-zinc-600")} />
                   <div className="min-w-0 flex-1">
                     <p className={cn("text-[12px] font-semibold truncate", ACCENT_TEXT[post.status] ?? "text-zinc-400")}>
                       {post.caption || PLATFORM_LABELS[post.platform] || "No caption"}
                     </p>
-                    <p className="text-[10px] text-zinc-600 mt-0.5">
+                    <p className="text-[10px] text-c-text-muted mt-0.5">
                       <span className={cn("mr-1 h-1.5 w-1.5 rounded-full inline-block align-middle", PLATFORM_DOT[post.platform])} />
                       {PLATFORM_LABELS[post.platform]} · {new Date(post.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </p>
@@ -521,10 +521,10 @@ function PostPopover({ post, onClose, onCancelled, onPublished }: { post: Schedu
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
       <div
-        className="relative z-10 w-full max-w-[340px] rounded-[14px] border border-white/[.08] bg-[#111827] p-4 shadow-2xl sm:p-5"
+        className="relative z-10 w-full max-w-[340px] rounded-[14px] border border-c-border bg-surface-2 p-4 shadow-2xl sm:p-5"
         onClick={(e) => e.stopPropagation()}
       >
-        <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1 text-zinc-600 hover:text-zinc-300 transition">✕</button>
+        <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1 text-c-text-muted hover:text-c-text-secondary transition">✕</button>
 
         <div className="flex items-start gap-2">
           <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize", PLATFORM_COLORS[post.platform] ?? "bg-zinc-500/20 text-zinc-300 border-zinc-500/30")}>
@@ -536,28 +536,28 @@ function PostPopover({ post, onClose, onCancelled, onPublished }: { post: Schedu
           </span>
         </div>
 
-        <p className="mt-3 text-sm leading-relaxed text-zinc-200">
-          {post.caption || <span className="text-zinc-600">No caption</span>}
+        <p className="mt-3 text-sm leading-relaxed text-c-text">
+          {post.caption || <span className="text-c-text-muted">No caption</span>}
         </p>
         {post.hashtags?.length > 0 && (
           <p className="mt-2 text-xs text-[#ff3d6a]/80">{post.hashtags.map((h) => `#${h}`).join(" ")}</p>
         )}
 
-        <div className="mt-4 space-y-2 rounded-[10px] border border-white/[.06] bg-white/[.02] p-3 text-xs">
+        <div className="mt-4 space-y-2 rounded-[10px] border border-c-border bg-surface-3 p-3 text-xs">
           <div className="flex justify-between">
-            <span className="text-zinc-500">Scheduled</span>
-            <span className="text-zinc-300">{scheduledLocal}</span>
+            <span className="text-c-text-muted">Scheduled</span>
+            <span className="text-c-text-secondary">{scheduledLocal}</span>
           </div>
           {isPosted && postedLocal && (
             <div className="flex justify-between">
-              <span className="text-zinc-500">Published</span>
+              <span className="text-c-text-muted">Published</span>
               <span className="text-emerald-400">{postedLocal}</span>
             </div>
           )}
           {isPosted && post.platform_post_id && (
             <div className="flex justify-between gap-3">
-              <span className="shrink-0 text-zinc-500">Post ID</span>
-              <span className="truncate font-mono text-[10px] text-zinc-400">{post.platform_post_id}</span>
+              <span className="shrink-0 text-c-text-muted">Post ID</span>
+              <span className="truncate font-mono text-[10px] text-c-text-secondary">{post.platform_post_id}</span>
             </div>
           )}
           {isFailed && post.last_error && (
@@ -602,11 +602,11 @@ function PostPopover({ post, onClose, onCancelled, onPublished }: { post: Schedu
         {(post.status === "scheduled" || post.status === "pending" || post.status === "failed") && onCancelled && (
           confirmCancel ? (
             <div className="mt-3 space-y-2">
-              <p className="text-center text-[12px] text-zinc-400">Cancel this scheduled post?</p>
+              <p className="text-center text-[12px] text-c-text-secondary">Cancel this scheduled post?</p>
               <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmCancel(false)}
-                  className="flex-1 rounded-[9px] border border-white/[.08] bg-white/[.03] py-2 text-[12.5px] font-semibold text-zinc-300 transition hover:text-white"
+                  className="flex-1 rounded-[9px] border border-c-border bg-surface-3 py-2 text-[12.5px] font-semibold text-c-text-secondary transition hover:text-c-text"
                 >
                   Keep it
                 </button>
@@ -705,19 +705,19 @@ function ScheduleModal({
   }
 
   const inputCls =
-    "w-full rounded-[9px] border border-white/[.07] bg-[#0b101a] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#ff3d6a]/40 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition";
-  const labelCls = "mb-1.5 block text-xs font-semibold uppercase tracking-[.06em] text-zinc-500";
+    "w-full rounded-[9px] border border-c-border bg-surface-1 px-3 py-2 text-sm text-c-text placeholder:text-c-text-muted focus:border-[#ff3d6a]/40 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition";
+  const labelCls = "mb-1.5 block text-xs font-semibold uppercase tracking-[.06em] text-c-text-muted";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
       <div
-        className="relative z-10 w-full max-w-md rounded-[16px] border border-white/[.08] bg-[#0e1420] p-6 shadow-2xl"
+        className="relative z-10 w-full max-w-md rounded-[16px] border border-c-border bg-surface-2 p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-bold tracking-tight">Schedule Post</h2>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-600 hover:text-zinc-300 transition" aria-label="Close">✕</button>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-c-text-muted hover:text-c-text-secondary transition" aria-label="Close">✕</button>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
@@ -807,8 +807,8 @@ function ScheduleModal({
                   onChange={(e) => setYtTagsRaw(e.target.value)}
                 />
               </div>
-              <div className="flex items-center justify-between rounded-[9px] border border-white/[.07] bg-[#0b101a] px-3 py-2.5">
-                <span className="text-sm text-zinc-300">Made for kids</span>
+              <div className="flex items-center justify-between rounded-[9px] border border-c-border bg-surface-1 px-3 py-2.5">
+                <span className="text-sm text-c-text-secondary">Made for kids</span>
                 <button
                   type="button"
                   role="switch"
@@ -816,7 +816,7 @@ function ScheduleModal({
                   onClick={() => setYtMadeForKids((v) => !v)}
                   className={cn(
                     "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none",
-                    ytMadeForKids ? "bg-[#ff3d6a]" : "bg-zinc-700"
+                    ytMadeForKids ? "bg-[#ff3d6a]" : "bg-surface-3"
                   )}
                 >
                   <span
@@ -914,7 +914,7 @@ function PostsListView({
   if (loading) return (
     <div className="p-6 space-y-3">
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="h-16 animate-pulse rounded-[10px] bg-white/[.04]" />
+        <div key={i} className="h-16 animate-pulse rounded-[10px] bg-surface-glass" />
       ))}
     </div>
   );
@@ -922,7 +922,7 @@ function PostsListView({
   return (
     <div className="flex flex-1 flex-col min-h-0">
       {/* Filter bar */}
-      <div className="flex flex-col gap-2 border-b border-white/[.06] px-5 py-3">
+      <div className="flex flex-col gap-2 border-b border-c-border px-5 py-3">
         {/* Status chips */}
         <div className="flex flex-wrap items-center gap-1.5">
           {STATUS_FILTERS.map((f) => (
@@ -933,14 +933,14 @@ function PostsListView({
                 "flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] font-semibold capitalize transition",
                 statusFilter === f.id
                   ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-rose-300"
-                  : "border-white/[.07] bg-white/[.02] text-zinc-500 hover:border-white/[.12] hover:text-zinc-300"
+                  : "border-c-border bg-surface-1 text-c-text-muted hover:border-c-border-hover hover:text-c-text-secondary"
               )}
             >
               {f.label}
               {counts[f.id] > 0 && (
                 <span className={cn(
                   "rounded-full px-1.5 py-px text-[10px] tabular-nums",
-                  statusFilter === f.id ? "bg-[#ff3d6a]/20 text-rose-300" : "bg-white/[.06] text-zinc-500"
+                  statusFilter === f.id ? "bg-[#ff3d6a]/20 text-rose-300" : "bg-surface-2 text-c-text-muted"
                 )}>
                   {counts[f.id]}
                 </span>
@@ -951,7 +951,7 @@ function PostsListView({
           <div className="ml-auto flex items-center gap-1">
             <button
               onClick={() => setSort(sort === "newest" ? "oldest" : "newest")}
-              className="flex items-center gap-1 rounded-[7px] border border-white/[.07] bg-white/[.02] px-2.5 py-1 text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 transition"
+              className="flex items-center gap-1 rounded-[7px] border border-c-border bg-surface-1 px-2.5 py-1 text-[11px] font-semibold text-c-text-muted hover:text-c-text-secondary transition"
             >
               {sort === "newest" ? "↓ Newest" : "↑ Oldest"}
             </button>
@@ -965,8 +965,8 @@ function PostsListView({
               className={cn(
                 "rounded-full border px-3 py-0.5 text-[11px] font-semibold transition",
                 platformFilter === "all"
-                  ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-300"
-                  : "border-white/[.07] bg-white/[.02] text-zinc-600 hover:text-zinc-300"
+                  ? "border-c-border-hover bg-surface-2 text-c-text-secondary"
+                  : "border-c-border bg-surface-1 text-c-text-muted hover:text-c-text-secondary"
               )}
             >
               All platforms
@@ -978,8 +978,8 @@ function PostsListView({
                 className={cn(
                   "flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] font-semibold capitalize transition",
                   platformFilter === p
-                    ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-300"
-                    : "border-white/[.07] bg-white/[.02] text-zinc-600 hover:text-zinc-300"
+                    ? "border-c-border-hover bg-surface-2 text-c-text-secondary"
+                    : "border-c-border bg-surface-1 text-c-text-muted hover:text-c-text-secondary"
                 )}
               >
                 <span className={cn("h-1.5 w-1.5 rounded-full", PLATFORM_DOT[p] ?? "bg-zinc-500")} />
@@ -993,8 +993,8 @@ function PostsListView({
       {filtered.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
           <div className="text-3xl opacity-20">📭</div>
-          <p className="text-sm font-semibold text-zinc-400">No posts found</p>
-          <p className="text-xs text-zinc-600">Try a different filter or schedule a post.</p>
+          <p className="text-sm font-semibold text-c-text-secondary">No posts found</p>
+          <p className="text-xs text-c-text-muted">Try a different filter or schedule a post.</p>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
@@ -1005,18 +1005,18 @@ function PostsListView({
             const canCancel = post.status === "scheduled" || post.status === "pending" || post.status === "processing";
             return (
               <button key={post.id} onClick={() => onSelect(post)}
-                className="flex w-full items-center gap-4 rounded-[10px] border border-white/[.06] bg-white/[.02] px-4 py-3 text-left transition hover:border-white/[.1] hover:bg-white/[.04]">
+                className="flex w-full items-center gap-4 rounded-[10px] border border-c-border bg-surface-1 px-4 py-3 text-left transition hover:border-c-border-hover hover:bg-surface-2">
                 <span className={cn("h-2 w-2 shrink-0 rounded-full", PLATFORM_DOT[post.platform] ?? "bg-zinc-500")} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2 sm:justify-start">
-                    <span className="text-[13px] font-semibold text-zinc-200 truncate">
-                      {post.caption || <span className="text-zinc-600">No caption</span>}
+                    <span className="text-[13px] font-semibold text-c-text truncate">
+                      {post.caption || <span className="text-c-text-muted">No caption</span>}
                     </span>
                     <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize", STATUS_COLORS[post.status] ?? "bg-zinc-500/20 text-zinc-300 border-zinc-500/30")}>
                       {isProcessing ? "⟳ Processing" : post.status}
                     </span>
                   </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-c-text-muted">
                     <span>{PLATFORM_LABELS[post.platform] ?? post.platform}</span>
                     <span>·</span>
                     <span>Scheduled {fmtLocal(post.scheduled_at)}</span>
@@ -1032,7 +1032,7 @@ function PostsListView({
                     <div className="flex shrink-0 gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => setConfirmingId(null)}
-                        className="rounded-[7px] border border-white/[.08] bg-white/[.03] px-2.5 py-1 text-[11px] font-semibold text-zinc-400 hover:text-white"
+                        className="rounded-[7px] border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-c-text-secondary hover:text-c-text"
                       >Keep</button>
                       <button
                         onClick={async (e) => {
@@ -1066,7 +1066,7 @@ function PostsListView({
             total={filtered.length}
             itemLabel="posts"
             onPageChange={setPage}
-            className="mt-3 rounded-[10px] border border-white/[.06] bg-white/[.012]"
+            className="mt-3 rounded-[10px] border border-c-border bg-surface-1"
           />
         </div>
       )}
@@ -1200,29 +1200,29 @@ export function SchedulerPage() {
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0e1420]">
+      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[12px] border border-c-border bg-surface-2">
         {/* Header */}
-        <div className="flex flex-col items-stretch gap-3 border-b border-white/[.07] bg-[#0b101a] p-3 sm:p-4 lg:flex-row lg:flex-wrap lg:items-center">
+        <div className="flex flex-col items-stretch gap-3 border-b border-c-border bg-surface-1 p-3 sm:p-4 lg:flex-row lg:flex-wrap lg:items-center">
           <h1 className="font-display text-[19px] font-bold tracking-[-.01em]">Scheduler</h1>
           {totalPostsThisMonth > 0 && (
-            <span className="rounded-full border border-white/[.07] bg-[#141926] px-2 py-0.5 text-xs font-semibold text-zinc-500">
+            <span className="rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-xs font-semibold text-c-text-muted">
               {totalPostsThisMonth}
             </span>
           )}
           {/* Tab toggle */}
-          <div className="grid grid-cols-2 rounded-[9px] border border-white/[.07] bg-[#141926] p-0.5 sm:flex">
+          <div className="grid grid-cols-2 rounded-[9px] border border-c-border bg-surface-3 p-0.5 sm:flex">
             {(["calendar", "posts"] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}
                 className={cn("rounded-[7px] px-3 py-1 text-xs font-semibold capitalize transition",
-                  activeTab === t ? "bg-white/[.08] text-white" : "text-zinc-500 hover:text-zinc-300")}>
+                  activeTab === t ? "bg-surface-glass text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>
                 {t === "calendar" ? "Calendar" : "All Posts"}
               </button>
             ))}
           </div>
           <div className="flex items-center justify-between gap-2 sm:justify-start">
-            <button onClick={prevMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">‹</button>
-            <span className="min-w-0 flex-1 text-center text-sm font-semibold text-zinc-200 sm:min-w-[150px] sm:flex-none">{monthName} {year}</span>
-            <button onClick={nextMonth} className="rounded-lg border border-white/[.07] bg-[#141926] px-2.5 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition">›</button>
+            <button onClick={prevMonth} className="rounded-lg border border-c-border bg-surface-3 px-2.5 py-1.5 text-sm text-c-text-secondary hover:text-c-text transition">‹</button>
+            <span className="min-w-0 flex-1 text-center text-sm font-semibold text-c-text sm:min-w-[150px] sm:flex-none">{monthName} {year}</span>
+            <button onClick={nextMonth} className="rounded-lg border border-c-border bg-surface-3 px-2.5 py-1.5 text-sm text-c-text-secondary hover:text-c-text transition">›</button>
           </div>
           <Button size="sm" className="bg-[#ff3d6a] text-white hover:bg-[#e8304f] lg:ml-auto" onClick={() => setShowModal(true)}>
             + Schedule Post
@@ -1244,10 +1244,10 @@ export function SchedulerPage() {
         {activeTab === "calendar" && (
         <div className="flex flex-1 min-h-0">
           {/* Left Sidebar */}
-          <aside className="hidden w-52 shrink-0 border-r border-white/[.07] bg-[#0b101a] p-4 md:flex md:flex-col gap-6">
+          <aside className="hidden w-52 shrink-0 border-r border-c-border bg-surface-1 p-4 md:flex md:flex-col gap-6">
             {/* Platform filter */}
             <div>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[.08em] text-zinc-600">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[.08em] text-c-text-muted">
                 Platform
               </p>
               <div className="space-y-0.5">
@@ -1262,7 +1262,7 @@ export function SchedulerPage() {
                       "flex w-full items-center gap-2 rounded-[8px] px-3 py-1.5 text-xs font-semibold transition",
                       platformFilter === id
                         ? "bg-[#ff3d6a]/10 text-rose-200 border border-[#ff3d6a]/30"
-                        : "text-zinc-500 hover:bg-white/[.04] hover:text-zinc-200"
+                        : "text-c-text-muted hover:bg-surface-2 hover:text-c-text"
                     )}
                   >
                     {id !== "all" && (
@@ -1276,7 +1276,7 @@ export function SchedulerPage() {
 
             {/* Status filter */}
             <div>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[.08em] text-zinc-600">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[.08em] text-c-text-muted">
                 Status
               </p>
               <div className="space-y-0.5">
@@ -1288,7 +1288,7 @@ export function SchedulerPage() {
                       "flex w-full items-center rounded-[8px] px-3 py-1.5 text-xs font-semibold capitalize transition",
                       statusFilter === s
                         ? "bg-[#ff3d6a]/10 text-rose-200 border border-[#ff3d6a]/30"
-                        : "text-zinc-500 hover:bg-white/[.04] hover:text-zinc-200"
+                        : "text-c-text-muted hover:bg-surface-2 hover:text-c-text-secondary"
                     )}
                   >
                     {s === "all" ? "All Statuses" : s}
@@ -1299,18 +1299,18 @@ export function SchedulerPage() {
 
             {/* Connected accounts */}
             <div>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[.08em] text-zinc-600">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[.08em] text-c-text-muted">
                 Accounts
               </p>
               <div className="space-y-1">
                 {accounts.map((acc) => (
                   <div key={acc.id} className="flex items-center gap-2 rounded-[8px] px-2 py-1.5">
                     <span className={cn("h-2 w-2 shrink-0 rounded-full", PLATFORM_DOT[acc.platform])} />
-                    <span className="truncate text-[11px] text-zinc-400">{acc.platform_username ?? acc.platform}</span>
+                    <span className="truncate text-[11px] text-c-text-secondary">{acc.platform_username ?? acc.platform}</span>
                   </div>
                 ))}
                 {accounts.length === 0 && (
-                  <p className="text-[11px] text-zinc-700">No accounts connected</p>
+                  <p className="text-[11px] text-c-text-muted">No accounts connected</p>
                 )}
               </div>
             </div>
@@ -1323,7 +1323,7 @@ export function SchedulerPage() {
               {DAYS.map((d) => (
                 <div
                   key={d}
-                  className="py-1.5 text-center text-[10px] font-semibold uppercase tracking-[.08em] text-zinc-600"
+                  className="py-1.5 text-center text-[10px] font-semibold uppercase tracking-[.08em] text-c-text-muted"
                 >
                   {d}
                 </div>
@@ -1333,7 +1333,7 @@ export function SchedulerPage() {
             {loading ? (
               <div className="grid grid-cols-7 gap-1">
                 {Array.from({ length: totalCells }).map((_, i) => (
-                  <div key={i} className="h-28 animate-pulse rounded-[10px] bg-white/[.025]" />
+                  <div key={i} className="h-28 animate-pulse rounded-[10px] bg-surface-glass" />
                 ))}
               </div>
             ) : (
@@ -1352,7 +1352,7 @@ export function SchedulerPage() {
                           ? "border-[#ff3d6a]/30 bg-[#ff3d6a]/5"
                           : posts.some((p) => p.status === "failed")
                           ? "border-red-500/20 bg-red-500/[.03]"
-                          : "border-white/[.05] bg-white/[.02] hover:border-white/[.1]"
+                          : "border-c-border bg-surface-1 hover:border-c-border-hover"
                       )}
                     >
                       {cell.day !== null && (
@@ -1361,13 +1361,13 @@ export function SchedulerPage() {
                             <div
                               className={cn(
                                 "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
-                                isToday ? "bg-[#ff3d6a] text-white" : "text-zinc-500"
+                                isToday ? "bg-[#ff3d6a] text-white" : "text-c-text-muted"
                               )}
                             >
                               {cell.day}
                             </div>
                             {posts.length > 0 && (
-                              <span className="text-[9px] font-semibold text-zinc-600">{posts.length}</span>
+                              <span className="text-[9px] font-semibold text-c-text-muted">{posts.length}</span>
                             )}
                           </div>
                           <div className="space-y-0.5">
@@ -1397,7 +1397,7 @@ export function SchedulerPage() {
                             {posts.length > 3 && (
                               <button
                                 onClick={() => setExpandedDay(cell.ymd)}
-                                className="w-full cursor-pointer rounded px-1.5 py-0.5 text-left text-[9px] font-semibold text-zinc-500 hover:bg-white/[.04] hover:text-zinc-300 transition"
+                                className="w-full cursor-pointer rounded px-1.5 py-0.5 text-left text-[9px] font-semibold text-c-text-muted hover:bg-surface-2 hover:text-c-text-secondary transition"
                               >
                                 +{posts.length - 3} more →
                               </button>
@@ -1414,13 +1414,13 @@ export function SchedulerPage() {
             {/* Empty state */}
             {!loading && calendarData.length === 0 && (
               <div className="mt-12 flex flex-col items-center justify-center gap-3 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[.07] bg-white/[.025] text-2xl">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-c-border bg-surface-1 text-2xl">
                   📅
                 </div>
-                <p className="font-display text-base font-semibold text-zinc-300">
+                <p className="font-display text-base font-semibold text-c-text-secondary">
                   No posts scheduled
                 </p>
-                <p className="text-sm text-zinc-600">
+                <p className="text-sm text-c-text-muted">
                   Click "Schedule Post" to add your first post.
                 </p>
                 <Button

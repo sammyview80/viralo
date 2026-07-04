@@ -100,11 +100,11 @@ export function TimelineEditor({
       style={{ background: "rgba(4,7,15,.82)", backdropFilter: "blur(8px)", animation: "fadeUp .15s ease" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="flex w-full max-w-[700px] flex-col overflow-hidden rounded-[22px] border border-white/[.14] bg-[#0e1420] shadow-[0_40px_100px_rgba(0,0,0,.7)]"
+      <div className="flex w-full max-w-[700px] flex-col overflow-hidden rounded-[22px] border border-c-border bg-surface-2 shadow-[0_40px_100px_rgba(0,0,0,.7)]"
         style={{ maxHeight: "90vh", animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}
         onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex flex-none items-center gap-3 border-b border-white/[.07] px-5 py-4">
+        <div className="flex flex-none items-center gap-3 border-b border-c-border px-5 py-4">
           <div className="grid h-8 w-8 place-items-center rounded-[9px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a]">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>
@@ -112,9 +112,9 @@ export function TimelineEditor({
           </div>
           <div>
             <h3 className="font-display text-[15px] font-bold">Clip Editor</h3>
-            <p className="text-[11.5px] text-zinc-500">{clip.title ?? "Untitled clip"}</p>
+            <p className="text-[11.5px] text-c-text-muted">{clip.title ?? "Untitled clip"}</p>
           </div>
-          <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-white/[.08] bg-white/[.03] text-[13px] text-zinc-500 transition hover:text-white">✕</button>
+          <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-c-border bg-surface-3 text-[13px] text-c-text-muted transition hover:text-c-text">✕</button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 pb-6 pt-5 space-y-5">
@@ -148,8 +148,8 @@ export function TimelineEditor({
 
           {/* Timeline track */}
           <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[.1em] text-zinc-600">Timeline — drag handles to trim</div>
-            <div ref={trackRef} className="relative h-14 w-full cursor-crosshair overflow-hidden rounded-[9px] bg-white/[.04]"
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[.1em] text-c-text-muted">Timeline — drag handles to trim</div>
+            <div ref={trackRef} className="relative h-14 w-full cursor-crosshair overflow-hidden rounded-[9px] bg-surface-3"
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const p = (e.clientX - rect.left) / rect.width;
@@ -184,14 +184,14 @@ export function TimelineEditor({
                 { label:"Duration", val:fmtSec(dur), set:null, accent:true },
                 { label:"End",   val:fmtInput(endSec),   set:(v:string)=>{ const n=parseInput(v); if(!isNaN(n)) setEndSec(Math.max(n,startSec+3)); } },
               ].map(({ label, val, set, accent }) => (
-                <div key={label} className={cn("rounded-[10px] border p-3 text-center", accent ? "border-[#ff3d6a]/25 bg-[#ff3d6a]/[.06]" : "border-white/[.08] bg-white/[.03]")}>
-                  <div className={cn("mb-1.5 text-[10.5px] font-semibold uppercase tracking-[.08em]", accent ? "text-[#ff3d6a]" : "text-zinc-500")}>{label}</div>
+                <div key={label} className={cn("rounded-[10px] border p-3 text-center", accent ? "border-[#ff3d6a]/25 bg-[#ff3d6a]/[.06]" : "border-c-border bg-surface-3")}>
+                  <div className={cn("mb-1.5 text-[10.5px] font-semibold uppercase tracking-[.08em]", accent ? "text-[#ff3d6a]" : "text-c-text-muted")}>{label}</div>
                   {set
                     ? <input defaultValue={val} key={val}
                         onBlur={(e) => set(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && set((e.target as HTMLInputElement).value)}
-                        className="w-full bg-transparent text-center font-mono text-[15px] font-bold text-zinc-200 outline-none" />
-                    : <div className={cn("font-mono text-[15px] font-bold", accent ? "text-[#ff3d6a]" : "text-zinc-200")}>{val}</div>}
+                        className="w-full bg-transparent text-center font-mono text-[15px] font-bold text-c-text outline-none" />
+                    : <div className={cn("font-mono text-[15px] font-bold", accent ? "text-[#ff3d6a]" : "text-c-text")}>{val}</div>}
                 </div>
               ))}
             </div>
@@ -199,7 +199,7 @@ export function TimelineEditor({
 
           {/* Quick trim */}
           <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[.1em] text-zinc-600">Quick trim</div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[.1em] text-c-text-muted">Quick trim</div>
             <div className="flex flex-wrap gap-2">
               {([
                 ["−5s start", () => setStartSec((s) => Math.max(0, s - 5))],
@@ -208,12 +208,12 @@ export function TimelineEditor({
                 ["+5s end",   () => setEndSec((s) => Math.min(s + 5, totalDur))],
               ] as [string, () => void][]).map(([l, fn]) => (
                 <button key={l} onClick={fn}
-                  className="rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12px] font-medium text-zinc-300 transition hover:border-[#ff3d6a]/35 hover:text-white">
+                  className="rounded-[8px] border border-c-border bg-surface-3 px-3 py-1.5 text-[12px] font-medium text-c-text-secondary transition hover:border-[#ff3d6a]/35 hover:text-c-text">
                   {l}
                 </button>
               ))}
               <button onClick={() => { setStartSec(clip.startSec); setEndSec(clip.endSec); }}
-                className="ml-auto rounded-[8px] border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-[12px] font-medium text-zinc-500 transition hover:text-white">
+                className="ml-auto rounded-[8px] border border-c-border bg-surface-3 px-3 py-1.5 text-[12px] font-medium text-c-text-muted transition hover:text-c-text">
                 ↺ Reset
               </button>
             </div>
@@ -221,9 +221,9 @@ export function TimelineEditor({
         </div>
 
         {/* Footer */}
-        <div className="flex flex-none gap-2.5 border-t border-white/[.07] px-5 py-4">
+        <div className="flex flex-none gap-2.5 border-t border-c-border px-5 py-4">
           <button onClick={onClose}
-            className="rounded-[9px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-300 transition hover:text-white">
+            className="rounded-[9px] border border-c-border bg-surface-3 px-4 py-2 text-[13px] font-semibold text-c-text-secondary transition hover:text-c-text">
             Cancel
           </button>
           <button onClick={() => { onSave({ ...clip, startSec, endSec }); onClose(); }}

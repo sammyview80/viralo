@@ -74,9 +74,9 @@ function Progress({ step }: { step: number }) {
         <div className="flex items-center gap-2">
           <ViraloLogo size={28} wordmark textSize="text-[15px]" />
         </div>
-        <span className="text-[12px] font-medium text-zinc-500">Step {step} of {TOTAL_STEPS}</span>
+        <span className="text-[12px] font-medium text-c-text-muted">Step {step} of {TOTAL_STEPS}</span>
       </div>
-      <div className="h-[3px] overflow-hidden rounded-full bg-white/[.07]">
+      <div className="h-[3px] overflow-hidden rounded-full bg-surface-2">
         <div
           className="h-full rounded-full bg-gradient-to-r from-[#ff3d6a] to-[#ff7a3d] transition-[width_.4s_cubic-bezier(.2,.8,.4,1)]"
           style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
@@ -104,7 +104,7 @@ function PrimaryBtn({ onClick, loading, disabled, children }: {
 
 function SkipBtn({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="mt-2.5 w-full bg-transparent py-2 text-[13px] text-zinc-600 transition hover:text-zinc-400">
+    <button onClick={onClick} className="mt-2.5 w-full bg-transparent py-2 text-[13px] text-c-text-muted transition hover:text-c-text-secondary">
       Skip for now
     </button>
   );
@@ -134,7 +134,7 @@ function S1Welcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => void 
         You're about to<br />
         <span className="bg-gradient-to-r from-[#ff3d6a] to-[#ff7a3d] bg-clip-text text-transparent">go viral.</span>
       </h2>
-      <p className="mx-auto mb-8 max-w-[400px] text-[15px] leading-[1.65] text-zinc-500">
+      <p className="mx-auto mb-8 max-w-[400px] text-[15px] leading-[1.65] text-c-text-muted">
         Turn any idea into a platform-ready short video in under a minute. Let's get you set up — it takes 2 minutes.
       </p>
       <div className="mx-auto mb-8 grid max-w-[460px] grid-cols-1 gap-2.5 sm:grid-cols-3">
@@ -143,10 +143,10 @@ function S1Welcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => void 
           { icon:"📅", t:"Auto-schedule",     s:"Posts at peak reach times" },
           { icon:"⚡", t:"Virality scoring",  s:"Know what will perform best" },
         ].map((f) => (
-          <div key={f.t} className="rounded-[13px] border border-white/[.08] bg-white/[.04] px-2.5 py-3.5 text-center">
+          <div key={f.t} className="rounded-[13px] border border-c-border bg-surface-2 px-2.5 py-3.5 text-center">
             <div className="mb-2 text-[22px]">{f.icon}</div>
             <div className="text-[13px] font-semibold">{f.t}</div>
-            <div className="mt-1 text-[12px] leading-[1.4] text-zinc-500">{f.s}</div>
+            <div className="mt-1 text-[12px] leading-[1.4] text-c-text-muted">{f.s}</div>
           </div>
         ))}
       </div>
@@ -154,7 +154,7 @@ function S1Welcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => void 
         className="mx-auto flex items-center gap-2 rounded-[11px] bg-[#ff3d6a] px-8 py-3 text-[15px] font-semibold text-white shadow-[0_4px_18px_rgba(255,61,106,.4),inset_0_1px_0_rgba(255,255,255,.2)] transition hover:shadow-[0_6px_28px_rgba(255,61,106,.55)]">
         Let's set you up →
       </button>
-      <button onClick={onSkip} className="mt-4 block w-full bg-transparent text-[13px] text-zinc-600 hover:text-zinc-400">
+      <button onClick={onSkip} className="mt-4 block w-full bg-transparent text-[13px] text-c-text-muted hover:text-c-text-secondary">
         Skip — go straight to the dashboard →
       </button>
     </div>
@@ -182,7 +182,7 @@ function S2Platforms({ onNext }: { onNext: () => void }) {
     <div>
       <div className="mb-6 text-center">
         <h2 className="font-display text-[26px] font-extrabold tracking-[-0.01em]">Where do you post?</h2>
-        <p className="mt-2 text-[14px] text-zinc-500">Select your active platforms — you can add more later.</p>
+        <p className="mt-2 text-[14px] text-c-text-muted">Select your active platforms — you can add more later.</p>
       </div>
       <div className="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         {PLATFORMS.map((p) => {
@@ -193,8 +193,8 @@ function S2Platforms({ onNext }: { onNext: () => void }) {
               style={{ background: on ? `${p.color}16` : "rgba(255,255,255,.03)", borderColor: on ? `${p.color}55` : "rgba(255,255,255,.08)" }}>
               <span className={cn("grid h-10 w-10 place-items-center rounded-[11px] text-[17px] font-black text-white", p.bg)}>{p.ltr}</span>
               <div className="text-center">
-                <div className={cn("text-[13.5px] font-bold", on ? "text-white" : "text-zinc-300")}>{p.name}</div>
-                <div className="mt-0.5 text-[11.5px] text-zinc-500">{p.desc}</div>
+                <div className={cn("text-[13.5px] font-bold", on ? "text-c-text" : "text-c-text-secondary")}>{p.name}</div>
+                <div className="mt-0.5 text-[11.5px] text-c-text-muted">{p.desc}</div>
               </div>
               {on && <span className="text-[11px] font-bold" style={{ color: p.color }}>✓ Selected</span>}
             </div>
@@ -245,24 +245,24 @@ function S3NicheBrand({ onNext }: { onNext: () => void }) {
     <div>
       <div className="mb-6 text-center">
         <h2 className="font-display text-[26px] font-extrabold tracking-[-0.01em]">Your brand kit</h2>
-        <p className="mt-2 text-[14px] text-zinc-500">AI uses this to tailor your content, hooks, and posting strategy.</p>
+        <p className="mt-2 text-[14px] text-c-text-muted">AI uses this to tailor your content, hooks, and posting strategy.</p>
       </div>
       <div className="mb-6 space-y-5">
         <div>
-          <label className="mb-2 block text-[11.5px] font-bold uppercase tracking-[.08em] text-zinc-400">Creator / brand name</label>
+          <label className="mb-2 block text-[11.5px] font-bold uppercase tracking-[.08em] text-c-text-muted">Creator / brand name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Maya Creates"
-            className="w-full rounded-[11px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[14px] text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/45 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
+            className="w-full rounded-[11px] border border-c-border bg-surface-2 px-4 py-3 text-[14px] text-c-text placeholder-c-text-muted outline-none transition focus:border-[#ff3d6a]/45 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]"
           />
         </div>
         <div>
-          <label className="mb-2.5 block text-[11.5px] font-bold uppercase tracking-[.08em] text-zinc-400">Your niche <span className="text-[#ff3d6a]">*</span></label>
+          <label className="mb-2.5 block text-[11.5px] font-bold uppercase tracking-[.08em] text-c-text-muted">Your niche <span className="text-[#ff3d6a]">*</span></label>
           <div className="flex flex-wrap gap-2">
             {NICHES.map((n) => (
               <div key={n} onClick={() => setNiche(n)}
                 className={cn("cursor-pointer rounded-[9px] border px-3 py-1.5 text-[13px] transition",
                   niche === n
-                    ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-white"
-                    : "border-white/[.08] bg-white/[.04] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+                    ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/10 text-c-text"
+                    : "border-c-border bg-surface-2 text-c-text-muted hover:border-c-border-hover hover:text-c-text"
                 )}>
                 {n}
               </div>
@@ -270,7 +270,7 @@ function S3NicheBrand({ onNext }: { onNext: () => void }) {
           </div>
         </div>
         <div>
-          <label className="mb-3 block text-[11.5px] font-bold uppercase tracking-[.08em] text-zinc-400">Accent color</label>
+          <label className="mb-3 block text-[11.5px] font-bold uppercase tracking-[.08em] text-c-text-muted">Accent color</label>
           <div className="flex gap-3">
             {ACCENT_COLORS.map((c) => (
               <div key={c.id} onClick={() => setColor(c.id)}
@@ -318,7 +318,7 @@ function S4Goal({ onNext }: { onNext: () => void }) {
     <div>
       <div className="mb-6 text-center">
         <h2 className="font-display text-[26px] font-extrabold tracking-[-0.01em]">What's your main goal?</h2>
-        <p className="mt-2 text-[14px] text-zinc-500">We'll tune your dashboard and recommendations around it.</p>
+        <p className="mt-2 text-[14px] text-c-text-muted">We'll tune your dashboard and recommendations around it.</p>
       </div>
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {GOALS.map((g) => (
@@ -327,11 +327,11 @@ function S4Goal({ onNext }: { onNext: () => void }) {
               "flex cursor-pointer flex-col gap-2 rounded-[14px] border p-4 transition-all",
               sel === g.id
                 ? "border-[#ff3d6a]/45 bg-[#ff3d6a]/10"
-                : "border-white/[.08] bg-white/[.03] hover:border-white/20"
+                : "border-c-border bg-surface-2 hover:border-c-border-hover"
             )}>
             <span className="text-[26px]">{g.icon}</span>
-            <div className={cn("text-[13.5px] font-bold", sel === g.id ? "text-white" : "text-zinc-300")}>{g.title}</div>
-            <div className="text-[12px] leading-[1.45] text-zinc-500">{g.desc}</div>
+            <div className={cn("text-[13.5px] font-bold", sel === g.id ? "text-c-text" : "text-c-text-secondary")}>{g.title}</div>
+            <div className="text-[12px] leading-[1.45] text-c-text-muted">{g.desc}</div>
             {sel === g.id && <span className="text-[11px] font-bold text-[#ff3d6a]">✓ Selected</span>}
           </div>
         ))}
@@ -388,7 +388,7 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
       <div className="relative z-10">
         <div className="mb-4 text-[56px]" style={{ animation: "bounceIn .6s cubic-bezier(.34,1.56,.64,1)" }}>🎉</div>
         <h2 className="mb-2 font-display text-[26px] font-extrabold tracking-[-0.02em]">Almost done!</h2>
-        <p className="mx-auto mb-5 max-w-[360px] text-[13.5px] leading-[1.65] text-zinc-500">
+        <p className="mx-auto mb-5 max-w-[360px] text-[13.5px] leading-[1.65] text-c-text-muted">
           Pick a plan to activate your workspace. You can upgrade anytime.
         </p>
 
@@ -405,12 +405,12 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
                   "rounded-[14px] border p-4 flex flex-col gap-3",
                   isPopular
                     ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/[.07] shadow-[0_0_0_1px_rgba(255,61,106,.1)]"
-                    : "border-white/[.08] bg-white/[.03]"
+                    : "border-c-border bg-surface-2"
                 )}>
                 <div className="flex items-center gap-2">
                   <span className={cn(
                     "text-[11px] font-bold uppercase tracking-[.1em]",
-                    isPopular ? "text-[#ff3d6a]" : "text-zinc-400"
+                    isPopular ? "text-[#ff3d6a]" : "text-c-text-muted"
                   )}>
                     {p.name.charAt(0).toUpperCase() + p.name.slice(1)}
                   </span>
@@ -420,9 +420,9 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
                 </div>
                 <div>
                   <span className="font-display text-[24px] font-bold">{price}</span>
-                  <span className="text-[12px] text-zinc-500">/mo</span>
+                  <span className="text-[12px] text-c-text-muted">/mo</span>
                 </div>
-                <p className="text-[11.5px] leading-[1.5] text-zinc-500 flex-1">{highlight}</p>
+                <p className="text-[11.5px] leading-[1.5] text-c-text-muted flex-1">{highlight}</p>
                 <button
                   onClick={() => finalize(p.name, isFree ? "/" : `/billing?upgrade=${p.name}`)}
                   disabled={!!loadingPlan}
@@ -430,10 +430,10 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
                     "flex w-full items-center justify-center gap-2 rounded-[8px] py-2 text-[12.5px] font-semibold transition disabled:opacity-60",
                     isPopular
                       ? "bg-[#ff3d6a] text-white shadow-[0_2px_12px_rgba(255,61,106,.3)] hover:shadow-[0_4px_18px_rgba(255,61,106,.45)]"
-                      : "border border-white/[.10] bg-white/[.04] text-zinc-300 hover:bg-white/[.08]"
+                      : "border border-c-border bg-surface-2 text-c-text-secondary hover:bg-surface-3"
                   )}>
                   {loadingPlan === p.name
-                    ? <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    ? <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-c-border-hover border-t-c-text animate-spin" />
                     : isFree ? "Start free" : `Get ${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`}
                 </button>
               </div>
@@ -475,7 +475,7 @@ export function OnboardingPage() {
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-[rgba(4,7,15,.94)] p-6 backdrop-blur-[12px]"
       style={{ animation: "fadeUp .3s cubic-bezier(.22,.8,.4,1)" }}>
 
-      <div className="flex max-h-[90vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[18px] border border-white/[.14] bg-[#0e1420] shadow-[0_40px_100px_rgba(0,0,0,.8)] sm:rounded-[24px]">
+      <div className="flex max-h-[90vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[18px] border border-c-border bg-surface-1 shadow-[0_40px_100px_rgba(0,0,0,.8)] sm:rounded-[24px]">
         <Progress step={step} />
 
         <div className="flex-1 overflow-y-auto px-7 pb-8 pt-6">
