@@ -294,7 +294,7 @@ function BrandSection() {
         </FieldRow>
         <FieldRow label="Secondary color" hint="Used for backgrounds and secondary elements.">
           <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-[6px] border border-white/[.08]" style={{ background: data.secondary_color }} />
+            <div className="h-7 w-7 rounded-[6px] border border-c-border" style={{ background: data.secondary_color }} />
             <TextInput mono value={data.secondary_color} onChange={v => setData(d => d && { ...d, secondary_color: v })} className="w-24" />
           </div>
         </FieldRow>

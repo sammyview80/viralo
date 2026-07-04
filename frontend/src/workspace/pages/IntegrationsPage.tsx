@@ -281,7 +281,7 @@ function AccountRow({
   return (
     <div className="flex items-center gap-2.5 rounded-xl border border-emerald-800/30 bg-emerald-950/20 px-3 py-2.5">
       <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-c-text">
         {account.platform_username ? `@${account.platform_username}` : account.id}
       </span>
       {expiring && <Badge variant="warn" className="text-[10px] shrink-0">Refresh soon</Badge>}
@@ -292,7 +292,7 @@ function AccountRow({
               onClick={onDisconnect}
               disabled={disconnecting}
               aria-label="Disconnect account"
-              className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-lg text-zinc-500 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+              className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-lg text-c-text-muted transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
             >
               {disconnecting ? (
                 <span className="text-xs">…</span>
@@ -303,7 +303,7 @@ function AccountRow({
               )}
             </button>
           </TooltipTrigger>
-          <TooltipContent className="bg-zinc-800 border-zinc-700 text-xs">Disconnect</TooltipContent>
+          <TooltipContent className="bg-surface-2 border-c-border text-xs">Disconnect</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>
@@ -331,8 +331,8 @@ function PlatformCard({
       className={cn(
         "relative flex flex-col overflow-hidden border transition-all duration-200",
         hasAny
-          ? "border-emerald-800/40 bg-zinc-900 shadow-[0_0_20px_rgba(52,211,153,.04)]"
-          : "border-white/[.07] bg-[#101722] hover:border-white/[.15] hover:bg-[#121a27]",
+          ? "border-emerald-800/40 bg-surface-1 shadow-[0_0_20px_rgba(52,211,153,.04)]"
+          : "border-c-border bg-surface-1 hover:border-c-border-hover hover:bg-surface-2",
       )}
     >
       {/* top accent line */}
@@ -345,12 +345,12 @@ function PlatformCard({
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {/* brand icon */}
-            <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/[.08]", platform.bgColor)}>
+            <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-c-border", platform.bgColor)}>
               {PlatformIcon && <PlatformIcon className={cn("w-5 h-5", platform.color)} />}
             </div>
             <div className="min-w-0">
-              <p className="text-base font-bold text-white leading-tight">{platform.label}</p>
-              <p className="text-xs text-zinc-500 mt-0.5 truncate">{platform.bestFor}</p>
+              <p className="text-base font-bold text-c-text leading-tight">{platform.label}</p>
+              <p className="text-xs text-c-text-muted mt-0.5 truncate">{platform.bestFor}</p>
             </div>
           </div>
 
@@ -370,15 +370,15 @@ function PlatformCard({
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="cursor-default rounded-full border border-white/[.06] bg-white/[.025] px-2.5 py-1 text-[11px] text-zinc-500 font-medium hover:border-white/[.1] transition-colors">
+                <span className="cursor-default rounded-full border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] text-c-text-muted font-medium hover:border-c-border-hover transition-colors">
                   {platform.quota}
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="bg-zinc-800 border-zinc-700 text-xs">
+              <TooltipContent className="bg-surface-2 border-c-border text-xs">
                 Daily limit for {platform.label}
               </TooltipContent>
             </Tooltip>
-            <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2.5 py-1 text-[11px] text-zinc-500 font-medium">
+            <span className="rounded-full border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] text-c-text-muted font-medium">
               OAuth 2.0
             </span>
           </div>
@@ -387,7 +387,7 @@ function PlatformCard({
         {/* connected accounts */}
         {accounts.length > 0 && (
           <>
-            <Separator className="bg-white/[.05]" />
+            <Separator className="bg-c-border" />
             <div className="flex flex-col gap-2">
               {accounts.map((acct) => (
                 <AccountRow
@@ -406,7 +406,7 @@ function PlatformCard({
           className={cn(
             "mt-auto h-10 w-full cursor-pointer rounded-xl font-semibold text-sm",
             hasAny
-              ? "border border-white/[.08] bg-white/[.03] text-zinc-300 hover:border-[#ff3d6a]/50 hover:bg-[#ff3d6a]/10 hover:text-white"
+              ? "border border-c-border bg-surface-2 text-c-text-secondary hover:border-[#ff3d6a]/50 hover:bg-[#ff3d6a]/10 hover:text-c-text"
               : "bg-[#ff3d6a] text-white shadow-[0_8px_24px_rgba(255,61,106,.25)] hover:bg-[#e8304f] hover:shadow-[0_8px_32px_rgba(255,61,106,.35)]",
           )}
           onClick={onConnect}
@@ -420,23 +420,23 @@ function PlatformCard({
 
 function SkeletonCard() {
   return (
-    <Card className="border-white/[.07] bg-[#101722]">
+    <Card className="border-c-border bg-surface-1">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">
-          <Skeleton className="h-11 w-11 rounded-2xl bg-white/[.04]" />
+          <Skeleton className="h-11 w-11 rounded-2xl bg-surface-glass" />
           <div className="flex-1 space-y-2">
-            <Skeleton className="h-4 w-1/2 bg-white/[.04]" />
-            <Skeleton className="h-3 w-2/3 bg-white/[.025]" />
+            <Skeleton className="h-4 w-1/2 bg-surface-glass" />
+            <Skeleton className="h-3 w-2/3 bg-surface-glass" />
           </div>
-          <Skeleton className="h-5 w-20 rounded-full bg-white/[.04]" />
+          <Skeleton className="h-5 w-20 rounded-full bg-surface-glass" />
         </div>
       </CardHeader>
       <CardContent className="space-y-3 px-5 pb-5">
         <div className="flex gap-2">
-          <Skeleton className="h-7 w-24 rounded-full bg-white/[.025]" />
-          <Skeleton className="h-7 w-20 rounded-full bg-white/[.025]" />
+          <Skeleton className="h-7 w-24 rounded-full bg-surface-glass" />
+          <Skeleton className="h-7 w-20 rounded-full bg-surface-glass" />
         </div>
-        <Skeleton className="h-10 w-full rounded-xl bg-white/[.04]" />
+        <Skeleton className="h-10 w-full rounded-xl bg-surface-glass" />
       </CardContent>
     </Card>
   );
@@ -450,12 +450,12 @@ function ToastAlert({ msg, onClose }: { msg: string; onClose: () => void }) {
   const isError = msg.toLowerCase().includes("fail");
   return (
     <div className="fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100vw-24px)]">
-      <Alert className={cn("shadow-2xl backdrop-blur", isError ? "bg-red-950/90 border-red-800/60" : "bg-zinc-900/95 border-emerald-700/40")}>
+      <Alert className={cn("shadow-2xl backdrop-blur", isError ? "bg-red-950/90 border-red-800/60" : "bg-surface-1/95 border-emerald-700/40")}>
         <AlertDescription className="flex items-center gap-3 pr-6">
           <span className={cn("h-2 w-2 rounded-full shrink-0", isError ? "bg-red-400" : "bg-emerald-400")} />
-          <span className={cn("text-sm", isError ? "text-red-300" : "text-zinc-200")}>{msg}</span>
+          <span className={cn("text-sm", isError ? "text-red-300" : "text-c-text")}>{msg}</span>
         </AlertDescription>
-        <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 text-zinc-500 hover:text-zinc-300 cursor-pointer">
+        <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 text-c-text-muted hover:text-c-text cursor-pointer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
             <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
@@ -515,30 +515,30 @@ export function IntegrationsPage() {
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-2xl border border-white/[.07] bg-[#0b111c]">
+      <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-2xl border border-c-border bg-surface-0">
 
         {/* ── Header ── */}
-        <div className="border-b border-white/[.07] bg-[#090e16]/95 px-5 py-5 sm:px-6">
+        <div className="border-b border-c-border bg-surface-1/95 px-5 py-5 sm:px-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-white">Integrations</h1>
-              <p className="mt-1 text-sm text-zinc-400">Connect platforms to publish and schedule clips directly from Viralo.</p>
+              <h1 className="text-2xl font-black tracking-tight text-c-text">Integrations</h1>
+              <p className="mt-1 text-sm text-c-text-secondary">Connect platforms to publish and schedule clips directly from Viralo.</p>
             </div>
 
             {/* stats + progress */}
             <div className="flex flex-col gap-2 lg:items-end lg:min-w-[220px]">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-white tabular-nums">{connectedPlatforms}</span>
-                <span className="text-sm text-zinc-500">of {PLATFORMS.length} platforms connected</span>
+                <span className="text-sm font-semibold text-c-text tabular-nums">{connectedPlatforms}</span>
+                <span className="text-sm text-c-text-muted">of {PLATFORMS.length} platforms connected</span>
               </div>
               <div className="w-full lg:w-52 space-y-1">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-white/[.05]">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-[#ff3d6a] to-rose-400 transition-all duration-700"
                     style={{ width: `${progressPct}%` }}
                   />
                 </div>
-                <p className="text-[11px] text-zinc-600">{progressPct}% coverage — more platforms, more reach</p>
+                <p className="text-[11px] text-c-text-muted">{progressPct}% coverage — more platforms, more reach</p>
               </div>
             </div>
           </div>
@@ -567,8 +567,8 @@ export function IntegrationsPage() {
                     <div key={p.id}>
                       {isFirstDisconnected && (
                         <div className="flex items-center gap-3 mb-4 col-span-full">
-                          <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Not connected</span>
-                          <div className="flex-1 h-px bg-zinc-800" />
+                          <span className="text-xs font-semibold uppercase tracking-widest text-c-text-muted">Not connected</span>
+                          <div className="flex-1 h-px bg-c-border" />
                         </div>
                       )}
                       <PlatformCard

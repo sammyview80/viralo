@@ -72,7 +72,7 @@ const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay 
   );
 
   return (
-    <button onClick={onClick} className={cn("group overflow-hidden rounded-[16px] border bg-[#0e1420] text-left transition hover:-translate-y-0.5 hover:border-white/[.13] hover:shadow-[0_18px_50px_rgba(0,0,0,.32)]", active ? "border-[#ff3d6a]/45 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-white/[.07]")} style={{ animation: `fadeUp .28s ${delay}ms cubic-bezier(.22,.8,.4,1) both` }}>
+    <button onClick={onClick} className={cn("group overflow-hidden rounded-[16px] border bg-surface-1 text-left transition hover:-translate-y-0.5 hover:border-c-border-hover hover:shadow-[0_18px_50px_rgba(0,0,0,.32)]", active ? "border-[#ff3d6a]/45 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-c-border")} style={{ animation: `fadeUp .28s ${delay}ms cubic-bezier(.22,.8,.4,1) both` }}>
       <div className="relative aspect-video overflow-hidden bg-black">
         {clip.thumbnail_url ? <img src={clip.thumbnail_url} alt={clip.title ?? "clip"} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" /> : <div className="absolute inset-0 bg-gradient-to-br from-rose-600/40 to-violet-700/40" />}
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-black/20" />
@@ -123,27 +123,27 @@ const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay 
       <div className="space-y-3 p-4">
         <div className="space-y-1.5">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-white">{clip.clip_metadata?.ai_title ?? clip.title ?? "Untitled clip"}</h3>
-            <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/[.07] bg-white/[.025] px-2 py-1">
+            <h3 className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text">{clip.clip_metadata?.ai_title ?? clip.title ?? "Untitled clip"}</h3>
+            <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-c-border bg-surface-3 px-2 py-1">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: scoreColor }} />
               <span className="font-mono text-[11px] font-bold" style={{ color: scoreColor }}>{score}</span>
             </div>
           </div>
-          {description && <p className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-zinc-500">{description}</p>}
+          {description && <p className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted">{description}</p>}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted">
           <Badge variant={clip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(clip.status) ? "warn" : clip.status === "upload_failed" ? "error" : clip.status === "processing" ? "warn" : "muted"}>{clip.status === "pending_upload" ? "queued" : clip.status === "upload_failed" ? "failed" : clip.status}</Badge>
-          <span className="rounded-full bg-white/[.035] px-2 py-1">{tags.length} tags</span>
-          <span className="rounded-full bg-white/[.035] px-2 py-1">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-          {clipStart && clipEnd && <span className="rounded-full bg-white/[.035] px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
-          <span className="rounded-full bg-white/[.035] px-2 py-1">{clip.clip_metadata?.aspect_ratio ?? "9:16"}</span>
+          <span className="rounded-full bg-surface-3 px-2 py-1">{tags.length} tags</span>
+          <span className="rounded-full bg-surface-3 px-2 py-1">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+          {clipStart && clipEnd && <span className="rounded-full bg-surface-3 px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
+          <span className="rounded-full bg-surface-3 px-2 py-1">{clip.clip_metadata?.aspect_ratio ?? "9:16"}</span>
         </div>
 
-        <div className="h-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
+        <div className="h-1 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
 
         {(postedPlatforms.length > 0 || tags.length > 0) && (
-          <div className="space-y-2 border-t border-white/[.06] pt-3">
+          <div className="space-y-2 border-t border-c-border pt-3">
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {postedPlatforms.slice(0, 2).map((p) => {
@@ -160,8 +160,8 @@ const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay 
             )}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {tags.slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-white/[.035] px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
-                {tags.length > 2 && <span className="rounded-full bg-white/[.03] px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 2}</span>}
+                {tags.slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-surface-3 px-2 py-0.5 text-[9px] font-medium text-c-text-muted">#{tag}</span>)}
+                {tags.length > 2 && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[9px] font-medium text-c-text-muted">+{tags.length - 2}</span>}
               </div>
             )}
           </div>
@@ -285,24 +285,24 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="relative w-full max-w-[440px] rounded-[18px] border border-white/[.08] bg-[#0e1420] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/[.07] px-5 py-4"><h2 className="font-display text-[15px] font-bold">Schedule Post</h2><button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-full text-zinc-500 hover:bg-white/[.06] hover:text-zinc-200 transition cursor-pointer">✕</button></div>
+      <div className="relative w-full max-w-[440px] rounded-[18px] border border-c-border bg-surface-1 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-c-border px-5 py-4"><h2 className="font-display text-[15px] font-bold">Schedule Post</h2><button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-full text-c-text-muted hover:bg-surface-2 hover:text-c-text transition cursor-pointer">✕</button></div>
         <div className="space-y-4 p-5">
-          {success ? (<div className="flex flex-col items-center gap-3 py-6 text-center"><div className="grid h-12 w-12 place-items-center rounded-full bg-green-500/10 text-2xl">✓</div><p className="font-semibold text-green-400">Scheduled!</p><p className="text-xs text-zinc-500">Your post has been queued.</p></div>) : (
+          {success ? (<div className="flex flex-col items-center gap-3 py-6 text-center"><div className="grid h-12 w-12 place-items-center rounded-full bg-green-500/10 text-2xl">✓</div><p className="font-semibold text-green-400">Scheduled!</p><p className="text-xs text-c-text-muted">Your post has been queued.</p></div>) : (
             <>
-              <div><label className="mb-1.5 block text-xs font-semibold text-zinc-400">Social Account</label>
-                {loadingAccounts ? <div className="h-9 rounded-[9px] bg-white/[.04] animate-pulse" /> : accounts.length === 0 ? (<div className="flex flex-col items-center gap-3 rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 px-4 py-5 text-center"><p className="text-sm font-semibold text-white">No social accounts connected</p><a href="/integrations" className="mt-1 rounded-[9px] bg-[#ff3d6a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#ff3d6a]/85">Connect social media →</a></div>) : (
-                  <select value={selectedAccountId} onChange={(e) => { setSelectedAccountId(e.target.value); const acc = accounts.find((a) => a.id === e.target.value); if (acc) fillFromPlatform(acc.platform); }} className="w-full rounded-[9px] border border-white/[.08] bg-[#111827] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50">
+              <div><label className="mb-1.5 block text-xs font-semibold text-c-text-secondary">Social Account</label>
+                {loadingAccounts ? <div className="h-9 rounded-[9px] bg-surface-2 animate-pulse" /> : accounts.length === 0 ? (<div className="flex flex-col items-center gap-3 rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 px-4 py-5 text-center"><p className="text-sm font-semibold text-c-text">No social accounts connected</p><a href="/integrations" className="mt-1 rounded-[9px] bg-[#ff3d6a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#ff3d6a]/85">Connect social media →</a></div>) : (
+                  <select value={selectedAccountId} onChange={(e) => { setSelectedAccountId(e.target.value); const acc = accounts.find((a) => a.id === e.target.value); if (acc) fillFromPlatform(acc.platform); }} className="w-full rounded-[9px] border border-c-border bg-surface-1 px-3 py-2 text-sm text-c-text focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50">
                     {accounts.map((a) => <option key={a.id} value={a.id}>{a.platform.charAt(0).toUpperCase() + a.platform.slice(1)} — @{a.platform_username ?? "unknown"}</option>)}
                   </select>)}
               </div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-zinc-400">Scheduled At</label><input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="w-full rounded-[9px] border border-white/[.08] bg-[#111827] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50 [color-scheme:dark]" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-c-text-secondary">Scheduled At</label><input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="w-full rounded-[9px] border border-c-border bg-surface-1 px-3 py-2 text-sm text-c-text focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50 [color-scheme:dark]" /></div>
               {/* AI Suggest strip */}
               <div className="rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 px-3.5 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-[11.5px] font-semibold text-white">✦ AI Viral Suggestions</p>
-                    <p className="text-[10.5px] text-zinc-500">Auto-fill caption + hashtags optimised for virality</p>
+                    <p className="text-[11.5px] font-semibold text-c-text">✦ AI Viral Suggestions</p>
+                    <p className="text-[10.5px] text-c-text-muted">Auto-fill caption + hashtags optimised for virality</p>
                   </div>
                   <button
                     onClick={handleAiSuggest}
@@ -316,7 +316,7 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
                 {aiSuggestions && (
                   <div className="mt-3 space-y-2.5">
                     {/* Research badge */}
-                    <p className="text-[9.5px] text-zinc-500">
+                    <p className="text-[9.5px] text-c-text-muted">
                       {(aiSuggestions as any)._fromMeta
                         ? "✓ Pre-generated during clipping"
                         : (aiSuggestions as any).research_used
@@ -339,20 +339,20 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
                     {aiSuggestions.primary_hashtags?.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {aiSuggestions.primary_hashtags.slice(0, 8).map((t: string) => (
-                          <span key={t} className="rounded-full bg-white/[.05] px-2 py-0.5 text-[9.5px] text-zinc-400">#{t.replace(/^#/, "")}</span>
+                          <span key={t} className="rounded-full bg-surface-2 px-2 py-0.5 text-[9.5px] text-c-text-secondary">#{t.replace(/^#/, "")}</span>
                         ))}
                       </div>
                     )}
                     {/* Caption preview */}
                     {aiSuggestions.platforms?.tiktok?.description && (
-                      <p className="line-clamp-2 text-[10.5px] text-zinc-400">{aiSuggestions.platforms.tiktok.description}</p>
+                      <p className="line-clamp-2 text-[10.5px] text-c-text-secondary">{aiSuggestions.platforms.tiktok.description}</p>
                     )}
                   </div>
                 )}
               </div>
 
-              <div><label className="mb-1.5 block text-xs font-semibold text-zinc-400">Caption</label><textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={3} placeholder="Write a caption..." className="w-full resize-none rounded-[9px] border border-white/[.08] bg-[#111827] px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-zinc-400">Hashtags <span className="font-normal text-zinc-600">(comma-separated)</span></label><input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="viral, fyp, trending" className="w-full rounded-[9px] border border-white/[.08] bg-[#111827] px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-c-text-secondary">Caption</label><textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={3} placeholder="Write a caption..." className="w-full resize-none rounded-[9px] border border-c-border bg-surface-1 px-3 py-2 text-sm text-c-text placeholder:text-c-text-muted focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-c-text-secondary">Hashtags <span className="font-normal text-c-text-muted">(comma-separated)</span></label><input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="viral, fyp, trending" className="w-full rounded-[9px] border border-c-border bg-surface-1 px-3 py-2 text-sm text-c-text placeholder:text-c-text-muted focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/50" /></div>
               {error && <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>}
               {accounts.length > 0 && (<div className="flex gap-2 pt-1"><Button variant="ghost" className="flex-1" onClick={onClose} disabled={submitting}>Cancel</Button><Button className="flex-1 bg-[#ff3d6a] hover:bg-[#e8304f] text-white" onClick={handleSchedule} disabled={submitting || loadingAccounts}>{submitting ? "Scheduling…" : "Schedule"}</Button></div>)}
             </>
@@ -443,23 +443,23 @@ function PlatformCopyCard({ platform, content, pcfg }: {
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="overflow-hidden rounded-[10px] border border-white/[.06] bg-[#0d1420] transition hover:border-white/[.1]">
+    <div className="overflow-hidden rounded-[10px] border border-c-border bg-surface-1 transition hover:border-c-border-hover">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 p-2.5 text-left cursor-pointer">
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-black text-white" style={{ background: pcfg.color }}>{pcfg.icon}</span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-bold capitalize" style={{ color: pcfg.color }}>{platform}</span>
-            <span className="rounded-full bg-white/[.04] px-1.5 py-px text-[9px] font-semibold text-zinc-500">{content.tags?.length ?? 0} tags</span>
+            <span className="rounded-full bg-surface-3 px-1.5 py-px text-[9px] font-semibold text-c-text-muted">{content.tags?.length ?? 0} tags</span>
           </div>
-          {!open && <p className="mt-1 line-clamp-1 text-[11px] leading-4 text-zinc-500">{content.description}</p>}
+          {!open && <p className="mt-1 line-clamp-1 text-[11px] leading-4 text-c-text-muted">{content.description}</p>}
         </div>
-        <span className={cn("text-zinc-600 transition-transform", open && "rotate-180")}>
+        <span className={cn("text-c-text-muted transition-transform", open && "rotate-180")}>
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}><path d="m6 9 6 6 6-6"/></svg>
         </span>
       </button>
 
       {open && (
-        <div className="border-t border-white/[.06] px-3 pb-3 pt-2">
+        <div className="border-t border-c-border px-3 pb-3 pt-2">
           <div className="space-y-2">
             <button
               type="button"
@@ -467,30 +467,30 @@ function PlatformCopyCard({ platform, content, pcfg }: {
                 const tags = content.tags?.map((t) => `#${t.replace(/^#+/, "")}`).join(" ") ?? "";
                 navigator.clipboard.writeText([content.description, tags].filter(Boolean).join("\n\n"));
               }}
-              className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-white/[.07] bg-white/[.025] py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-white/[.05] hover:text-white"
+              className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-c-border bg-surface-3 py-1.5 text-[11px] font-semibold text-c-text-secondary transition hover:bg-surface-2 hover:text-c-text"
             >
               <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               Copy all
             </button>
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Description</p>
-                <button type="button" onClick={() => navigator.clipboard.writeText(content.description)} className="text-[9px] text-zinc-600 hover:text-zinc-400 transition">copy</button>
+                <p className="text-[9px] font-bold uppercase tracking-[.12em] text-c-text-muted">Description</p>
+                <button type="button" onClick={() => navigator.clipboard.writeText(content.description)} className="text-[9px] text-c-text-muted hover:text-c-text-secondary transition">copy</button>
               </div>
-              <p className="rounded-[8px] bg-white/[.025] p-2 text-[11px] leading-4 text-zinc-300">{content.description}</p>
+              <p className="rounded-[8px] bg-surface-3 p-2 text-[11px] leading-4 text-c-text-secondary">{content.description}</p>
             </div>
             {content.tags?.length > 0 && (
               <div>
                 <div className="mb-1 flex items-center justify-between">
-                  <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Tags</p>
-                  <button type="button" onClick={() => navigator.clipboard.writeText(content.tags.map((t) => `#${t.replace(/^#+/, "")}`).join(" "))} className="text-[9px] text-zinc-600 hover:text-zinc-400 transition">copy</button>
+                  <p className="text-[9px] font-bold uppercase tracking-[.12em] text-c-text-muted">Tags</p>
+                  <button type="button" onClick={() => navigator.clipboard.writeText(content.tags.map((t) => `#${t.replace(/^#+/, "")}`).join(" "))} className="text-[9px] text-c-text-muted hover:text-c-text-secondary transition">copy</button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {content.tags.map((tag) => <span key={tag} className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: `${pcfg.color}35`, background: `${pcfg.color}12`, color: pcfg.color }}>#{tag.replace(/^#+/, "")}</span>)}
                 </div>
               </div>
             )}
-            <button type="button" onClick={() => setOpen(false)} className="mt-1 text-[10px] font-semibold text-zinc-500 hover:text-zinc-300">Close</button>
+            <button type="button" onClick={() => setOpen(false)} className="mt-1 text-[10px] font-semibold text-c-text-muted hover:text-c-text-secondary">Close</button>
           </div>
         </div>
       )}
@@ -500,16 +500,16 @@ function PlatformCopyCard({ platform, content, pcfg }: {
 
 function SkeletonCard() {
   return (
-    <div className="overflow-hidden rounded-[12px] border border-white/[.07] bg-[#0e1420] animate-pulse">
-      <div className="aspect-[9/12] bg-white/[.04]" />
-      <div className="p-4 space-y-3"><div className="h-3 rounded bg-white/[.06] w-3/4" /><div className="h-3 rounded bg-white/[.04] w-1/2" /><div className="flex justify-between mt-4"><div className="h-5 w-14 rounded-full bg-white/[.06]" /><div className="h-6 w-10 rounded bg-white/[.06]" /></div></div>
+    <div className="overflow-hidden rounded-[12px] border border-c-border bg-surface-1 animate-pulse">
+      <div className="aspect-[9/12] bg-surface-2" />
+      <div className="p-4 space-y-3"><div className="h-3 rounded bg-surface-2 w-3/4" /><div className="h-3 rounded bg-surface-2 w-1/2" /><div className="flex justify-between mt-4"><div className="h-5 w-14 rounded-full bg-surface-2" /><div className="h-6 w-10 rounded bg-surface-2" /></div></div>
     </div>
   );
 }
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className={cn("rounded-full border px-3 py-1.5 text-xs font-medium transition cursor-pointer whitespace-nowrap", active ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-white/[.06] bg-white/[.018] text-zinc-500 hover:border-white/[.12] hover:bg-white/[.035] hover:text-zinc-200")}>
+    <button onClick={onClick} className={cn("rounded-full border px-3 py-1.5 text-xs font-medium transition cursor-pointer whitespace-nowrap", active ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-muted hover:border-c-border-hover hover:bg-surface-2 hover:text-c-text")}>
       {children}
     </button>
   );
@@ -518,7 +518,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 function FilterGroup({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
-      <div className="text-[10px] font-semibold uppercase tracking-[.13em] text-zinc-600">{label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[.13em] text-c-text-muted">{label}</div>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
@@ -817,32 +817,32 @@ export function ClipsPage() {
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col bg-[#080b12]">
+      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col bg-surface-0">
         {/* Header */}
-        <div className="border-b border-white/[.06] bg-[#080b12]/95 px-3 py-3 sm:px-5 sm:py-4">
+        <div className="border-b border-c-border bg-surface-0/95 px-3 py-3 sm:px-5 sm:py-4">
           <div className="mx-auto flex w-full max-w-[1240px] flex-col px-3 sm:px-4 xl:px-5">
             <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
               <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
                 <div className="flex items-center gap-2">
                   <h1 className="font-display text-[20px] font-bold tracking-[-.02em]">Clips</h1>
-                  <span className="rounded-full border border-white/[.06] bg-white/[.025] px-2 py-0.5 text-xs font-medium text-zinc-500">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
+                  <span className="rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-xs font-medium text-c-text-muted">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
                 </div>
-                <p className="mt-1 text-[11px] text-zinc-600">Search, review, and publish shorts.</p>
+                <p className="mt-1 text-[11px] text-c-text-muted">Search, review, and publish shorts.</p>
               </div>
               <div className="relative min-w-0 max-w-none flex-1 lg:min-w-[240px] lg:max-w-[520px]">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-600 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                <input className="h-10 w-full rounded-[11px] border border-white/[.07] bg-white/[.035] pl-9 pr-8 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-c-text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input className="h-10 w-full rounded-[11px] border border-c-border bg-surface-1 pl-9 pr-8 text-sm text-c-text placeholder:text-c-text-muted focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted hover:text-c-text-secondary transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
               </div>
-              <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-white/[.07] bg-white/[.025] text-zinc-400 hover:text-zinc-200")}>
+              <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-secondary hover:text-c-text")}>
                 <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
                 Filters
                 {activeFilterCount > 0 && <span className="rounded-full bg-[#ff3d6a] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span>}
               </button>
-              <div className="flex rounded-[11px] border border-white/[.07] bg-white/[.025] p-1">
-                {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-white/[.06] text-white" : "text-zinc-500 hover:text-zinc-300")}>{v === "grid" ? "Grid" : "List"}</button>)}
+              <div className="flex rounded-[11px] border border-c-border bg-surface-1 p-1">
+                {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-surface-2 text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>{v === "grid" ? "Grid" : "List"}</button>)}
               </div>
-              <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 rounded-[11px] border border-white/[.07] bg-white/[.025] px-3 text-xs font-semibold text-zinc-400 focus:outline-none transition cursor-pointer">
+              <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 rounded-[11px] border border-c-border bg-surface-1 px-3 text-xs font-semibold text-c-text-secondary focus:outline-none transition cursor-pointer">
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
                 <option value="score_desc">Highest score</option>
@@ -853,7 +853,7 @@ export function ClipsPage() {
               <Button size="sm" className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
             </div>
             {activeFilterCount > 0 && !showFilters && (
-              <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
+              <div className="mt-3 flex items-center gap-2 text-[11px] text-c-text-muted">
                 <span>{activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active</span>
                 <button onClick={clearFilters} className="font-semibold text-rose-300/80 hover:text-rose-200">Clear all</button>
               </div>
@@ -876,19 +876,19 @@ export function ClipsPage() {
 
         {/* Filter bar — collapsed by default to keep the workspace calm */}
         {showFilters && (
-          <div className="border-b border-white/[.06] bg-[#080b12] px-3 py-3 sm:px-5 sm:py-4">
+          <div className="border-b border-c-border bg-surface-0 px-3 py-3 sm:px-5 sm:py-4">
             <div className="mx-auto grid w-full max-w-[1240px] gap-5 px-3 sm:px-4 md:grid-cols-2 xl:grid-cols-5 xl:px-5">
               <FilterGroup label="Platform">{PLATFORM_OPTIONS.map((f) => <Chip key={f.id} active={platforms.has(f.id)} onClick={() => setPlatforms((p) => toggle(p, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Status">{STATUS_OPTIONS.map((f) => <Chip key={f.id} active={statuses.has(f.id)} onClick={() => setStatuses((s) => toggle(s, f.id))}>{f.label}</Chip>)}</FilterGroup>
               <FilterGroup label="Duration">{DURATION_OPTIONS.map((f) => <Chip key={f.id} active={durations.has(f.id)} onClick={() => setDurations((d) => toggle(d, f.id))}>{f.label}</Chip>)}</FilterGroup>
-              <FilterGroup label="Published">{PUBLISHED_OPTIONS.map((f) => <Chip key={f.id} active={published.has(f.id)} onClick={() => setPublished((p) => toggle(p, f.id))}>{f.label}</Chip>)}{activeFilterCount > 0 && <button onClick={clearFilters} className="text-xs font-semibold text-zinc-500 hover:text-rose-300">Clear all</button>}</FilterGroup>
-              <FilterGroup label={<span className="flex items-center justify-between w-full">Min Virality Score <span className={cn("font-semibold", minViralityScore > 0 ? "text-[#ff3d6a]" : "text-zinc-500")}>{minViralityScore > 0 ? `≥${minViralityScore}/10` : "Any"}</span></span>}>
+              <FilterGroup label="Published">{PUBLISHED_OPTIONS.map((f) => <Chip key={f.id} active={published.has(f.id)} onClick={() => setPublished((p) => toggle(p, f.id))}>{f.label}</Chip>)}{activeFilterCount > 0 && <button onClick={clearFilters} className="text-xs font-semibold text-c-text-muted hover:text-rose-300">Clear all</button>}</FilterGroup>
+              <FilterGroup label={<span className="flex items-center justify-between w-full">Min Virality Score <span className={cn("font-semibold", minViralityScore > 0 ? "text-[#ff3d6a]" : "text-c-text-muted")}>{minViralityScore > 0 ? `≥${minViralityScore}/10` : "Any"}</span></span>}>
                 <div className="flex w-full flex-col gap-1.5 pt-1">
                   <input type="range" min={0} max={10} step={1} value={minViralityScore}
                     onChange={(e) => { setMinViralityScore(Number(e.target.value)); setPage(1); }}
-                    className="h-[3px] w-full cursor-pointer appearance-none rounded-full bg-white/[.08] accent-[#ff3d6a]"
+                    className="h-[3px] w-full cursor-pointer appearance-none rounded-full bg-surface-3 accent-[#ff3d6a]"
                   />
-                  <div className="flex justify-between text-[10px] text-zinc-600">
+                  <div className="flex justify-between text-[10px] text-c-text-muted">
                     <span>Any</span><span>Balanced</span><span>Viral only</span>
                   </div>
                 </div>
@@ -905,8 +905,8 @@ export function ClipsPage() {
             ) : filtered.length === 0 ? (
               <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-3 text-center">
                 <div className="text-4xl opacity-20">✂</div>
-                <p className="font-display text-[15px] font-semibold text-zinc-400">{clips.length === 0 ? "No clips yet" : "No clips match filters"}</p>
-                <p className="text-xs text-zinc-600">{clips.length === 0 ? "Upload a video and run the pipeline to generate clips." : "Try adjusting your search or filters."}</p>
+                <p className="font-display text-[15px] font-semibold text-c-text-secondary">{clips.length === 0 ? "No clips yet" : "No clips match filters"}</p>
+                <p className="text-xs text-c-text-muted">{clips.length === 0 ? "Upload a video and run the pipeline to generate clips." : "Try adjusting your search or filters."}</p>
                 {activeFilterCount > 0 && <button onClick={clearFilters} className="mt-2 text-xs font-semibold text-[#ff3d6a] hover:underline cursor-pointer">Clear all filters</button>}
               </div>
             ) : viewMode === "grid" ? (
@@ -935,7 +935,7 @@ export function ClipsPage() {
                 items={filtered}
                 keyForItem={(clip) => clip.id}
                 estimateRowHeight={92}
-                className="overflow-hidden rounded-[16px] border border-white/[.06] bg-white/[.012]"
+                className="overflow-hidden rounded-[16px] border border-c-border bg-surface-1"
                 renderItem={(clip) => {
                   const isPosted = postedClipIds.has(clip.id);
                   const isScheduled = scheduledClipIds.has(clip.id);
@@ -947,8 +947,8 @@ export function ClipsPage() {
                   const hashtags = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.tags ?? [];
                   const mostRecentPost = (postsByClipId.get(clip.id) ?? [])[0];
                   return (
-                    <button onClick={() => setSelectedId(clip.id)} className={cn("w-full flex items-start gap-3 px-3 py-3.5 text-left transition hover:bg-white/[.025] cursor-pointer sm:gap-4 sm:px-5 sm:py-4", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
-                      <div className="relative h-16 w-[42px] shrink-0 overflow-hidden rounded-[7px] bg-white/[.04]">
+                    <button onClick={() => setSelectedId(clip.id)} className={cn("w-full flex items-start gap-3 px-3 py-3.5 text-left transition hover:bg-surface-2 cursor-pointer sm:gap-4 sm:px-5 sm:py-4", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
+                      <div className="relative h-16 w-[42px] shrink-0 overflow-hidden rounded-[7px] bg-surface-2">
                         {clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" /> : <div className="h-full w-full bg-gradient-to-br from-rose-600/40 to-violet-700/40" />}
                         {isPosted && <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/55 backdrop-blur-[1px]"><svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6 9 17l-5-5"/></svg></div>}
                         {!isPosted && isScheduled && <div className="absolute inset-0 flex items-center justify-center bg-blue-500/50 backdrop-blur-[1px]"><svg className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>}
@@ -964,21 +964,21 @@ export function ClipsPage() {
                           </div>
                         </div>
 
-                        {aiCaption && <p className="truncate text-[11px] text-zinc-500 leading-[1.4]">{aiCaption}</p>}
+                        {aiCaption && <p className="truncate text-[11px] text-c-text-muted leading-[1.4]">{aiCaption}</p>}
 
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="flex items-center gap-1 text-[11px] text-zinc-500">
+                          <span className="flex items-center gap-1 text-[11px] text-c-text-muted">
                             {platCfg && <span className="h-1.5 w-1.5 rounded-full shrink-0 inline-block" style={{ background: platCfg.color }} />}
                             <span className="capitalize">{clip.platform ?? "—"}</span>
                           </span>
-                          <span className="text-zinc-700">·</span>
-                          <span className="text-[11px] text-zinc-500">{formatDuration(clip.duration_ms)}</span>
+                          <span className="text-c-text-muted">·</span>
+                          <span className="text-[11px] text-c-text-muted">{formatDuration(clip.duration_ms)}</span>
                           {hashtags.length > 0 && <>
-                            <span className="text-zinc-700">·</span>
-                            <span className="text-[11px] text-zinc-600">{hashtags.length} tag{hashtags.length !== 1 ? "s" : ""}</span>
+                            <span className="text-c-text-muted">·</span>
+                            <span className="text-[11px] text-c-text-muted">{hashtags.length} tag{hashtags.length !== 1 ? "s" : ""}</span>
                           </>}
                           {mostRecentPost && <>
-                            <span className="text-zinc-700">·</span>
+                            <span className="text-c-text-muted">·</span>
                             <span className="text-[11px]" style={{ color: mostRecentPost.status === "posted" ? "#34d399" : mostRecentPost.status === "failed" ? "#f87171" : "#60a5fa" }}>
                               {mostRecentPost.status === "posted" && mostRecentPost.posted_at
                                 ? new Date(mostRecentPost.posted_at).toLocaleDateString([], { month: "short", day: "numeric" })
@@ -986,11 +986,11 @@ export function ClipsPage() {
                                 : `due ${new Date(mostRecentPost.scheduled_at).toLocaleDateString([], { month: "short", day: "numeric" })}`}
                             </span>
                           </>}
-                          <span className="text-zinc-700">·</span>
-                          <span className="text-[11px] text-zinc-600">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                          <span className="text-c-text-muted">·</span>
+                          <span className="text-[11px] text-c-text-muted">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
 
                           <div className="w-full flex items-center gap-2 shrink-0 sm:ml-auto sm:w-auto">
-                            <div className="h-1 w-20 rounded-full bg-white/[.06] overflow-hidden">
+                            <div className="h-1 w-20 rounded-full bg-surface-3 overflow-hidden">
                               <div className="h-full rounded-full transition-all" style={{ width: `${scorePct}%`, background: scoreColor }} />
                             </div>
                             <span className="font-mono text-[11px] font-bold w-7 text-right" style={{ color: scoreColor }}>{clip.score != null ? clip.score.toFixed(1) : "--"}</span>
@@ -1012,12 +1012,12 @@ export function ClipsPage() {
                 setSelectedId(null);
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
-              className="mt-4 rounded-[14px] border border-white/[.06] bg-white/[.012]"
+              className="mt-4 rounded-[14px] border border-c-border bg-surface-1"
             />
           </div>
 
           {/* Clip details sidebar */}
-          <div className="hidden border-l border-white/[.07] bg-[#080b12] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
+          <div className="hidden border-l border-c-border bg-surface-0 xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
             {drawer ? (() => {
               const platformKey = drawer.platform ?? "shorts";
               const platformContent = drawer.clip_metadata?.platforms?.[platformKey] ?? drawer.clip_metadata?.platforms?.shorts ?? null;
@@ -1047,38 +1047,38 @@ export function ClipsPage() {
               };
               return (
               <div className="flex flex-col overflow-y-auto">
-                <div className="border-b border-white/[.06] bg-gradient-to-b from-white/[.025] to-transparent p-4">
+                <div className="border-b border-c-border bg-gradient-to-b from-white/[.025] to-transparent p-4">
                   <div className="grid gap-4 md:grid-cols-[176px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[176px_minmax(0,1fr)]">
                     <div className="mx-auto w-full max-w-[176px]"><ShortsPlayer key={drawer.id} clip={drawer} /></div>
 
                     <div className="min-w-0 space-y-3">
                       <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
-                          <h2 className="min-w-0 text-[16px] font-bold leading-[1.25] tracking-[-.01em] text-white line-clamp-3">{drawer.clip_metadata?.ai_title ?? drawer.title ?? "Untitled clip"}</h2>
+                          <h2 className="min-w-0 text-[16px] font-bold leading-[1.25] tracking-[-.01em] text-c-text line-clamp-3">{drawer.clip_metadata?.ai_title ?? drawer.title ?? "Untitled clip"}</h2>
                           <Badge variant={drawer.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(drawer.status) ? "warn" : drawer.status === "upload_failed" ? "error" : drawer.status === "processing" ? "warn" : "muted"}>{drawer.status === "pending_upload" ? "queued" : drawer.status === "upload_failed" ? "failed" : drawer.status}</Badge>
                         </div>
-                        {primaryDescription && <p className="line-clamp-3 text-[12px] leading-5 text-zinc-400">{primaryDescription}</p>}
+                        {primaryDescription && <p className="line-clamp-3 text-[12px] leading-5 text-c-text-secondary">{primaryDescription}</p>}
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-[10px] border border-white/[.06] bg-white/[.025] p-2.5">
-                          <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Score</p>
+                        <div className="rounded-[10px] border border-c-border bg-surface-1 p-2.5">
+                          <p className="text-[9px] font-bold uppercase tracking-[.12em] text-c-text-muted">Score</p>
                           <div className="mt-1 flex items-end gap-2">
                             <span className="font-display text-[22px] font-black leading-none" style={{ color: scoreColor }}>{drawer.score != null ? drawer.score.toFixed(1) : "--"}</span>
-                            <div className="mb-1 h-1.5 flex-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
+                            <div className="mb-1 h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full" style={{ width: `${scorePct}%`, background: scoreColor }} /></div>
                           </div>
                         </div>
-                        <div className="rounded-[10px] border border-white/[.06] bg-white/[.025] p-2.5">
-                          <p className="text-[9px] font-bold uppercase tracking-[.12em] text-zinc-600">Duration</p>
-                          <p className="mt-1 font-display text-[22px] font-black leading-none text-white">{formatDuration(drawer.duration_ms)}</p>
+                        <div className="rounded-[10px] border border-c-border bg-surface-1 p-2.5">
+                          <p className="text-[9px] font-bold uppercase tracking-[.12em] text-c-text-muted">Duration</p>
+                          <p className="mt-1 font-display text-[22px] font-black leading-none text-c-text">{formatDuration(drawer.duration_ms)}</p>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-[11px]">
                         {([["Platform", drawer.platform ?? "—"], ["Format", "9:16"], ["Timeline", `${clipStart}–${clipEnd}`], ["Created", new Date(drawer.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })]] as [string,string][]).map(([label, value]) => (
-                          <div key={label} className="rounded-[9px] border border-white/[.05] bg-white/[.018] px-2.5 py-2">
-                            <p className="text-[9px] font-bold uppercase tracking-[.1em] text-zinc-600">{label}</p>
-                            <p className="mt-0.5 truncate font-semibold text-zinc-200 capitalize">{value}</p>
+                          <div key={label} className="rounded-[9px] border border-c-border bg-surface-1 px-2.5 py-2">
+                            <p className="text-[9px] font-bold uppercase tracking-[.1em] text-c-text-muted">{label}</p>
+                            <p className="mt-0.5 truncate font-semibold text-c-text capitalize">{value}</p>
                           </div>
                         ))}
                       </div>
@@ -1099,15 +1099,15 @@ export function ClipsPage() {
                       : allPlatformEntries;
                     return (
                       <>
-                        <section className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
+                        <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
                           <div className="mb-2 flex items-center justify-between gap-2">
-                            <p className="text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Primary hashtags</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[.13em] text-c-text-muted">Primary hashtags</p>
                             <div className="flex items-center gap-1.5">
-                              {displayPrimaryTags.length > 0 && <span className="text-[10px] text-zinc-600">{displayPrimaryTags.length}</span>}
+                              {displayPrimaryTags.length > 0 && <span className="text-[10px] text-c-text-muted">{displayPrimaryTags.length}</span>}
                               {displayPrimaryTags.length > 0 && (
                                 <button
                                   onClick={() => navigator.clipboard.writeText(displayPrimaryTags.map((t) => `#${t}`).join(" "))}
-                                  className="text-[9px] font-semibold text-zinc-600 hover:text-zinc-400 transition"
+                                  className="text-[9px] font-semibold text-c-text-muted hover:text-c-text-secondary transition"
                                 >copy</button>
                               )}
                               <button
@@ -1146,13 +1146,13 @@ export function ClipsPage() {
                               {displayPrimaryTags.slice(0, 12).map((tag) => <span key={tag} className="rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 px-2 py-1 text-[10px] font-semibold text-rose-200">#{tag}</span>)}
                             </div>
                           ) : !isSuggestingThisClip && (
-                            <p className="text-[10px] text-zinc-600">No tags yet — click AI Suggest to generate trending hashtags.</p>
+                            <p className="text-[10px] text-c-text-muted">No tags yet — click AI Suggest to generate trending hashtags.</p>
                           )}
                         </section>
 
                         {displayPlatformEntries.length > 0 && (
-                          <section className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
-                            <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Platform copy</p>
+                          <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
+                            <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-c-text-muted">Platform copy</p>
                             <div className="space-y-2">
                               {displayPlatformEntries.slice(0, 6).map(([platform, content]) => {
                                 const pcfg = PLAT_CFG[platform.toLowerCase()] ?? {color:"#ff3d6a",icon:"↗"};
@@ -1166,8 +1166,8 @@ export function ClipsPage() {
                   })()}
 
                   {clipPosts.length > 0 && (
-                    <section className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
-                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Published / scheduled</p>
+                    <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
+                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-c-text-muted">Published / scheduled</p>
                       <div className="space-y-1.5">
                         {clipPosts.map((p) => {
                           const pcfg = PLAT_CFG[p.platform?.toLowerCase() ?? ""] ?? {color:"#ff3d6a",icon:"↗"};
@@ -1182,7 +1182,7 @@ export function ClipsPage() {
                                   {isQ&&<span className="rounded-full bg-blue-500/15 px-1.5 py-px text-[8px] font-bold text-blue-400">Queued</span>}
                                   {isFail&&<span className="rounded-full bg-red-500/15 px-1.5 py-px text-[8px] font-bold text-red-400">Failed</span>}
                                 </div>
-                                <p className="truncate text-[10px] text-zinc-600">{isLive&&p.posted_at?new Date(p.posted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isQ?new Date(p.scheduled_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isFail?(p.last_error??"—"):new Date(p.created_at).toLocaleString([],{month:"short",day:"numeric"})}</p>
+                                <p className="truncate text-[10px] text-c-text-muted">{isLive&&p.posted_at?new Date(p.posted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isQ?new Date(p.scheduled_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isFail?(p.last_error??"—"):new Date(p.created_at).toLocaleString([],{month:"short",day:"numeric"})}</p>
                               </div>
                             </div>
                           );
@@ -1191,17 +1191,17 @@ export function ClipsPage() {
                     </section>
                   )}
 
-                  <section className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
+                  <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Assets</p>
-                      <span className="text-[10px] text-zinc-600">{captionLineCount} captions</span>
+                      <p className="text-[10px] font-bold uppercase tracking-[.13em] text-c-text-muted">Assets</p>
+                      <span className="text-[10px] text-c-text-muted">{captionLineCount} captions</span>
                     </div>
-                    {cleanCaptionPreview && <p className="mb-2 line-clamp-3 text-[11px] leading-4 text-zinc-500">{cleanCaptionPreview}…</p>}
+                    {cleanCaptionPreview && <p className="mb-2 line-clamp-3 text-[11px] leading-4 text-c-text-muted">{cleanCaptionPreview}…</p>}
                     <div className="grid grid-cols-2 gap-1.5">
-                      {drawer.storage_url && <a className="rounded-[8px] border border-white/[.06] bg-white/[.025] px-2 py-1.5 text-center text-[10px] font-semibold text-zinc-300 hover:bg-white/[.05]" href={drawer.storage_url} target="_blank" rel="noreferrer">Open video</a>}
-                      {drawer.thumbnail_url && <a className="rounded-[8px] border border-white/[.06] bg-white/[.025] px-2 py-1.5 text-center text-[10px] font-semibold text-zinc-300 hover:bg-white/[.05]" href={drawer.thumbnail_url} target="_blank" rel="noreferrer">Open thumbnail</a>}
+                      {drawer.storage_url && <a className="rounded-[8px] border border-c-border bg-surface-2 px-2 py-1.5 text-center text-[10px] font-semibold text-c-text-secondary hover:bg-surface-3" href={drawer.storage_url} target="_blank" rel="noreferrer">Open video</a>}
+                      {drawer.thumbnail_url && <a className="rounded-[8px] border border-c-border bg-surface-2 px-2 py-1.5 text-center text-[10px] font-semibold text-c-text-secondary hover:bg-surface-3" href={drawer.thumbnail_url} target="_blank" rel="noreferrer">Open thumbnail</a>}
                     </div>
-                    <div className="mt-2 space-y-1 text-[9px] text-zinc-700">
+                    <div className="mt-2 space-y-1 text-[9px] text-c-text-muted">
                       <p className="truncate">Clip ID: {drawer.id}</p>
                       <p className="truncate">Video ID: {drawer.video_id}</p>
                     </div>
@@ -1210,11 +1210,11 @@ export function ClipsPage() {
 
 
                   {compareView === drawer.id && drawer.upscaled_storage_url && drawer.storage_url && (
-                    <section className="rounded-[12px] border border-white/[.06] bg-white/[.018] p-3">
-                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-zinc-600">Before / After</p>
+                    <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
+                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-c-text-muted">Before / After</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <p className="mb-1 text-center text-[9px] text-zinc-600">Original</p>
+                          <p className="mb-1 text-center text-[9px] text-c-text-muted">Original</p>
                           <video src={drawer.storage_url} className="w-full rounded-[8px] object-cover" controls muted playsInline preload="metadata" style={{ maxHeight: 140 }} />
                         </div>
                         <div>
@@ -1223,13 +1223,13 @@ export function ClipsPage() {
                         </div>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-2">
-                        <a href={drawer.storage_url} download className="rounded-[8px] border border-white/[.06] bg-white/[.025] py-1 text-center text-[10px] font-semibold text-zinc-400 hover:bg-white/[.05]">↓ Original</a>
+                        <a href={drawer.storage_url} download className="rounded-[8px] border border-c-border bg-surface-2 py-1 text-center text-[10px] font-semibold text-c-text-secondary hover:bg-surface-3">↓ Original</a>
                         <a href={drawer.upscaled_storage_url} download className="rounded-[8px] border border-emerald-500/30 bg-emerald-500/10 py-1 text-center text-[10px] font-semibold text-emerald-400 hover:bg-emerald-500/20">↓ 4K</a>
                       </div>
                     </section>
                   )}
 
-                  <div className="sticky bottom-0 space-y-2 bg-[#080b12]/95 pt-1 backdrop-blur">
+                  <div className="sticky bottom-0 space-y-2 bg-surface-0/95 pt-1 backdrop-blur">
                     <Button className="w-full h-9 bg-[#ff3d6a] hover:bg-[#e8304f] text-white text-[13px] font-semibold" onClick={() => setPublishOpen(true)}>
                       {drawerPosted ? "Publish again" : drawerScheduled ? "Reschedule" : "Publish"}
                     </Button>
@@ -1267,7 +1267,7 @@ export function ClipsPage() {
                 </div>
               </div>
               );
-            })() : <div className="flex h-full items-center justify-center text-xs text-zinc-600">Select a clip</div>}
+            })() : <div className="flex h-full items-center justify-center text-xs text-c-text-muted">Select a clip</div>}
           </div>
         </div>
       </div>

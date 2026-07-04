@@ -20,7 +20,7 @@ function statusClasses(status: BrainstormSession["status"]) {
   if (status === "complete") return "bg-emerald-500/15 text-emerald-300 ring-emerald-500/20";
   if (status === "running") return "bg-[#ff3d6a]/15 text-rose-300 ring-[#ff3d6a]/20";
   if (status === "failed") return "bg-red-500/15 text-red-300 ring-red-500/20";
-  return "bg-white/[.05] text-zinc-400 ring-white/[.08]";
+  return "bg-surface-2 text-c-text-muted ring-c-border";
 }
 
 function formatRelative(iso: string) {
@@ -110,17 +110,17 @@ export function BrainstormPage() {
 
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,61,106,.08),transparent_34%),#06080d]">
+      <div className="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,61,106,.08),transparent_34%),rgb(var(--surface-0))]">
         {/* Page header */}
-        <div className="border-b border-white/[.07] px-5 py-4 sm:px-6">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+        <div className="border-b border-c-border px-5 py-4 sm:px-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-c-border bg-surface-1 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-c-text-muted">
             Brainstorm Room
           </div>
-          <h1 className="mt-1.5 font-display text-[22px] font-black tracking-tight text-white sm:text-[26px]">Build your next viral angle</h1>
+          <h1 className="mt-1.5 font-display text-[22px] font-black tracking-tight text-c-text sm:text-[26px]">Build your next viral angle</h1>
         </div>
 
         {/* Top input row */}
-        <div className="border-b border-white/[.07] px-5 py-4 sm:px-6">
+        <div className="border-b border-c-border px-5 py-4 sm:px-6">
           <div className="flex items-start gap-3">
             <div className="flex-1">
               <textarea
@@ -129,12 +129,12 @@ export function BrainstormPage() {
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreate(); } }}
                 placeholder="Enter a niche or topic…"
                 rows={2}
-                className="w-full resize-none rounded-[14px] border border-white/[.08] bg-[#0d1320] px-3.5 py-3 text-[13px] leading-5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/40"
+                className="w-full resize-none rounded-[14px] border border-c-border bg-surface-1 px-3.5 py-3 text-[13px] leading-5 text-c-text placeholder:text-c-text-muted focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/40"
               />
               {error && <p className="mt-1.5 text-[10px] text-red-400">{error}</p>}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {EXAMPLE_TOPICS.slice(0, 3).map(example => (
-                  <button key={example} onClick={() => setTopic(example)} className="rounded-full bg-white/[.04] px-2 py-1 text-[10px] text-zinc-500 transition hover:text-zinc-200">
+                  <button key={example} onClick={() => setTopic(example)} className="rounded-full bg-surface-2 px-2 py-1 text-[10px] text-c-text-muted transition hover:text-c-text">
                     {example}
                   </button>
                 ))}
@@ -157,19 +157,19 @@ export function BrainstormPage() {
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Left sidebar: history */}
-          <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-r border-white/[.07] p-4">
+          <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-r border-c-border p-4">
             <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">History</p>
-              <span className="text-[10px] text-zinc-700">{sessions.length}</span>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-c-text-muted">History</p>
+              <span className="text-[10px] text-c-text-muted">{sessions.length}</span>
             </div>
             {loading ? (
               <div className="space-y-2">
-                {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse rounded-[14px] bg-white/[.03]" />)}
+                {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse rounded-[14px] bg-surface-1" />)}
               </div>
             ) : sessions.length === 0 ? (
-              <div className="rounded-[16px] border border-dashed border-white/[.08] bg-white/[.015] p-4 text-center">
-                <p className="text-[11px] font-semibold text-zinc-500">No sessions yet</p>
-                <p className="mt-1 text-[10px] leading-4 text-zinc-700">Run your first brainstorm to save it here.</p>
+              <div className="rounded-[16px] border border-dashed border-c-border bg-surface-1 p-4 text-center">
+                <p className="text-[11px] font-semibold text-c-text-muted">No sessions yet</p>
+                <p className="mt-1 text-[10px] leading-4 text-c-text-muted">Run your first brainstorm to save it here.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -190,7 +190,7 @@ export function BrainstormPage() {
                 <div className="mb-5 flex flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded-full px-3 py-1 text-[10px] font-bold capitalize ring-1 ${statusClasses(selected.status)}`}>{selected.status}</span>
-                    <span className="text-[10px] text-zinc-600">{formatRelative(selected.created_at)}</span>
+                    <span className="text-[10px] text-c-text-muted">{formatRelative(selected.created_at)}</span>
                     {selected.status === "failed" && (
                       <button
                         onClick={async () => {
@@ -205,20 +205,20 @@ export function BrainstormPage() {
                       </button>
                     )}
                   </div>
-                  <h2 className="text-[22px] font-black leading-tight text-white">{selected.name || selected.topic}</h2>
+                  <h2 className="text-[22px] font-black leading-tight text-c-text">{selected.name || selected.topic}</h2>
                   <div>
-                    <div className="mb-1 flex items-center justify-between text-[10px] text-zinc-600">
+                    <div className="mb-1 flex items-center justify-between text-[10px] text-c-text-muted">
                       <span>Research progress</span>
                       <span>{progress}%</span>
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-white/[.05]">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
                       <div className="h-full rounded-full bg-gradient-to-r from-[#ff3d6a] to-[#ff8aa8] transition-all duration-500" style={{ width: `${progress}%` }} />
                     </div>
                   </div>
                 </div>
 
                 {/* Tab nav */}
-                <div className="mb-5 flex gap-1 border-b border-white/[.07] pb-0">
+                <div className="mb-5 flex gap-1 border-b border-c-border pb-0">
                   {tabs.map(t => (
                     <button
                       key={t.key}
@@ -226,13 +226,13 @@ export function BrainstormPage() {
                       disabled={t.disabled}
                       className={`flex items-center gap-1.5 rounded-t-[10px] px-4 py-2.5 text-[12px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
                         tab === t.key
-                          ? "border border-b-[#06080d] border-white/[.08] bg-white/[.04] text-white"
-                          : "text-zinc-500 hover:text-zinc-300"
+                          ? "border border-b-surface-0 border-c-border bg-surface-2 text-c-text"
+                          : "text-c-text-muted hover:text-c-text-secondary"
                       }`}
                     >
                       {t.label}
                       {t.badge !== undefined && (
-                        <span className="rounded-full bg-white/[.08] px-1.5 py-0.5 text-[9px] font-black text-zinc-400">{t.badge}</span>
+                        <span className="rounded-full bg-surface-3 px-1.5 py-0.5 text-[9px] font-black text-c-text-muted">{t.badge}</span>
                       )}
                     </button>
                   ))}

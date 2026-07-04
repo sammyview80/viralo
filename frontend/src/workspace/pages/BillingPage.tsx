@@ -35,12 +35,12 @@ function UsageBar({ label, used, max, formatUsed, formatMax }: {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-zinc-400">{label}</span>
-        <span className={danger ? "text-red-400" : "text-zinc-300"}>
+        <span className="text-c-text-secondary">{label}</span>
+        <span className={danger ? "text-red-400" : "text-c-text-secondary"}>
           {formatUsed(used)} / {max < 0 ? "∞" : formatMax(max)}
         </span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[.07]">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
         {max > 0 && (
           <div
             className={`h-full rounded-full transition-all ${danger ? "bg-red-500" : "bg-[#ff3d6a]"}`}
@@ -56,11 +56,11 @@ function UsageBar({ label, used, max, formatUsed, formatMax }: {
 
 function SkeletonBanner() {
   return (
-    <div className="animate-pulse rounded-[14px] border border-white/[.07] bg-[#111827] p-6 space-y-4">
-      <div className="h-5 w-40 rounded bg-white/[.08]" />
+    <div className="animate-pulse rounded-[14px] border border-c-border bg-surface-1 p-6 space-y-4">
+      <div className="h-5 w-40 rounded bg-surface-2" />
       <div className="space-y-2">
-        <div className="h-3 w-full rounded bg-white/[.05]" />
-        <div className="h-3 w-3/4 rounded bg-white/[.05]" />
+        <div className="h-3 w-full rounded bg-surface-2" />
+        <div className="h-3 w-3/4 rounded bg-surface-2" />
       </div>
     </div>
   );
@@ -68,12 +68,12 @@ function SkeletonBanner() {
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse rounded-[14px] border border-white/[.07] bg-[#111827] p-5 space-y-3">
-      <div className="h-4 w-20 rounded bg-white/[.08]" />
-      <div className="h-7 w-16 rounded bg-white/[.06]" />
+    <div className="animate-pulse rounded-[14px] border border-c-border bg-surface-1 p-5 space-y-3">
+      <div className="h-4 w-20 rounded bg-surface-2" />
+      <div className="h-7 w-16 rounded bg-surface-2" />
       <div className="space-y-2 pt-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-3 rounded bg-white/[.04]" style={{ width: `${60 + (i * 11) % 35}%` }} />
+          <div key={i} className="h-3 rounded bg-surface-2" style={{ width: `${60 + (i * 11) % 35}%` }} />
         ))}
       </div>
     </div>
@@ -97,12 +97,12 @@ function EsewaModal({ plan, onClose }: { plan: PlanInfo; onClose: () => void }) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-[18px] border border-white/[.08] bg-zinc-900 p-6 space-y-5 shadow-2xl">
+      <div className="w-full max-w-sm rounded-[18px] border border-c-border bg-surface-1 p-6 space-y-5 shadow-2xl">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-lg font-bold">Pay with eSewa</h3>
           <button
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 hover:bg-white/[.07] hover:text-white transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-c-text-muted hover:bg-surface-2 hover:text-c-text transition-colors"
           >
             ✕
           </button>
@@ -131,12 +131,12 @@ function EsewaModal({ plan, onClose }: { plan: PlanInfo; onClose: () => void }) 
             </div>
             <div className="text-center space-y-1">
               <p className="font-display text-2xl font-bold">NPR {qr.amount_npr.toLocaleString("en-IN")}</p>
-              <p className="text-xs text-zinc-500">Ref: <span className="font-mono text-zinc-300">{qr.product_id}</span></p>
+              <p className="text-xs text-c-text-muted">Ref: <span className="font-mono text-c-text-secondary">{qr.product_id}</span></p>
             </div>
-            <div className="w-full rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 p-3 text-xs text-zinc-300 space-y-1">
-              <p className="font-semibold text-white">Instructions</p>
+            <div className="w-full rounded-[10px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/5 p-3 text-xs text-c-text-secondary space-y-1">
+              <p className="font-semibold text-c-text">Instructions</p>
               <p>{qr.instructions}</p>
-              <p className="text-zinc-400">After payment, contact <span className="text-[#ff3d6a]">support@viralo.com</span> with your reference ID.</p>
+              <p className="text-c-text-secondary">After payment, contact <span className="text-[#ff3d6a]">support@viralo.com</span> with your reference ID.</p>
             </div>
           </div>
         )}
@@ -181,7 +181,7 @@ function PlanCard({ plan, currentPlanName, onUpgrade, onEsewa, upgrading }: Plan
       className={`relative flex flex-col rounded-[14px] border p-5 transition-all ${
         isCurrent
           ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/5"
-          : "border-white/[.07] bg-[#111827] hover:border-white/[.12]"
+          : "border-c-border bg-surface-1 hover:border-c-border-hover"
       }`}
     >
       {isPopular && (
@@ -203,14 +203,14 @@ function PlanCard({ plan, currentPlanName, onUpgrade, onEsewa, upgrading }: Plan
           <span className="font-display text-3xl font-bold tracking-[-0.03em]">
             {isFree ? "Free" : `$${plan.price_monthly}`}
           </span>
-          {!isFree && <span className="text-xs text-zinc-500">/mo</span>}
+          {!isFree && <span className="text-xs text-c-text-muted">/mo</span>}
           {!isFree && (
-            <p className="text-[11px] text-zinc-500">NPR ~{fmtNPR(plan.price_monthly)}/mo</p>
+            <p className="text-[11px] text-c-text-muted">NPR ~{fmtNPR(plan.price_monthly)}/mo</p>
           )}
         </div>
       </div>
 
-      <ul className="flex-1 space-y-1.5 text-xs text-zinc-400 mb-5">
+      <ul className="flex-1 space-y-1.5 text-xs text-c-text-secondary mb-5">
         {features.map((f) => (
           <li key={f} className="flex items-start gap-1.5">
             <span className="mt-0.5 text-[#ff3d6a]">✓</span>
@@ -222,7 +222,7 @@ function PlanCard({ plan, currentPlanName, onUpgrade, onEsewa, upgrading }: Plan
       {isFree ? (
         <button
           disabled={isCurrent}
-          className="w-full rounded-[8px] border border-white/[.08] py-2 text-xs font-semibold text-zinc-400 disabled:opacity-40"
+          className="w-full rounded-[8px] border border-c-border py-2 text-xs font-semibold text-c-text-secondary disabled:opacity-40"
         >
           {isCurrent ? "Current plan" : "Downgrade to Free"}
         </button>
@@ -233,10 +233,10 @@ function PlanCard({ plan, currentPlanName, onUpgrade, onEsewa, upgrading }: Plan
             onClick={() => onUpgrade(plan)}
             className={`w-full rounded-[8px] py-2 text-xs font-semibold transition-colors disabled:opacity-40 ${
               isCurrent
-                ? "border border-white/[.08] text-zinc-400"
+                ? "border border-c-border text-c-text-secondary"
                 : isUpgrade
                   ? "bg-[#ff3d6a] text-white hover:bg-[#e0354f]"
-                  : "border border-white/[.08] text-zinc-300 hover:bg-white/[.04]"
+                  : "border border-c-border text-c-text-secondary hover:bg-surface-2"
             }`}
           >
             {upgrading === plan.name
@@ -367,9 +367,9 @@ export function BillingPage() {
         )}
 
         {cancelled && (
-          <div className="flex items-center gap-3 rounded-[12px] border border-zinc-700 bg-zinc-800/50 px-5 py-4">
+          <div className="flex items-center gap-3 rounded-[12px] border border-c-border bg-surface-1 px-5 py-4">
             <span className="text-xl">↩️</span>
-            <p className="text-sm text-zinc-400">Payment cancelled. Your plan was not changed.</p>
+            <p className="text-sm text-c-text-secondary">Payment cancelled. Your plan was not changed.</p>
           </div>
         )}
 
@@ -381,13 +381,13 @@ export function BillingPage() {
             Failed to load subscription: {subError}
           </div>
         ) : sub ? (
-          <div className="rounded-[14px] border border-white/[.07] bg-[#111827] p-6 space-y-5">
+          <div className="rounded-[14px] border border-c-border bg-surface-1 p-6 space-y-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[.08em] text-zinc-500">Current plan</p>
+                <p className="text-xs font-semibold uppercase tracking-[.08em] text-c-text-muted">Current plan</p>
                 <p className="font-display text-xl font-bold capitalize mt-0.5">{sub.plan_name}</p>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  Status: <span className="capitalize text-zinc-300">{sub.status}</span>
+                <p className="text-xs text-c-text-muted mt-0.5">
+                  Status: <span className="capitalize text-c-text-secondary">{sub.status}</span>
                   {sub.billing_cycle !== "none" && (
                     <> &middot; {sub.billing_cycle}</>
                   )}
@@ -395,10 +395,10 @@ export function BillingPage() {
               </div>
               {sub.current_period_end && (
                 <div className="text-right">
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-c-text-muted">
                     {sub.cancel_at_period_end ? "Cancels" : "Renews"}
                   </p>
-                  <p className="text-sm font-semibold text-zinc-300">
+                  <p className="text-sm font-semibold text-c-text-secondary">
                     {new Date(sub.current_period_end).toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
                     })}
@@ -428,7 +428,7 @@ export function BillingPage() {
 
         {/* Plans grid */}
         <div>
-          <h2 className="mb-4 font-display text-base font-bold text-zinc-200">Plans</h2>
+          <h2 className="mb-4 font-display text-base font-bold text-c-text">Plans</h2>
           {plansError ? (
             <div className="rounded-[14px] border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400">
               Failed to load plans: {plansError}
@@ -451,9 +451,9 @@ export function BillingPage() {
           )}
         </div>
 
-        <p className="text-[11px] text-zinc-600">
+        <p className="text-[11px] text-c-text-muted">
           Prices in USD. eSewa payments are converted at ~NPR 133/USD. For billing queries contact{" "}
-          <a href="mailto:support@viralo.com" className="text-zinc-400 hover:text-zinc-200 underline transition-colors">
+          <a href="mailto:support@viralo.com" className="text-c-text-muted hover:text-c-text underline transition-colors">
             support@viralo.com
           </a>
         </p>

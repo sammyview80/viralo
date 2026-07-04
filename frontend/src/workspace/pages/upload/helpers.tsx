@@ -38,14 +38,14 @@ export const PLAT_DISPLAY: Record<string, [string, string]> = {
 
 export function PlatPill({ p }: { p: string }) {
   const [lbl, cls] = PLAT_DISPLAY[p] ?? ["?", "bg-zinc-700 text-white"];
-  return <span className={cn("inline-grid h-5 w-5 place-items-center rounded-[4px] border border-white/10 text-[9px] font-black", cls)}>{lbl}</span>;
+  return <span className={cn("inline-grid h-5 w-5 place-items-center rounded-[4px] border border-c-border text-[9px] font-black", cls)}>{lbl}</span>;
 }
 
 export function VirChip({ score }: { score: number | null }) {
   if (score == null) return null;
   const color = score >= 75 ? "text-emerald-300 border-emerald-300/30 bg-emerald-400/15"
               : score >= 55 ? "text-yellow-300 border-yellow-300/30 bg-yellow-400/[.12]"
-              : "text-zinc-400 border-white/10 bg-white/[.07]";
+              : "text-c-text-muted border-c-border bg-surface-2";
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-[7px] border px-2 py-0.5 text-[11px] font-bold", color)}>
       ⚡ {score}

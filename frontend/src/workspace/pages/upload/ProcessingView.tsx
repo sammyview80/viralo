@@ -31,15 +31,15 @@ function SocialConnectBanner() {
           <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-emerald-300/30 bg-emerald-100 text-emerald-600 text-sm dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-300">✓</div>
           <div>
             <div className="text-[13px] font-semibold text-emerald-600 dark:text-emerald-300">All platforms connected</div>
-            <div className="text-[11.5px] text-zinc-500">Clips will be ready to publish when processing completes.</div>
+            <div className="text-[11.5px] text-c-text-muted">Clips will be ready to publish when processing completes.</div>
           </div>
-          <a href="/integrations" className="ml-auto text-[11.5px] font-semibold text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white">Manage →</a>
+          <a href="/integrations" className="ml-auto text-[11.5px] font-semibold text-c-text-muted transition hover:text-c-text">Manage →</a>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {accounts.filter((a) => a.is_active).map((a) => {
             const plat = SOCIAL_PLATFORMS.find((p) => p.id === a.platform);
             return (
-              <span key={a.id} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:border-white/[.08] dark:bg-white/[.04] dark:text-zinc-300">
+              <span key={a.id} className="inline-flex items-center gap-1.5 rounded-full border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-c-text-secondary">
                 <span className={cn("inline-grid h-4 w-4 place-items-center rounded-[3px] text-[8px] font-black text-white", plat?.color ?? "bg-zinc-700")}>{plat?.icon}</span>
                 {a.platform_username ?? a.platform}
               </span>
@@ -55,8 +55,8 @@ function SocialConnectBanner() {
       <div className="flex items-center gap-3">
         <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a] text-sm">↗</div>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-zinc-900 dark:text-white">Connect social accounts while you wait</div>
-          <div className="mt-0.5 text-[11.5px] text-zinc-500">
+          <div className="text-[13px] font-semibold text-c-text">Connect social accounts while you wait</div>
+          <div className="mt-0.5 text-[11.5px] text-c-text-muted">
             {connectedIds.size > 0
               ? `${connectedIds.size} connected · connect more to publish clips instantly`
               : "Your clips will be ready soon — connect accounts to publish with one click"}
@@ -85,7 +85,7 @@ function SocialConnectBanner() {
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {unconnected.map((p) => (
           <a key={p.id} href="/integrations"
-            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900 dark:border-white/[.07] dark:bg-white/[.03] dark:text-zinc-400 dark:hover:border-white/[.12] dark:hover:text-zinc-200">
+            className="inline-flex items-center gap-1.5 rounded-full border border-c-border bg-surface-1 px-2.5 py-1 text-[11px] font-semibold text-c-text-muted transition hover:border-c-border-hover hover:text-c-text">
             <span className={cn("inline-grid h-3.5 w-3.5 place-items-center rounded-[2px] text-[7px] font-black", p.color, p.id === "twitter" ? "" : "text-white")}>{p.icon}</span>
             + {p.label}
           </a>
@@ -320,7 +320,7 @@ export function ProcessingView({
   return (
     <div className="flex flex-col gap-4">
       {/* ── HEADER ───────────────────────────────── */}
-      <div className="rounded-[16px] border border-zinc-200 bg-white p-5 dark:border-white/[.07] dark:bg-surface-1">
+      <div className="rounded-[16px] border border-c-border bg-surface-1 p-5">
           {/* Top row */}
           <div className="mb-6 flex items-start gap-4">
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10">
@@ -329,14 +329,14 @@ export function ProcessingView({
               </svg>
             </div>
             <div className="flex-1">
-              <h1 className="text-[22px] font-bold leading-tight tracking-[-0.4px] text-zinc-900 dark:text-white">Processing…</h1>
-              <p className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+              <h1 className="text-[22px] font-bold leading-tight tracking-[-0.4px] text-c-text">Processing…</h1>
+              <p className="mt-0.5 text-[13px] text-c-text-muted">
                 {isRankingVideo ? "Rendering your ranked countdown video." : "AI is analyzing your video and generating clips."}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2.5">
               <button onClick={() => navigate("/projects")}
-                className="inline-flex items-center rounded-[10px] border border-zinc-200 bg-zinc-100 px-3.5 py-2 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-200 dark:border-white/[.12] dark:bg-white/[.06] dark:text-white dark:hover:bg-white/[.10]">
+                className="inline-flex items-center rounded-[10px] border border-c-border bg-surface-2 px-3.5 py-2 text-[13px] font-medium text-c-text-secondary transition hover:bg-surface-3">
                 Projects
               </button>
               {onCancel && current.status !== "failed" && !isTerminal(current) && (
@@ -358,16 +358,16 @@ export function ProcessingView({
           </div>
 
           {/* Video strip */}
-          <div className="flex items-center gap-4 rounded-[12px] border border-zinc-100 bg-zinc-50 p-3 dark:border-white/[.06] dark:bg-white/[.03]">
+          <div className="flex items-center gap-4 rounded-[12px] border border-c-border bg-surface-2 p-3">
             <div className={cn("grid h-12 w-14 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-gradient-to-br", grad)}>
               <span className="text-xl">{isRankingVideo ? "🏆" : "🎬"}</span>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-semibold text-zinc-900 dark:text-white">{current.title ?? "Untitled"}</div>
-              <div className="mt-1 flex items-center gap-2 text-[12px] text-zinc-500 dark:text-zinc-400">
+              <div className="truncate text-[15px] font-semibold text-c-text">{current.title ?? "Untitled"}</div>
+              <div className="mt-1 flex items-center gap-2 text-[12px] text-c-text-muted">
                 <span>{sourceLabel}</span>
-                {current.duration_sec && <><span className="text-zinc-300 dark:text-zinc-600">·</span><span>{fmtDur(current.duration_sec)}</span></>}
-                <span className="text-zinc-300 dark:text-zinc-600">·</span>
+                {current.duration_sec && <><span className="text-c-text-muted">·</span><span>{fmtDur(current.duration_sec)}</span></>}
+                <span className="text-c-text-muted">·</span>
                 {current.status === "failed"
                   ? <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/20 bg-red-400/10 px-2 py-0.5 text-[11px] font-semibold text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Failed</span>
                   : <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />{isQueued ? "Queued" : "Processing"}</span>
@@ -375,21 +375,21 @@ export function ProcessingView({
               </div>
             </div>
             <div className="min-w-[130px] shrink-0 text-right">
-              {current.created_at && <div className="mb-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">Elapsed: {formatElapsedSince(current.created_at, now)}</div>}
-              <div className="h-[3px] w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-white/[.08]">
+              {current.created_at && <div className="mb-1.5 text-[11px] text-c-text-muted">Elapsed: {formatElapsedSince(current.created_at, now)}</div>}
+              <div className="h-[3px] w-full overflow-hidden rounded-full bg-surface-3">
                 <div className="h-full rounded-full bg-gradient-to-r from-[#ff3d6a] to-[#F59E0B] transition-[width_.3s_linear]" style={{ width: `${overallPct}%` }} />
               </div>
-              <div className="mt-1.5 font-mono text-[12px] font-semibold text-zinc-900 dark:text-white">{overallPct}%</div>
+              <div className="mt-1.5 font-mono text-[12px] font-semibold text-c-text">{overallPct}%</div>
             </div>
           </div>
       </div>
 
       {/* ── LEAVE PAGE NOTICE ────────────────────── */}
-      <div className="flex items-center gap-2.5 rounded-[10px] border border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-white/[.06] dark:bg-white/[.02]">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-zinc-400">
+      <div className="flex items-center gap-2.5 rounded-[10px] border border-c-border bg-surface-1 px-4 py-2.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-c-text-muted">
           <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
         </svg>
-        <p className="text-[12px] text-zinc-500 dark:text-zinc-500">
+        <p className="text-[12px] text-c-text-muted">
           You can leave this page — processing continues in the background. You'll be emailed and notified when your clips are ready.
         </p>
       </div>
@@ -400,13 +400,13 @@ export function ProcessingView({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-[12.5px] font-semibold text-yellow-700 dark:text-yellow-200">{isRankingVideo ? "Waiting for a ranking worker" : "Waiting for a video worker"}</div>
-              <div className="mt-0.5 text-[11.5px] text-zinc-500">
-                Queued for <span className="font-mono text-zinc-700 dark:text-zinc-300">{queuedFor}</span>.
+              <div className="mt-0.5 text-[11.5px] text-c-text-muted">
+                Queued for <span className="font-mono text-c-text-secondary">{queuedFor}</span>.
               </div>
             </div>
-            <div className="flex flex-wrap gap-1.5 text-[10.5px] font-mono text-zinc-400 dark:text-zinc-500">
-              <span className="rounded-[7px] border border-zinc-200 bg-white px-2 py-1 dark:border-white/[.07] dark:bg-white/[.035]">video {current.id.slice(0, 8)}</span>
-              {current.celery_task_id && <span className="rounded-[7px] border border-zinc-200 bg-white px-2 py-1 dark:border-white/[.07] dark:bg-white/[.035]">task {current.celery_task_id.slice(0, 8)}</span>}
+            <div className="flex flex-wrap gap-1.5 text-[10.5px] font-mono text-c-text-muted">
+              <span className="rounded-[7px] border border-c-border bg-surface-1 px-2 py-1">video {current.id.slice(0, 8)}</span>
+              {current.celery_task_id && <span className="rounded-[7px] border border-c-border bg-surface-1 px-2 py-1">task {current.celery_task_id.slice(0, 8)}</span>}
             </div>
           </div>
         </div>
@@ -434,8 +434,8 @@ export function ProcessingView({
       <div className="grid gap-4" style={{ gridTemplateColumns: "260px 1fr" }}>
 
         {/* LEFT: VERTICAL STEPPER */}
-        <div className="rounded-[18px] border border-zinc-200 bg-white p-5 dark:border-white/[.08] dark:bg-surface-1">
-          <div className="mb-5 text-[10px] font-bold uppercase tracking-[1.2px] text-zinc-400 dark:text-zinc-600">Pipeline</div>
+        <div className="rounded-[18px] border border-c-border bg-surface-1 p-5">
+          <div className="mb-5 text-[10px] font-bold uppercase tracking-[1.2px] text-c-text-muted">Pipeline</div>
           <div className="flex flex-col">
             {PROC_STEPS.filter((_, i) => i < PROC_STEPS.length - 1).map((step, i) => {
               const done = isDone || i < stepIdx;
@@ -449,7 +449,7 @@ export function ProcessingView({
                           ? "linear-gradient(180deg, rgba(34,197,94,0.5) 0%, rgba(34,197,94,0.12) 100%)"
                           : active
                           ? "linear-gradient(180deg, rgba(245,158,11,0.4) 0%, rgba(245,158,11,0.05) 100%)"
-                          : "rgba(0,0,0,0.08)",
+                          : "var(--c-border)",
                       }}
                     />
                   )}
@@ -458,7 +458,7 @@ export function ProcessingView({
                       "grid h-8 w-8 place-items-center rounded-full border-2 text-[11px] font-bold transition",
                       done ? "border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
                       : active ? "border-amber-400 bg-amber-50 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400"
-                      : "border-zinc-200 bg-zinc-50 text-zinc-400 dark:border-white/[.12] dark:bg-white/[.03] dark:text-zinc-600"
+                      : "border-c-border bg-surface-2 text-c-text-muted"
                     )} style={active ? { boxShadow: "0 0 0 4px rgba(245,158,11,0.1)" } : {}}>
                       {done
                         ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -469,15 +469,15 @@ export function ProcessingView({
                     </div>
                   </div>
                   <div className="min-w-0 pb-4 pt-0.5">
-                    <div className="text-[9px] font-bold uppercase tracking-[1px] text-zinc-400 dark:text-zinc-600">Step {i + 1}</div>
+                    <div className="text-[9px] font-bold uppercase tracking-[1px] text-c-text-muted">Step {i + 1}</div>
                     <div className={cn("mt-0.5 text-[13px] font-semibold leading-snug",
-                      done ? "text-zinc-600 dark:text-zinc-300" : active ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"
+                      done ? "text-c-text-secondary" : active ? "text-c-text" : "text-c-text-muted"
                     )}>{step.label}</div>
                     <div className={cn(
                       "mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold",
                       done ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400"
                       : active ? "bg-amber-100 text-amber-600 dark:bg-amber-400/[.12] dark:text-amber-400"
-                      : "bg-zinc-100 text-zinc-400 dark:bg-white/[.04] dark:text-zinc-600"
+                      : "bg-surface-2 text-c-text-muted"
                     )}>
                       {done ? "Done" : active ? "In Progress" : "Pending"}
                     </div>
@@ -493,22 +493,22 @@ export function ProcessingView({
           <SocialConnectBanner />
 
           {liveEvents.length > 0 && (
-            <div className="overflow-hidden rounded-[16px] border border-zinc-200 bg-white dark:border-white/[.07] dark:bg-surface-1">
-              <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-white/[.06]">
+            <div className="overflow-hidden rounded-[16px] border border-c-border bg-surface-1">
+              <div className="flex items-center justify-between border-b border-c-border px-4 py-3">
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2 w-2">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#ff3d6a] opacity-60" />
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-[#ff3d6a]" />
                   </span>
-                  <span className="text-[10px] font-bold uppercase tracking-[.08em] text-zinc-400 dark:text-zinc-500">Terminal</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[.08em] text-c-text-muted">Terminal</span>
                 </div>
               </div>
-              <div className="max-h-[320px] divide-y divide-zinc-100 overflow-y-auto dark:divide-white/[.04]">
+              <div className="max-h-[320px] divide-y divide-c-border overflow-y-auto">
                 {liveEvents.map((ev) => {
                   const stepColor = ev.kind === "clip_ready" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300"
                     : ev.kind === "clips_ready" ? "border-[#ff3d6a]/20 bg-[#ff3d6a]/10 text-[#ff3d6a]"
-                    : ev.step ? (STEP_COLORS[ev.step] ?? "border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-white/[.07] dark:bg-white/[.04] dark:text-zinc-400")
-                    : "border-zinc-200 bg-zinc-50 text-zinc-400 dark:border-white/[.07] dark:bg-white/[.03] dark:text-zinc-500";
+                    : ev.step ? (STEP_COLORS[ev.step] ?? "border-c-border bg-surface-2 text-c-text-muted")
+                    : "border-c-border bg-surface-2 text-c-text-muted";
                   const icon = ev.kind === "clip_ready" ? "✓" : ev.kind === "clips_ready" ? "✦" : ev.step ? (STEP_ICONS[ev.step] ?? "›") : "›";
                   const elapsed = Math.round((Date.now() - ev.ts) / 1000);
                   return (
@@ -520,14 +520,14 @@ export function ProcessingView({
                       <div className="min-w-0 flex-1">
                         <div className={cn("font-mono text-[12px] leading-snug",
                           ev.kind === "clip_ready" ? "text-emerald-600 dark:text-emerald-300"
-                          : ev.kind === "clips_ready" ? "font-semibold text-zinc-900 dark:text-white"
-                          : "text-zinc-700 dark:text-zinc-300"
+                          : ev.kind === "clips_ready" ? "font-semibold text-c-text"
+                          : "text-c-text-secondary"
                         )}>{ev.label}</div>
-                        {ev.sub && <div className="mt-0.5 text-[10.5px] text-zinc-400 dark:text-zinc-500">{ev.sub}</div>}
+                        {ev.sub && <div className="mt-0.5 text-[10.5px] text-c-text-muted">{ev.sub}</div>}
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        {ev.pct != null && <span className="rounded-[4px] bg-zinc-100 px-1.5 py-0.5 font-mono text-[9px] text-zinc-500 dark:bg-white/[.05] dark:text-zinc-400">{ev.pct}%</span>}
-                        <span className="font-mono text-[9.5px] text-zinc-400 dark:text-zinc-700">{elapsed < 5 ? "just now" : `${elapsed}s ago`}</span>
+                        {ev.pct != null && <span className="rounded-[4px] bg-surface-2 px-1.5 py-0.5 font-mono text-[9px] text-c-text-muted">{ev.pct}%</span>}
+                        <span className="font-mono text-[9.5px] text-c-text-muted">{elapsed < 5 ? "just now" : `${elapsed}s ago`}</span>
                       </div>
                     </div>
                   );
