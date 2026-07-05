@@ -575,6 +575,10 @@ export function ClipsPage() {
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Desktop auto-selects the first clip to fill the sidebar; that must NOT auto-open
+  // the mobile full-screen overlay on load, so its visibility is a separate, explicit flag.
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const openClip = useCallback((id: string) => { setSelectedId(id); setMobileDrawerOpen(true); }, []);
   const [publishOpen, setPublishOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
@@ -834,23 +838,25 @@ export function ClipsPage() {
                 <input className="h-10 w-full rounded-[11px] border border-c-border bg-surface-1 pl-9 pr-8 text-sm text-c-text placeholder:text-c-text-muted focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
                 {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted hover:text-c-text-secondary transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
               </div>
-              <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-secondary hover:text-c-text")}>
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
-                Filters
-                {activeFilterCount > 0 && <span className="rounded-full bg-[#ff3d6a] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span>}
-              </button>
-              <div className="flex rounded-[11px] border border-c-border bg-surface-1 p-1">
-                {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-surface-2 text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>{v === "grid" ? "Grid" : "List"}</button>)}
-              </div>
-              <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 rounded-[11px] border border-c-border bg-surface-1 px-3 text-xs font-semibold text-c-text-secondary focus:outline-none transition cursor-pointer">
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="score_desc">Highest score</option>
-                <option value="score_asc">Lowest score</option>
-                <option value="duration_desc">Longest first</option>
-              </select>
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 shrink-0 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-secondary hover:text-c-text")}>
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+                  Filters
+                  {activeFilterCount > 0 && <span className="rounded-full bg-[#ff3d6a] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span>}
+                </button>
+                <div className="flex shrink-0 rounded-[11px] border border-c-border bg-surface-1 p-1">
+                  {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-surface-2 text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>{v === "grid" ? "Grid" : "List"}</button>)}
+                </div>
+                <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 shrink-0 rounded-[11px] border border-c-border bg-surface-1 px-3 text-xs font-semibold text-c-text-secondary focus:outline-none transition cursor-pointer">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="score_desc">Highest score</option>
+                  <option value="score_asc">Lowest score</option>
+                  <option value="duration_desc">Longest first</option>
+                </select>
 
-              <Button size="sm" className="h-10 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
+                <Button size="sm" className="h-10 shrink-0 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
+              </div>
             </div>
             {activeFilterCount > 0 && !showFilters && (
               <div className="mt-3 flex items-center gap-2 text-[11px] text-c-text-muted">
@@ -920,7 +926,7 @@ export function ClipsPage() {
                     <UniversalClipCard
                       clip={clip}
                       active={clip.id === selectedId}
-                      onClick={() => setSelectedId(clip.id)}
+                      onClick={() => openClip(clip.id)}
                       delay={(i % 12) * 35}
                       isPosted={postedClipIds.has(clip.id)}
                       isScheduled={scheduledClipIds.has(clip.id)}
@@ -947,7 +953,7 @@ export function ClipsPage() {
                   const hashtags = clip.clip_metadata?.platforms?.[clip.platform ?? ""]?.tags ?? [];
                   const mostRecentPost = (postsByClipId.get(clip.id) ?? [])[0];
                   return (
-                    <button onClick={() => setSelectedId(clip.id)} className={cn("w-full flex items-start gap-3 px-3 py-3.5 text-left transition hover:bg-surface-2 cursor-pointer sm:gap-4 sm:px-5 sm:py-4", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
+                    <button onClick={() => openClip(clip.id)} className={cn("w-full flex items-start gap-3 px-3 py-3.5 text-left transition hover:bg-surface-2 cursor-pointer sm:gap-4 sm:px-5 sm:py-4", selectedId === clip.id ? "bg-[#ff3d6a]/[.035] border-l-[3px] border-l-[#ff3d6a]/60" : "border-l-[3px] border-l-transparent")}>
                       <div className="relative h-16 w-[42px] shrink-0 overflow-hidden rounded-[7px] bg-surface-2">
                         {clip.thumbnail_url ? <img src={clip.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" /> : <div className="h-full w-full bg-gradient-to-br from-rose-600/40 to-violet-700/40" />}
                         {isPosted && <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/55 backdrop-blur-[1px]"><svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6 9 17l-5-5"/></svg></div>}
@@ -1016,8 +1022,26 @@ export function ClipsPage() {
             />
           </div>
 
-          {/* Clip details sidebar */}
-          <div className="hidden border-l border-c-border bg-surface-0 xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
+          {/* Clip details — full-screen overlay on mobile/tablet, sticky sidebar at xl+ */}
+          <div
+            className={cn(
+              "flex-col overflow-hidden border-c-border bg-surface-0",
+              mobileDrawerOpen && drawer ? "fixed inset-0 z-50 flex" : "hidden",
+              "xl:sticky xl:inset-auto xl:top-0 xl:z-auto xl:flex xl:h-[calc(100vh-180px)] xl:overflow-y-auto xl:border-l"
+            )}
+          >
+            {mobileDrawerOpen && drawer && (
+              <div className="flex shrink-0 items-center justify-between border-b border-c-border bg-surface-1 px-4 py-3 xl:hidden">
+                <p className="text-sm font-bold text-c-text">Clip details</p>
+                <button
+                  onClick={() => setMobileDrawerOpen(false)}
+                  aria-label="Close clip details"
+                  className="grid h-8 w-8 place-items-center rounded-full bg-surface-2 text-c-text-secondary transition hover:bg-surface-3 hover:text-c-text"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             {drawer ? (() => {
               const platformKey = drawer.platform ?? "shorts";
               const platformContent = drawer.clip_metadata?.platforms?.[platformKey] ?? drawer.clip_metadata?.platforms?.shorts ?? null;
@@ -1046,7 +1070,7 @@ export function ClipsPage() {
                 facebook:{color:"#1877F2",icon:"f"},linkedin:{color:"#0A66C2",icon:"in"},
               };
               return (
-              <div className="flex flex-col overflow-y-auto">
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
                 <div className="border-b border-c-border bg-gradient-to-b from-white/[.025] to-transparent p-4">
                   <div className="grid gap-4 md:grid-cols-[176px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[176px_minmax(0,1fr)]">
                     <div className="mx-auto w-full max-w-[176px]"><ShortsPlayer key={drawer.id} clip={drawer} /></div>
