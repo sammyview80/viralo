@@ -50,5 +50,5 @@ export function useProjectDoc(projectId: string) {
     setDoc(r.doc);
   }, [projectId]);
 
-  return { doc, sendMessage, saveScript, saveShots, sending };
+  return { doc, setDoc, sendMessage, saveScript, saveShots, sending };
 }

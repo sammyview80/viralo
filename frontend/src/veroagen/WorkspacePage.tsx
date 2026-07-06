@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Shell } from "@/workspace/Shell";
 import type { PageKey } from "@/workspace/types";
+import { veroagenApi } from "./api";
 import { ChatPanel } from "./ChatPanel";
+import { CharactersView } from "./CharactersView";
 import { ScriptView } from "./ScriptView";
 import { StoryboardView } from "./StoryboardView";
 import { useProjectDoc } from "./useProjectDoc";
@@ -11,13 +13,18 @@ import { useProjectDoc } from "./useProjectDoc";
 // showing "veroagen" as the page label since it isn't in PAGE_LABELS. See task-10-report.md.
 const VEROAGEN_ACTIVE = "veroagen" as unknown as PageKey;
 
-const TABS = ["Script", "Storyboard"] as const;
+const TABS = ["Script", "Characters", "Storyboard"] as const;
 
 export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
-  const { doc, sendMessage, saveScript, sending } = useProjectDoc(projectId);
+  const { doc, setDoc, sendMessage, saveScript, sending } = useProjectDoc(projectId);
   const [tab, setTab] = useState<(typeof TABS)[number]>("Script");
 
   if (!doc) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
+
+  const createCharacter = async (name: string, description: string) => {
+    const r = await veroagenApi.createCharacter(projectId, name, description);
+    setDoc(r.doc);
+  };
 
   return (
     <Shell active={VEROAGEN_ACTIVE}>
@@ -37,7 +44,20 @@ export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
           </div>
           <div className="flex-1 overflow-y-auto">
             {tab === "Script" && <ScriptView scenes={doc.script.scenes} onSave={saveScript} />}
-            {tab === "Storyboard" && <StoryboardView shots={doc.storyboard.shots} />}
+            {tab === "Characters" && (
+              <CharactersView
+                characters={doc.characters?.items ?? []}
+                onCreate={createCharacter}
+                onGenerateRef={(cid) => void veroagenApi.generateRef(projectId, cid)}
+              />
+            )}
+            {tab === "Storyboard" && (
+              <StoryboardView
+                shots={doc.storyboard.shots}
+                onGenerateImage={(sid) => void veroagenApi.generateShotImage(projectId, sid)}
+                onGenerateVideo={(sid) => void veroagenApi.generateShotVideo(projectId, sid)}
+              />
+            )}
           </div>
         </div>
         <ChatPanel messages={doc.chat.messages} onSend={sendMessage} sending={sending} />

@@ -23,7 +23,11 @@ export function ChatPanel({
           <div
             key={i}
             className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-              m.role === "user" ? "ml-auto bg-[#ff3d6a] text-white" : "bg-muted"
+              m.role === "user"
+                ? "ml-auto bg-[#ff3d6a] text-white"
+                : m.role === "system"
+                  ? "mx-auto bg-transparent text-xs text-muted-foreground"
+                  : "bg-muted"
             }`}
           >
             {m.content}

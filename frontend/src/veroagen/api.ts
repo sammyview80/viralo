@@ -25,4 +25,12 @@ export const veroagenApi = {
   putStoryboard: (id: string, shots: Shot[]) => req<{ doc: ProjectDoc }>("PUT", `/projects/${id}/storyboard`, { shots }),
   wsUrl: (id: string) =>
     `${BASE.replace(/^http/, "ws")}/ws/projects/${id}?token=${encodeURIComponent(token.get() ?? "")}`,
+  createCharacter: (id: string, name: string, description: string) =>
+    req<{ doc: ProjectDoc }>("POST", `/projects/${id}/characters`, { name, description }),
+  generateRef: (id: string, characterId: string) =>
+    req<{ status: string }>("POST", `/projects/${id}/characters/${characterId}/generate-ref`),
+  generateShotImage: (id: string, shotId: string) =>
+    req<{ status: string }>("POST", `/projects/${id}/shots/${shotId}/generate-image`),
+  generateShotVideo: (id: string, shotId: string) =>
+    req<{ status: string }>("POST", `/projects/${id}/shots/${shotId}/generate-video`),
 };
