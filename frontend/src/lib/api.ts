@@ -757,6 +757,38 @@ export interface TagSuggestResponse {
   platforms: Record<string, PlatformCopy>;
 }
 
+export interface LyricVideoSource {
+  type: "upload" | "youtube" | "spotify" | "metadata";
+  title?: string | null;
+  artist?: string | null;
+  url?: string | null;
+}
+
+export interface LyricVideoPlanRequest {
+  source: LyricVideoSource;
+  rights_confirmed: boolean;
+  transcript_text?: string | null;
+  aspect_ratio?: "9:16" | "16:9" | "1:1" | "4:5" | null;
+  template_hint?: string | null;
+}
+
+export interface LyricLinePlan {
+  text: string;
+  start_sec: number;
+  end_sec: number;
+  confidence: number;
+  source: string;
+}
+
+export interface LyricVideoPlanResponse {
+  source: Record<string, unknown>;
+  rights: Record<string, unknown>;
+  lyrics: LyricLinePlan[];
+  template: Record<string, unknown>;
+  warnings: string[];
+  needs_transcription: boolean;
+}
+
 export interface BrainstormSession {
   id: string;
   tenant_id: string;
@@ -791,6 +823,8 @@ export interface SessionListResponse {
 export const agentApi = {
   suggestTags: (data: TagSuggestRequest) =>
     agentReq<TagSuggestResponse>("POST", "/tags/suggest", data),
+  planLyricVideo: (data: LyricVideoPlanRequest) =>
+    agentReq<LyricVideoPlanResponse>("POST", "/lyric-videos/plan", data),
 
   createSession: (topic: string, name?: string) =>
     agentReq<BrainstormSession>("POST", "/sessions", { topic, name }),

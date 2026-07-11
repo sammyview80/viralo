@@ -6,6 +6,7 @@ import { navigate } from "@/lib/router";
 import { videoApi, type ClipConfig, type VideoResponse } from "@/lib/api";
 import { DEFAULT_CONFIG } from "./UploadPage";
 import { CAPTION_STYLES, type CaptionStyleOption } from "./upload/constants";
+import { LyricVideoPlanner } from "./studio/LyricVideoPlanner";
 
 // ── YouTube Import Modal ──────────────────────────────────────────────────────
 
@@ -758,6 +759,8 @@ export function StudioPage() {
               </div>
             </button>
           </div>
+
+          <LyricVideoPlanner />
 
           {uploadError && (
             <div className="mt-5 flex items-center gap-2.5 rounded-[12px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
