@@ -6,6 +6,7 @@ import { ChatPanel } from "./ChatPanel";
 import { CharactersView } from "./CharactersView";
 import { ScriptView } from "./ScriptView";
 import { StoryboardView } from "./StoryboardView";
+import { TimelineView } from "./TimelineView";
 import { useProjectDoc } from "./useProjectDoc";
 
 // "veroagen" is not part of the viralo Shell's `PageKey` union (frontend/src/workspace/types.ts).
@@ -13,7 +14,7 @@ import { useProjectDoc } from "./useProjectDoc";
 // showing "veroagen" as the page label since it isn't in PAGE_LABELS. See task-10-report.md.
 const VEROAGEN_ACTIVE = "veroagen" as unknown as PageKey;
 
-const TABS = ["Script", "Characters", "Storyboard"] as const;
+const TABS = ["Script", "Characters", "Storyboard", "Timeline"] as const;
 
 export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
   const { doc, setDoc, sendMessage, saveScript, sending } = useProjectDoc(projectId);
@@ -56,6 +57,18 @@ export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
                 shots={doc.storyboard.shots}
                 onGenerateImage={(sid) => void veroagenApi.generateShotImage(projectId, sid)}
                 onGenerateVideo={(sid) => void veroagenApi.generateShotVideo(projectId, sid)}
+              />
+            )}
+            {tab === "Timeline" && (
+              <TimelineView
+                timeline={doc.timeline ?? { video: [], voice: [], music: [] }}
+                render={doc.render ?? { status: "none", url: null, error: null }}
+                onBuildDefault={async () => setDoc((await veroagenApi.buildDefaultTimeline(projectId)).doc)}
+                onSave={async (video) => setDoc((await veroagenApi.putTimeline(projectId, { video })).doc)}
+                onVoiceover={() => void veroagenApi.queueVoiceover(projectId)}
+                onMusic={(p) => void veroagenApi.queueMusic(projectId, p)}
+                onRender={() => void veroagenApi.queueRender(projectId)}
+                mediaUrl={veroagenApi.mediaUrl}
               />
             )}
           </div>

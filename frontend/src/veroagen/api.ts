@@ -1,5 +1,5 @@
 import { token } from "@/lib/api";
-import type { ProjectDoc, ProjectSummary, Scene, Shot } from "./types";
+import type { ProjectDoc, ProjectSummary, Scene, Shot, TimelineClip } from "./types";
 
 const BASE = import.meta.env.VITE_VEROAGEN_BASE ?? "http://localhost:8100";
 
@@ -33,4 +33,15 @@ export const veroagenApi = {
     req<{ status: string }>("POST", `/projects/${id}/shots/${shotId}/generate-image`),
   generateShotVideo: (id: string, shotId: string) =>
     req<{ status: string }>("POST", `/projects/${id}/shots/${shotId}/generate-video`),
+  putTimeline: (id: string, timeline: { video: TimelineClip[] }) =>
+    req<{ doc: ProjectDoc }>("PUT", `/projects/${id}/timeline`, { timeline }),
+  buildDefaultTimeline: (id: string) =>
+    req<{ doc: ProjectDoc }>("POST", `/projects/${id}/timeline/default`),
+  queueVoiceover: (id: string) =>
+    req<{ status: string }>("POST", `/projects/${id}/voiceover`),
+  queueMusic: (id: string, prompt: string) =>
+    req<{ status: string }>("POST", `/projects/${id}/music`, { prompt }),
+  queueRender: (id: string) =>
+    req<{ status: string }>("POST", `/projects/${id}/render`),
+  mediaUrl: (path: string) => `${BASE}${path}`,
 };

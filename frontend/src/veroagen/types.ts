@@ -22,6 +22,18 @@ export interface Character {
 
 export interface ChatMessage { role: "user" | "assistant" | "system"; content: string }
 
+export interface TimelineClip {
+  id: string; shot_id: string; in_s: number; out_s: number; order: number;
+}
+export interface AudioClip {
+  id: string; asset_url: string; label: string; start_s: number; gain_db: number;
+}
+export interface Timeline { video: TimelineClip[]; voice: AudioClip[]; music: AudioClip[] }
+export interface RenderState {
+  status: "none" | "rendering" | "ready" | "failed";
+  url: string | null; error: string | null;
+}
+
 export interface ProjectDoc {
   title: string;
   script: { scenes: Scene[] };
@@ -29,6 +41,8 @@ export interface ProjectDoc {
   chat: { messages: ChatMessage[] };
   characters: { items: Character[] };
   assets: { items: unknown[] };
+  timeline: Timeline;
+  render: RenderState;
   version: number;
 }
 
