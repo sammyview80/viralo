@@ -303,12 +303,12 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
       {/* Page content */}
       <main
         className={cn(
-          "relative z-[1] flex h-[calc(100vh-3.5rem)] flex-col overflow-y-auto transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
-          fullBleed ? "" : "px-3 pb-6 pt-5 sm:px-4 sm:pt-6 lg:pb-6"
+          "relative z-[1] flex h-[calc(100vh-3.5rem)] min-h-0 flex-col transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
+          fullBleed ? "overflow-hidden" : "overflow-y-auto px-3 pb-6 pt-5 sm:px-4 sm:pt-6 lg:pb-6"
         )}
       >
         {fullBleed
-          ? <div className="flex w-full flex-1 flex-col">{children}</div>
+          ? <div className="flex h-full min-h-0 w-full flex-1 flex-col">{children}</div>
           : <div className="mx-auto flex w-full flex-1 flex-col max-w-[1240px] space-y-5 sm:space-y-6">{children}</div>}
       </main>
     </div>

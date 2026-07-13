@@ -43,26 +43,30 @@ export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
   };
 
   return (
-    <Shell active={VEROAGEN_ACTIVE}>
-      <div className="grid h-[calc(100vh-0px)] grid-cols-[1fr_380px]">
-        <div className="flex flex-col overflow-hidden">
+    <Shell active={VEROAGEN_ACTIVE} fullBleed>
+      <div className="grid h-full min-h-0 grid-cols-[1fr_380px]">
+        <div className="flex min-h-0 flex-col overflow-hidden">
           <div className="flex items-center gap-1 border-b px-4 py-2">
-            <span className="mr-4 text-sm font-semibold">{doc.title}</span>
-            {TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`rounded-md px-3 py-1 text-sm ${tab === t ? "bg-muted font-medium" : "text-muted-foreground"}`}
-              >
-                {t}
-              </button>
-            ))}
+            <span className="mr-4 truncate text-sm font-semibold">{doc.title}</span>
+            <div className="flex items-center gap-0.5 rounded-full bg-muted p-0.5">
+              {TABS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`rounded-full px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a] ${
+                    tab === t ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
             {credits !== null && (
-              <span className="ml-auto mr-2 rounded-full bg-muted px-2 py-0.5 text-xs">⚡ {credits} credits</span>
+              <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">⚡ {credits}</span>
             )}
           </div>
-          {toast && <div className="border-b bg-red-500/10 px-4 py-1 text-xs text-red-500">{toast}</div>}
-          <div className="flex-1 overflow-y-auto">
+          {toast && <div className="border-b bg-red-500/10 px-4 py-1 text-xs text-red-400">⚠ {toast}</div>}
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {tab === "Script" && <ScriptView scenes={doc.script.scenes} onSave={saveScript} />}
             {tab === "Characters" && (
               <CharactersView
