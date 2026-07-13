@@ -1,24 +1,34 @@
-import type { Shot } from "./types";
+import { useEffect, useState } from "react";
+import type { ModelCatalog, Shot } from "./types";
 
 const BUSY: Shot["status"][] = ["image_generating", "video_generating"];
 
 export function StoryboardView({
-  shots, onGenerateImage, onGenerateVideo,
+  shots, models, onGenerateImage, onGenerateVideo, onSaveShots,
 }: {
   shots: Shot[];
+  models: ModelCatalog;
   onGenerateImage: (id: string) => void;
   onGenerateVideo: (id: string) => void;
+  onSaveShots: (shots: Shot[]) => void;
 }) {
-  if (!shots.length) return <div className="p-6 text-sm text-muted-foreground">No storyboard yet.</div>;
+  const [local, setLocal] = useState(shots);
+  useEffect(() => setLocal(shots), [shots]);
+
+  const patch = (i: number, p: Partial<Shot>) =>
+    setLocal(local.map((s, j) => (j === i ? { ...s, ...p } : s)));
+  const commit = () => onSaveShots(local);
+
+  if (!local.length) return <div className="p-6 text-sm text-muted-foreground">No storyboard yet.</div>;
   return (
     <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-3">
-      {shots.map((s) => {
+      {local.map((s, i) => {
         const busy = BUSY.includes(s.status);
         return (
           <div key={s.id} className="rounded-md border p-3">
             <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
               <span>{s.id}</span>
-              <span>{s.duration_s}s · {s.camera || "auto"}</span>
+              <span>{s.duration_s}s</span>
             </div>
             <div className="mb-2 flex aspect-video items-center justify-center overflow-hidden rounded bg-muted">
               {s.video_url ? (
@@ -26,12 +36,35 @@ export function StoryboardView({
               ) : s.image_url ? (
                 <img src={s.image_url} alt={s.prompt} className="h-full w-full object-cover" />
               ) : (
-                <span className="text-xs text-muted-foreground">
-                  {busy ? "Generating…" : s.status}
-                </span>
+                <span className="text-xs text-muted-foreground">{busy ? "Generating…" : s.status}</span>
               )}
             </div>
-            <p className="mb-2 text-sm">{s.prompt}</p>
+            <textarea
+              value={s.prompt}
+              onChange={(e) => patch(i, { prompt: e.target.value })}
+              onBlur={commit}
+              rows={2}
+              className="mb-2 w-full resize-y rounded-md border bg-background p-2 text-xs"
+            />
+            <div className="mb-2 grid grid-cols-1 gap-1">
+              <select value={s.camera || "static"} onBlur={commit}
+                      onChange={(e) => patch(i, { camera: e.target.value })}
+                      className="rounded border bg-background px-1 py-0.5 text-xs">
+                {models.camera_presets.map((c) => <option key={c} value={c}>📷 {c}</option>)}
+              </select>
+              <select value={s.image_model ?? ""} onBlur={commit}
+                      onChange={(e) => patch(i, { image_model: e.target.value || null })}
+                      className="rounded border bg-background px-1 py-0.5 text-xs">
+                <option value="">🖼 default model</option>
+                {models.image_models.map((m) => <option key={m.id} value={m.id}>🖼 {m.label}</option>)}
+              </select>
+              <select value={s.video_model ?? ""} onBlur={commit}
+                      onChange={(e) => patch(i, { video_model: e.target.value || null })}
+                      className="rounded border bg-background px-1 py-0.5 text-xs">
+                <option value="">🎬 default model</option>
+                {models.video_models.map((m) => <option key={m.id} value={m.id}>🎬 {m.label}</option>)}
+              </select>
+            </div>
             <div className="mb-1 text-xs">
               <span className={s.status === "failed" ? "text-red-500" : "text-muted-foreground"}>
                 {s.status}{s.status === "failed" && s.error ? ` — ${s.error}` : ""}

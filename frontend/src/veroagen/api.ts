@@ -1,5 +1,5 @@
 import { token } from "@/lib/api";
-import type { ProjectDoc, ProjectSummary, Scene, Shot, TimelineClip } from "./types";
+import type { CreditsInfo, ModelCatalog, ProjectDoc, ProjectSummary, Scene, Shot, TimelineClip } from "./types";
 
 const BASE = import.meta.env.VITE_VEROAGEN_BASE ?? "http://localhost:8100";
 
@@ -12,7 +12,10 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`veroagen ${method} ${path}: ${res.status}`);
+  if (!res.ok) {
+    const msg = res.status === 402 ? "Out of credits" : `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -44,4 +47,6 @@ export const veroagenApi = {
   queueRender: (id: string) =>
     req<{ status: string }>("POST", `/projects/${id}/render`),
   mediaUrl: (path: string) => `${BASE}${path}`,
+  getModels: () => req<ModelCatalog>("GET", "/models"),
+  getCredits: () => req<CreditsInfo>("GET", "/credits"),
 };

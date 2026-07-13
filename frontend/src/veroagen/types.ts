@@ -11,6 +11,8 @@ export interface Shot {
   image_url?: string | null;
   video_url?: string | null;
   error?: string | null;
+  image_model?: string | null;
+  video_model?: string | null;
 }
 
 export interface Character {
@@ -47,3 +49,11 @@ export interface ProjectDoc {
 }
 
 export interface ProjectSummary { id: string; title: string; version: number }
+
+export interface ModelOption { id: string; label: string }
+export interface ModelCatalog {
+  image_models: ModelOption[];
+  video_models: ModelOption[];
+  camera_presets: string[];
+}
+export interface CreditsInfo { balance: number; period: string; costs: Record<string, number> }

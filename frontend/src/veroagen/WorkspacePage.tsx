@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Shell } from "@/workspace/Shell";
 import type { PageKey } from "@/workspace/types";
 import { veroagenApi } from "./api";
@@ -7,6 +7,7 @@ import { CharactersView } from "./CharactersView";
 import { ScriptView } from "./ScriptView";
 import { StoryboardView } from "./StoryboardView";
 import { TimelineView } from "./TimelineView";
+import { useModels } from "./useModels";
 import { useProjectDoc } from "./useProjectDoc";
 
 // "veroagen" is not part of the viralo Shell's `PageKey` union (frontend/src/workspace/types.ts).
@@ -19,6 +20,20 @@ const TABS = ["Script", "Characters", "Storyboard", "Timeline"] as const;
 export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
   const { doc, setDoc, sendMessage, saveScript, sending } = useProjectDoc(projectId);
   const [tab, setTab] = useState<(typeof TABS)[number]>("Script");
+  const models = useModels();
+  const [credits, setCredits] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const refreshCredits = useCallback(() => {
+    veroagenApi.getCredits().then((c) => setCredits(c.balance)).catch(() => {});
+  }, []);
+  useEffect(() => { refreshCredits(); }, [refreshCredits]);
+
+  const guard = (p: Promise<unknown>) =>
+    p.then(refreshCredits).catch((e: Error) => {
+      setToast(e.message);
+      setTimeout(() => setToast(null), 4000);
+    });
 
   if (!doc) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
 
@@ -42,21 +57,27 @@ export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
                 {t}
               </button>
             ))}
+            {credits !== null && (
+              <span className="ml-auto mr-2 rounded-full bg-muted px-2 py-0.5 text-xs">⚡ {credits} credits</span>
+            )}
           </div>
+          {toast && <div className="border-b bg-red-500/10 px-4 py-1 text-xs text-red-500">{toast}</div>}
           <div className="flex-1 overflow-y-auto">
             {tab === "Script" && <ScriptView scenes={doc.script.scenes} onSave={saveScript} />}
             {tab === "Characters" && (
               <CharactersView
                 characters={doc.characters?.items ?? []}
                 onCreate={createCharacter}
-                onGenerateRef={(cid) => void veroagenApi.generateRef(projectId, cid)}
+                onGenerateRef={(cid) => void guard(veroagenApi.generateRef(projectId, cid))}
               />
             )}
             {tab === "Storyboard" && (
               <StoryboardView
                 shots={doc.storyboard.shots}
-                onGenerateImage={(sid) => void veroagenApi.generateShotImage(projectId, sid)}
-                onGenerateVideo={(sid) => void veroagenApi.generateShotVideo(projectId, sid)}
+                models={models}
+                onGenerateImage={(sid) => void guard(veroagenApi.generateShotImage(projectId, sid))}
+                onGenerateVideo={(sid) => void guard(veroagenApi.generateShotVideo(projectId, sid))}
+                onSaveShots={(shots) => void guard(veroagenApi.putStoryboard(projectId, shots))}
               />
             )}
             {tab === "Timeline" && (
@@ -65,9 +86,9 @@ export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
                 render={doc.render ?? { status: "none", url: null, error: null }}
                 onBuildDefault={async () => setDoc((await veroagenApi.buildDefaultTimeline(projectId)).doc)}
                 onSave={async (video) => setDoc((await veroagenApi.putTimeline(projectId, { video })).doc)}
-                onVoiceover={() => void veroagenApi.queueVoiceover(projectId)}
-                onMusic={(p) => void veroagenApi.queueMusic(projectId, p)}
-                onRender={() => void veroagenApi.queueRender(projectId)}
+                onVoiceover={() => void guard(veroagenApi.queueVoiceover(projectId))}
+                onMusic={(p) => void guard(veroagenApi.queueMusic(projectId, p))}
+                onRender={() => void guard(veroagenApi.queueRender(projectId))}
                 mediaUrl={veroagenApi.mediaUrl}
               />
             )}
