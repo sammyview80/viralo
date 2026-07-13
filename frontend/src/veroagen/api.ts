@@ -1,7 +1,7 @@
 import { token } from "@/lib/api";
 import type { CreditsInfo, ModelCatalog, ProjectDoc, ProjectSummary, Scene, Shot, TimelineClip } from "./types";
 
-const BASE = import.meta.env.VITE_VEROAGEN_BASE ?? "http://localhost:8100";
+const BASE = import.meta.env.VITE_VEROAGEN_BASE || "http://localhost:8100";
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

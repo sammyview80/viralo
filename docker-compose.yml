@@ -97,6 +97,7 @@ services:
         VITE_LI_CLIENT_ID: ${VITE_LI_CLIENT_ID:-}
         VITE_TWITTER_KEY: ${VITE_TWITTER_KEY:-}
         VITE_TIKTOK_KEY: ${VITE_TIKTOK_KEY:-}
+        VITE_VEROAGEN_BASE: ${VITE_VEROAGEN_BASE:-}
     ports:
       - "3000:3000"
     healthcheck:
