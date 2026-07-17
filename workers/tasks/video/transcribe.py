@@ -172,6 +172,19 @@ def _parse_words(response, offset: float) -> list[WordTimestamp]:
     return words
 
 
+def _translate_chunk(groq_client, audio_bytes: bytes, filename: str, offset: float) -> list[WordTimestamp]:
+    """Whisper translate task: transcribes AND translates any spoken language to English.
+    Word-level timestamps are not supported on the translations endpoint, so timings
+    come from _parse_words' segment fallback (char-proportional split)."""
+    response = groq_client.audio.translations.create(
+        file=(filename, audio_bytes),
+        # translate task requires the full model — turbo variants only transcribe
+        model="whisper-large-v3",
+        response_format="verbose_json",
+    )
+    return _parse_words(response, offset)
+
+
 def _transcribe_chunk(groq_client, audio_bytes: bytes, filename: str, offset: float, language: str) -> tuple[list[WordTimestamp], str]:
     """Returns (words, detected_language). detected_language is ISO 639-1 or empty string."""
     detected_lang = ""
@@ -206,8 +219,17 @@ def _transcribe_chunk(groq_client, audio_bytes: bytes, filename: str, offset: fl
     return _parse_words(response, offset), detected_lang
 
 
-def _transcribe(source_path: str, duration: float, language: str = "auto") -> tuple[list[WordTimestamp], str]:
-    """Returns (words, detected_language). detected_language is ISO 639-1 from Whisper or empty string."""
+_ENGLISH_LANGS = {"en", "english"}
+
+
+def _transcribe(source_path: str, duration: float, language: str = "auto",
+                translate_to_english: bool = True) -> tuple[list[WordTimestamp], str]:
+    """Returns (words, detected_language). detected_language is ISO 639-1 from Whisper
+    or empty string (the SOURCE language, even when words were translated).
+
+    translate_to_english: when the detected spoken language is not English (Hindi,
+    Nepali, Chinese, ...), re-run the audio through Whisper's translate task so
+    burned captions are always English."""
     from groq import Groq, RateLimitError as GroqRateLimitError
 
     groq_keys: list[str] = []
@@ -228,13 +250,28 @@ def _transcribe(source_path: str, duration: float, language: str = "auto") -> tu
         try:
             all_words: list[WordTimestamp] = []
             detected_lang = ""
+            translating = False
             for i, (audio_bytes, offset) in enumerate(audio_chunks):
                 fname = f"audio_chunk_{i}.mp3"
+                if translating:
+                    all_words.extend(_translate_chunk(client, audio_bytes, fname, offset))
+                    continue
                 words, chunk_lang = _transcribe_chunk(client, audio_bytes, fname, offset, language)
-                all_words.extend(words)
                 # Use first chunk's detected language (most reliable — full audio context)
                 if not detected_lang and chunk_lang:
                     detected_lang = chunk_lang
+                # Non-English speech detected on the first chunk: switch every chunk
+                # (including this one) to Whisper's translate task → English captions.
+                if (i == 0 and translate_to_english
+                        and detected_lang and detected_lang.lower() not in _ENGLISH_LANGS):
+                    try:
+                        all_words.extend(_translate_chunk(client, audio_bytes, fname, offset))
+                        translating = True
+                        logging.info(f"[Whisper] '{detected_lang}' speech — translating captions to English")
+                        continue
+                    except Exception as e:
+                        logging.warning(f"[Whisper] translate failed, keeping source language: {str(e)[:120]}")
+                all_words.extend(words)
 
             # Deduplicate overlapping chunk boundaries
             if len(audio_chunks) > 1:

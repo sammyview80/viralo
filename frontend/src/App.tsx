@@ -63,6 +63,7 @@ export default function App() {
   if (path === "/billing" || path.startsWith("/billing")) return <WorkspacePage key="billing" page="billing" />;
   if (path === "/notifications") return <WorkspacePage key="notifications" page="notifications" />;
   if (path === "/upload" || /^\/projects\/[^/]+$/.test(path)) return <WorkspacePage key={path} page="upload" />;
+  if (path === "/series/create") return <WorkspacePage key="series-create" page="series-create" />;
   if (path === "/veroagen") return <VeroagenListPage />;
   const veroagenMatch = path.match(/^\/veroagen\/([^/]+)$/);
   if (veroagenMatch) return <VeroagenWorkspacePage projectId={veroagenMatch[1]} />;

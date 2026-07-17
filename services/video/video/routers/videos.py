@@ -597,6 +597,21 @@ async def video_progress(
         pubsub = redis.pubsub()
         await pubsub.subscribe(f"job:{job_id}:progress", f"job:{job_id}:clips")
         try:
+            try:
+                latest = await redis.get(f"job:{job_id}:progress:last")
+            except Exception:
+                latest = None
+            if latest:
+                if isinstance(latest, bytes):
+                    latest = latest.decode()
+                yield f"data: {latest}\n\n"
+                try:
+                    parsed = json.loads(latest)
+                    if parsed.get("status") in ("complete", "failed", "cancelled"):
+                        return
+                except json.JSONDecodeError:
+                    pass
+
             deadline = _time.monotonic() + 600  # 10 minutes from now
             keepalive_at = _time.monotonic() + 15
             while _time.monotonic() < deadline:
@@ -1642,12 +1657,22 @@ async def create_ranking(
     ]
 
     celery_app = _get_celery()
-    celery_app.send_task(
-        "workers.tasks.video.generate_video_ranking",
-        args=[str(tenant_id), str(video_id), segments, req.title, effective_template, req.order],
-        kwargs={"template_config": req.template_config},
-        task_id=job_id,
-    )
+    try:
+        celery_app.send_task(
+            "workers.tasks.video.generate_video_ranking",
+            args=[str(tenant_id), str(video_id), segments, req.title, effective_template, req.order],
+            kwargs={"template_config": req.template_config},
+            task_id=job_id,
+        )
+    except Exception as exc:
+        video.status = "failed"
+        video.pipeline_step = "failed"
+        video.error_message = "Could not queue ranking video. Please try again."
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=video.error_message,
+        ) from exc
 
     return {"video_id": str(video_id), "job_id": job_id}
 

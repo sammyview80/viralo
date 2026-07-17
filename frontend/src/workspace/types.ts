@@ -1,5 +1,7 @@
 export type PageKey =
   | "studio"
+  | "series"
+  | "series-create"
   | "clips"
   | "projects"
   | "upload"

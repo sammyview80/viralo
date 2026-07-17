@@ -21,6 +21,7 @@ if not _is_beat:
     _include += [
         "workers.tasks.video",
         "workers.tasks.agent",
+        "workers.tasks.series",
     ]
 
 celery_app = Celery(
@@ -59,6 +60,7 @@ celery_app.conf.update(
         "workers.tasks.video.merge_ai_clips": {"queue": "viralo.video.generate"},
         "workers.tasks.video.refresh_youtube_cookies": {"queue": "viralo.video.pipeline"},
         "workers.tasks.video.*": {"queue": "viralo.video.generate"},
+        "workers.tasks.series.*": {"queue": "viralo.video.generate"},
         "workers.tasks.agent.*": {"queue": "viralo.agent.run"},
         "workers.tasks.workflow.*": {"queue": "viralo.workflow.execute"},
         "workers.tasks.post.*": {"queue": "viralo.post.publish"},
@@ -85,6 +87,12 @@ celery_app.conf.beat_schedule = {
         # Evict cached YouTube sources past their TTL so storage doesn't grow unbounded.
         "task": "workers.tasks.video.prune_source_cache",
         "schedule": crontab(hour=4, minute=0),  # daily at 04:00 UTC
+    },
+    "process-due-series": {
+        # Faceless-video series: launch generation jobs for series whose run is due
+        # (GENERATION_LEAD_HOURS before their scheduled publish time).
+        "task": "workers.tasks.series.process_due_series",
+        "schedule": crontab(minute="*/5"),
     },
     "reconcile-stuck-videos": {
         # Backstop: re-enqueue / fail videos orphaned by a worker crash or restart

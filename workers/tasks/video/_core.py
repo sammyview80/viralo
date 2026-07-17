@@ -49,9 +49,11 @@ __all__ = [
     'REFRAME_PRESETS',
     'QUALITY_CAP',
     'CAPTION_STYLE_CFG',
+    'STYLE_FAMILY',
     'CAPCUT_STYLES',
     'BOLD_PILL_STYLES',
     'UPPERCASE_PILL_STYLES',
+    'UPPERCASE_STYLES',
     '_effective_caption_style',
     'FONT_PATHS',
     'redis_client',
@@ -160,13 +162,44 @@ CAPTION_STYLE_CFG = {
     "classic":     ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  52, (0, 0, 0, 140)),
     "impact":      ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  72, (0, 0, 0, 0)),
     "minimal":     ((200, 200, 200, 255), (255, 255, 255, 255), 0.8,  44, (0, 0, 0, 0)),
+    # ── CapCut-Pro-style expansion pack ──
+    "sunset":       ((255, 255, 255, 255), (255, 94, 126, 255),  0.45, 62, (0, 0, 0, 160)),
+    "royal":        ((255, 255, 255, 255), (168, 85, 247, 255),  0.45, 62, (0, 0, 0, 160)),
+    "ocean":        ((255, 255, 255, 255), (56, 189, 248, 255),  0.45, 62, (0, 0, 0, 160)),
+    "bubble":       ((255, 255, 255, 255), (255, 122, 217, 255), 0.45, 62, (0, 0, 0, 0)),
+    "banger":       ((255, 255, 255, 255), (255, 138, 0, 255),   0.40, 68, (0, 0, 0, 0)),
+    "money":        ((255, 255, 255, 255), (34, 197, 94, 255),   0.40, 68, (0, 0, 0, 0)),
+    "reveal-light": ((17, 17, 17, 255),    (255, 255, 255, 255), 1.0,  56, (255, 255, 255, 225)),
+    "podcast":      ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  62, (20, 20, 20, 200)),
+    "pop-yellow":   ((255, 230, 0, 255),   (255, 230, 0, 255),   1.0,  84, (0, 0, 0, 0)),
+    "pop-red":      ((255, 45, 45, 255),   (255, 45, 45, 255),   1.0,  84, (0, 0, 0, 0)),
+    "karaoke-green":((255, 255, 255, 255), (57, 255, 20, 255),   1.0,  56, (0, 0, 0, 150)),
+    "karaoke-cyan": ((255, 255, 255, 255), (0, 229, 255, 255),   1.0,  56, (0, 0, 0, 150)),
+    "comic":        ((255, 230, 0, 255),   (255, 230, 0, 255),   1.0,  66, (0, 0, 0, 0)),
+    "cinema":       ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  50, (0, 0, 0, 120)),
 }
+
+# Visual family per style — drives the render dispatch in _draw_caption and the
+# frontend preview card. Must stay in sync with CAPTION_STYLE_CATALOG (schemas.py).
+STYLE_FAMILY = {
+    "capcut": "pill", "capcut-bold": "pill", "hormozi": "pill", "beast": "pill",
+    "neon": "pill", "sunset": "pill", "royal": "pill", "ocean": "pill",
+    "bubble": "pill", "banger": "pill", "money": "pill",
+    "tiktok": "reveal", "reveal-light": "reveal", "podcast": "reveal",
+    "word-pop": "pop", "pop-yellow": "pop", "pop-red": "pop",
+    "karaoke": "karaoke", "karaoke-green": "karaoke", "karaoke-cyan": "karaoke",
+    "classic": "outline", "impact": "outline", "comic": "outline", "cinema": "outline",
+    "minimal": "minimal",
+}
+
 # Styles rendered word-by-word (need word-level caption timeline)
-CAPCUT_STYLES = {"capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke"}
+CAPCUT_STYLES = {s for s, f in STYLE_FAMILY.items() if f in ("pill", "reveal", "pop", "karaoke")}
 # Word-pill styles drawn with the larger highlight font
-BOLD_PILL_STYLES = {"capcut-bold", "hormozi", "beast"}
+BOLD_PILL_STYLES = {"capcut-bold", "hormozi", "beast", "banger", "money"}
 # Pill styles drawn in ALL CAPS (their signature look)
-UPPERCASE_PILL_STYLES = {"hormozi", "beast"}
+UPPERCASE_PILL_STYLES = {"hormozi", "beast", "banger", "money"}
+# Outline/pop styles drawn in ALL CAPS
+UPPERCASE_STYLES = {"impact", "comic", "word-pop", "pop-yellow", "pop-red"}
 
 
 def _effective_caption_style(cfg: dict) -> str:
@@ -309,18 +342,30 @@ def _get_session(tenant_id: str):
 
 
 def _publish_progress(job_id: str, step: str, pct: int, status: str, message: str = "") -> None:
-    redis_client.publish(f"job:{job_id}:progress", json.dumps({
+    payload = json.dumps({
         "job_id": job_id, "step": step, "pct": pct, "status": status, "message": message,
-    }))
+    })
+    try:
+        redis_client.setex(f"job:{job_id}:progress:last", 3600, payload)
+    except Exception as exc:
+        logging.warning("Could not cache progress for job %s: %s", job_id, exc)
+    try:
+        redis_client.publish(f"job:{job_id}:progress", payload)
+    except Exception as exc:
+        logging.warning("Could not publish progress for job %s: %s", job_id, exc)
 
 
 def _publish_clip_event(job_id: str, event: str, payload: dict) -> None:
     msg = json.dumps({"event": event, **payload})
     # Publish on job channel (task ID) AND video_id channel so frontend can subscribe by either key
-    redis_client.publish(f"job:{job_id}:clips", msg)
-    video_id = payload.get("video_id") or payload.get("clip_id", "")[:0]  # video_id in payload when available
-    if video_id:
-        redis_client.publish(f"job:{video_id}:clips", msg)
+    channels = [f"job:{job_id}:clips"]
+    if video_id := payload.get("video_id"):
+        channels.append(f"job:{video_id}:clips")
+    for channel in channels:
+        try:
+            redis_client.publish(channel, msg)
+        except Exception as exc:
+            logging.warning("Could not publish clip event on %s: %s", channel, exc)
 
 
 def _update_video(tenant_id: str, video_id: str, **kwargs) -> None:
@@ -447,5 +492,4 @@ def _srt_to_plain(srt: str) -> str:
             continue
         lines.append(line)
     return " ".join(lines)
-
 

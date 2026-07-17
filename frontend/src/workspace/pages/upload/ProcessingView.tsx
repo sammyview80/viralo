@@ -7,8 +7,18 @@ import { fmtDur, gradFromId } from "./helpers";
 
 const VIDEO_SSE_BASE = API_BASES.video;
 
+const RANKING_STEPS = [
+  { keys: ["queued"], label: "Queued", sub: "Waiting for a ranking worker" },
+  { keys: ["starting", "download"], label: "Preparing sources", sub: "Loading each ranked video" },
+  { keys: ["render"], label: "Rendering segments", sub: "Applying ranking layout and labels" },
+  { keys: ["concatenat"], label: "Joining video", sub: "Combining rendered segments" },
+  { keys: ["upload"], label: "Uploading video", sub: "Saving the final ranking video" },
+  { keys: ["caption"], label: "Generating captions", sub: "Preparing platform captions" },
+  { keys: ["complete"], label: "Done", sub: "Ranking video ready" },
+];
+
 /* ─── Social connect banner shown during processing ─── */
-function SocialConnectBanner() {
+function SocialConnectBanner({ isRanking = false }: { isRanking?: boolean }) {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,7 +41,7 @@ function SocialConnectBanner() {
           <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-emerald-300/30 bg-emerald-100 text-emerald-600 text-sm dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-300">✓</div>
           <div>
             <div className="text-[13px] font-semibold text-emerald-600 dark:text-emerald-300">All platforms connected</div>
-            <div className="text-[11.5px] text-zinc-500">Clips will be ready to publish when processing completes.</div>
+            <div className="text-[11.5px] text-zinc-500">{isRanking ? "Ranking video" : "Clips"} will be ready to publish when processing completes.</div>
           </div>
           <a href="/integrations" className="ml-auto text-[11.5px] font-semibold text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white">Manage →</a>
         </div>
@@ -58,8 +68,8 @@ function SocialConnectBanner() {
           <div className="text-[13px] font-semibold text-zinc-900 dark:text-white">Connect social accounts while you wait</div>
           <div className="mt-0.5 text-[11.5px] text-zinc-500">
             {connectedIds.size > 0
-              ? `${connectedIds.size} connected · connect more to publish clips instantly`
-              : "Your clips will be ready soon — connect accounts to publish with one click"}
+              ? `${connectedIds.size} connected · connect more to publish ${isRanking ? "your ranking video" : "clips"} instantly`
+              : `Your ${isRanking ? "ranking video" : "clips"} will be ready soon — connect accounts to publish with one click`}
           </div>
         </div>
         <a href="/integrations"
@@ -191,7 +201,8 @@ export function ProcessingView({
       downloading: "Resolving & downloading sources…",
       rendering: "Rendering segments…",
       concatenating: "Joining segments into final video…",
-      upload: "Uploading to cloud…",
+      uploading: "Uploading ranking video…",
+      captions: "Generating platform captions…",
       complete: "Ranking video ready!",
       cancelled: "Processing cancelled.",
     };
@@ -213,7 +224,15 @@ export function ProcessingView({
           if (d.type === "keepalive") return;
 
           if (d.message) setLiveMsg(sanitize(d.message));
-          if (d.pct != null) setCurrent((prev) => ({ ...prev, pipeline_pct: d.pct, pipeline_step: d.step ?? prev.pipeline_step }));
+          if (d.pct != null || d.step || d.status) {
+            setCurrent((prev) => ({
+              ...prev,
+              pipeline_pct: d.pct ?? prev.pipeline_pct,
+              pipeline_step: d.step ?? prev.pipeline_step,
+              status: d.status === "complete" ? "ready" : d.status === "failed" ? "failed" : d.status === "processing" ? "processing" : prev.status,
+              error_message: d.status === "failed" ? (d.message ?? prev.error_message) : prev.error_message,
+            }));
+          }
           if (d.status === "failed" && d.message) setErrorMsg(sanitize(d.message));
 
           if (!isRanking) {
@@ -276,17 +295,15 @@ export function ProcessingView({
     };
   }, [current.celery_task_id]);
 
-  // Queued-only timeout check
+  // Polling fallback also catches terminal state when Redis/SSE is unavailable.
   useEffect(() => {
     if (doneRef.current || isTerminal(current)) return;
-    const isQueued = current.status === "queued" || (!current.pipeline_step && (current.pipeline_pct ?? 0) === 0);
-    if (!isQueued) return;
     const id = window.setInterval(async () => {
       if (doneRef.current) return;
       try {
         const updated = await videoApi.get(current.id);
         const stillQueued = updated.status === "queued" || (!updated.pipeline_step && (updated.pipeline_pct ?? 0) === 0);
-        if (stillQueued && updated.created_at) {
+        if (stillQueued && updated.created_at && updated.source_type !== "ranking") {
           const queuedMs = Date.now() - new Date(updated.created_at).getTime();
           if (queuedMs > 5 * 60 * 1000) {
             setErrorMsg("No video worker picked up this job within 5 minutes. The worker may be down — please try again or contact support.");
@@ -305,11 +322,14 @@ export function ProcessingView({
   }, [current.id, current.status, current.pipeline_step, current.pipeline_pct, onDone]);
 
   const overallPct = Math.min(Math.max(current.pipeline_pct ?? 0, 0), 100);
-  const stepIdx = pipelineStepIdx(current.pipeline_step);
   const grad = gradFromId(current.id);
   const queuedFor = formatElapsedSince(current.created_at, now);
   const isQueued = current.status === "queued" || (!current.pipeline_step && overallPct === 0);
   const isRankingVideo = current.source_type === "ranking";
+  const pipelineSteps = isRankingVideo ? RANKING_STEPS : PROC_STEPS;
+  const stepIdx = isRankingVideo
+    ? Math.max(0, pipelineSteps.findIndex((step) => step.keys.some((key) => (current.pipeline_step ?? "queued").toLowerCase().includes(key))))
+    : pipelineStepIdx(current.pipeline_step);
   const sourceLabel = isRankingVideo ? "Ranking video" : current.source_type === "youtube_url" ? "YouTube" : "Uploaded file";
 
   const isDone = current.status === "done" || current.status === "ready" || current.pipeline_step === "complete";
@@ -348,10 +368,10 @@ export function ProcessingView({
                 </button>
               )}
               {onNewUpload && (
-                <button onClick={onNewUpload}
+                <button onClick={() => isRankingVideo ? navigate("/ranking") : onNewUpload()}
                   className="inline-flex items-center gap-1.5 rounded-[10px] bg-[#ff3d6a] px-3.5 py-2 text-[13px] font-semibold text-white transition hover:opacity-85">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  New upload
+                  {isRankingVideo ? "New ranking" : "New upload"}
                 </button>
               )}
             </div>
@@ -390,7 +410,7 @@ export function ProcessingView({
           <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
         </svg>
         <p className="text-[12px] text-zinc-500 dark:text-zinc-500">
-          You can leave this page — processing continues in the background. You'll be emailed and notified when your clips are ready.
+          You can leave this page — processing continues in the background. You'll be notified when your {isRankingVideo ? "ranking video is" : "clips are"} ready.
         </p>
       </div>
 
@@ -419,12 +439,16 @@ export function ProcessingView({
             <span>{errorMsg}</span>
             <button type="button" disabled={retrying}
               onClick={async () => {
+                if (isRankingVideo) {
+                  navigate("/ranking");
+                  return;
+                }
                 setRetrying(true);
                 try { const updated = await videoApi.retry(current.id); setErrorMsg(""); setCurrent(updated); }
                 catch { /* keep error visible */ } finally { setRetrying(false); }
               }}
               className="shrink-0 cursor-pointer rounded-[7px] border border-red-300 bg-red-100 px-2.5 py-1 text-[10.5px] font-semibold text-red-500 transition hover:bg-red-200 disabled:opacity-50 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300 dark:hover:bg-red-400/20">
-              {retrying ? "Retrying…" : "Retry"}
+              {isRankingVideo ? "New ranking" : retrying ? "Retrying…" : "Retry"}
             </button>
           </div>
         </div>
@@ -437,12 +461,12 @@ export function ProcessingView({
         <div className="rounded-[18px] border border-zinc-200 bg-white p-5 dark:border-white/[.08] dark:bg-surface-1">
           <div className="mb-5 text-[10px] font-bold uppercase tracking-[1.2px] text-zinc-400 dark:text-zinc-600">Pipeline</div>
           <div className="flex flex-col">
-            {PROC_STEPS.filter((_, i) => i < PROC_STEPS.length - 1).map((step, i) => {
+            {pipelineSteps.filter((_, i) => i < pipelineSteps.length - 1).map((step, i) => {
               const done = isDone || i < stepIdx;
               const active = !isDone && i === stepIdx;
               return (
                 <div key={step.label} className="relative flex gap-3.5">
-                  {i < PROC_STEPS.length - 2 && (
+                  {i < pipelineSteps.length - 2 && (
                     <div className="absolute bottom-0 left-[15px] top-8 z-0 w-[2px]"
                       style={{
                         background: done
@@ -490,7 +514,7 @@ export function ProcessingView({
 
         {/* RIGHT COLUMN */}
         <div className="flex flex-col gap-4">
-          <SocialConnectBanner />
+          <SocialConnectBanner isRanking={isRankingVideo} />
 
           {liveEvents.length > 0 && (
             <div className="overflow-hidden rounded-[16px] border border-zinc-200 bg-white dark:border-white/[.07] dark:bg-surface-1">

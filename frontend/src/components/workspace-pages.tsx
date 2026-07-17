@@ -14,6 +14,8 @@ const ProjectsPage     = lazy(() => import("@/workspace/pages/ProjectsPage").the
 const SchedulerPage    = lazy(() => import("@/workspace/pages/SchedulerPage").then((m) => ({ default: m.SchedulerPage })));
 const SettingsPage     = lazy(() => import("@/workspace/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 const StudioPage       = lazy(() => import("@/workspace/pages/StudioPage").then((m) => ({ default: m.StudioPage })));
+const SeriesPage       = lazy(() => import("@/workspace/pages/SeriesPage").then((m) => ({ default: m.SeriesPage })));
+const SeriesCreatePage = lazy(() => import("@/workspace/pages/SeriesCreatePage").then((m) => ({ default: m.SeriesCreatePage })));
 const TrendingPage     = lazy(() => import("@/workspace/pages/TrendingPage").then((m) => ({ default: m.TrendingPage })));
 const UploadPage       = lazy(() => import("@/workspace/pages/UploadPage").then((m) => ({ default: m.UploadPage })));
 import { Shell } from "@/workspace/Shell";
@@ -25,6 +27,8 @@ const RankingPage      = lazy(() => import("@/workspace/pages/RankingPage").then
 
 const pages: Record<PageKey, React.ReactNode> = {
   studio:        <StudioPage />,
+  series:        <SeriesPage />,
+  "series-create": <SeriesCreatePage />,
   clips:         <ClipsPage />,
   projects:      <ProjectsPage />,
   upload:        <UploadPage />,

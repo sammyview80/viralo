@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { navigate } from "@/lib/router";
-import { videoApi, type ClipConfig, type VideoResponse } from "@/lib/api";
+import { videoApi, platformApi, type ClipConfig, type VideoResponse, type SocialAccount } from "@/lib/api";
 import { DEFAULT_CONFIG } from "./UploadPage";
 import { CAPTION_STYLES, type CaptionStyleOption } from "./upload/constants";
 import { LyricVideoPlanner } from "./studio/LyricVideoPlanner";
@@ -61,6 +61,20 @@ const TEMPLATE_BG: Record<string, string> = {
   "classic":     "from-zinc-600 to-zinc-900",
   "impact":      "from-stone-600 to-stone-900",
   "minimal":     "from-slate-600 to-slate-900",
+  "sunset":        "from-rose-600 to-pink-950",
+  "royal":         "from-purple-700 to-violet-950",
+  "ocean":         "from-sky-600 to-cyan-950",
+  "bubble":        "from-pink-500 to-fuchsia-950",
+  "banger":        "from-orange-500 to-red-950",
+  "money":         "from-green-600 to-emerald-950",
+  "reveal-light":  "from-zinc-400 to-zinc-800",
+  "podcast":       "from-neutral-700 to-neutral-950",
+  "pop-yellow":    "from-yellow-500 to-amber-950",
+  "pop-red":       "from-red-600 to-rose-950",
+  "karaoke-green": "from-lime-600 to-green-950",
+  "karaoke-cyan":  "from-cyan-600 to-teal-950",
+  "comic":         "from-amber-500 to-yellow-950",
+  "cinema":        "from-gray-700 to-black",
 };
 
 function CaptionCard({ s, selected, onSelect }: { s: CaptionStyleOption; selected: boolean; onSelect: () => void }) {
@@ -83,15 +97,17 @@ function CaptionCard({ s, selected, onSelect }: { s: CaptionStyleOption; selecte
             <span className="text-[9px] font-black text-white" style={{ textShadow: "1px 1px 0 #000" }}>{tx("subtitle")}</span>
           </span>
         );
-      case "reveal":
+      case "reveal": {
+        const box = s.id === "reveal-light" ? "bg-white/90 text-black" : "bg-black/85 text-white";
         return (
           <span className="inline-flex flex-col items-center gap-0.5">
-            <span className="rounded-[4px] bg-black/85 px-1.5 py-0.5 text-[9px] font-bold text-white">Here is your</span>
-            <span className="rounded-[4px] bg-black/85 px-1.5 py-0.5 text-[9px] font-bold text-white">subtitle</span>
+            <span className={cn("rounded-[4px] px-1.5 py-0.5 text-[9px] font-bold", box)}>Here is your</span>
+            <span className={cn("rounded-[4px] px-1.5 py-0.5 text-[9px] font-bold", box)}>subtitle</span>
           </span>
         );
+      }
       case "pop":
-        return <span className="text-[16px] font-black text-white" style={{ textShadow: outlineShadow }}>WOW</span>;
+        return <span className="text-[16px] font-black" style={{ color: hl, textShadow: outlineShadow }}>WOW</span>;
       case "karaoke":
         return (
           <span className="whitespace-nowrap rounded-[3px] bg-black/75 px-1.5 py-0.5 text-[8.5px] font-bold text-white">
@@ -100,8 +116,8 @@ function CaptionCard({ s, selected, onSelect }: { s: CaptionStyleOption; selecte
         );
       case "outline":
         return (
-          <span className={cn("font-black leading-tight text-white", s.uppercase ? "text-[10px]" : "text-[9.5px]")}
-            style={{ textShadow: outlineShadow }}>{tx("Here is your subtitle")}</span>
+          <span className={cn("font-black leading-tight", s.uppercase ? "text-[10px]" : "text-[9.5px]")}
+            style={{ color: hl, textShadow: outlineShadow }}>{tx("Here is your subtitle")}</span>
         );
       default: // minimal
         return <span className="text-[9px] font-semibold text-zinc-200/90">here is your subtitle</span>;
@@ -173,8 +189,28 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
   const [feat, setFeat]           = useState({ emoji: true, highlight: true, silences: false, brolls: false });
   const [findMoment, setFindMoment] = useState("");
   const [autoSchedule, setAutoSchedule] = useState(false);
+  const [accounts, setAccounts] = useState<SocialAccount[] | null>(null);
+  const [accountsError, setAccountsError] = useState("");
+  const [pubAccountIds, setPubAccountIds] = useState<string[]>([]);
+  const [pubPerDay, setPubPerDay] = useState(3);
 
   const carouselRef = useRef<HTMLDivElement>(null);
+
+  // Load connected social accounts when auto-schedule is toggled on
+  useEffect(() => {
+    if (!autoSchedule || accounts !== null) return;
+    let alive = true;
+    platformApi.listAccounts()
+      .then((list) => {
+        if (!alive) return;
+        const active = list.filter((a) => a.is_active);
+        setAccounts(active);
+        // Preselect all connected accounts
+        setPubAccountIds(active.map((a) => a.id));
+      })
+      .catch(() => { if (alive) { setAccounts([]); setAccountsError("Could not load social accounts"); } });
+    return () => { alive = false; };
+  }, [autoSchedule, accounts]);
 
   // validate + fetch metadata
   useEffect(() => {
@@ -237,14 +273,27 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
         ...(len?.min != null ? { duration_min: len.min, duration_max: len.max } : {}),
         ...(cnt?.value != null ? { max_clips: cnt.value } : {}),
         ...(findMoment.trim() ? { topic_focus: findMoment.trim() } : {}),
+        ...(autoSchedule && pubAccountIds.length > 0 ? {
+          auto_publish: true,
+          auto_publish_config: {
+            social_account_ids: pubAccountIds,
+            publish_per_day: pubPerDay,
+            publish_interval_hours: Math.max(1, Math.floor(24 / pubPerDay)),
+          },
+        } : {}),
       };
+      if (autoSchedule && pubAccountIds.length === 0) {
+        setError("Select at least one social account for auto publish, or turn the toggle off.");
+        setUploading(false);
+        return;
+      }
       const video = await videoApi.youtube(urlVal.trim(), undefined, cfg);
       navigate(`/projects/${video.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, urlReady, ratio, clipLen, clipCount, template, findMoment]);
+  }, [urlVal, urlReady, ratio, clipLen, clipCount, template, findMoment, autoSchedule, pubAccountIds, pubPerDay]);
 
   const selectClass = "flex h-[50px] items-center gap-2 rounded-[12px] border border-c-border bg-surface-2 px-3.5 transition focus-within:border-[#ff3d6a]/50";
 
@@ -417,16 +466,70 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
               </div>
 
               {/* ── Auto schedule ── */}
-              <div className="mt-3 flex h-[52px] items-center gap-3 rounded-[14px] border border-c-border bg-surface-1 px-4">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth={1.8}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                <span className="flex-1 text-[13px] font-semibold text-c-text">Auto schedule and post to social account</span>
-                <button
-                  type="button"
-                  onClick={() => setAutoSchedule((v) => !v)}
-                  className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors", autoSchedule ? "bg-[#ff3d6a]" : "bg-surface-3")}
-                >
-                  <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]", autoSchedule ? "left-[calc(100%-22px)]" : "left-0.5")} />
-                </button>
+              <div className="mt-3 rounded-[14px] border border-c-border bg-surface-1">
+                <div className="flex h-[52px] items-center gap-3 px-4">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth={1.8}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                  <span className="flex-1 text-[13px] font-semibold text-c-text">Auto schedule and post to social account</span>
+                  <button
+                    type="button"
+                    onClick={() => setAutoSchedule((v) => !v)}
+                    className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors", autoSchedule ? "bg-[#ff3d6a]" : "bg-surface-3")}
+                  >
+                    <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]", autoSchedule ? "left-[calc(100%-22px)]" : "left-0.5")} />
+                  </button>
+                </div>
+                {autoSchedule && (
+                  <div className="border-t border-c-border px-4 py-3.5">
+                    <p className="mb-2 text-[12px] font-bold text-c-text-secondary">Post to accounts</p>
+                    {accounts === null ? (
+                      <p className="text-[12px] text-c-text-muted">Loading accounts…</p>
+                    ) : accounts.length === 0 ? (
+                      <p className="text-[12px] text-c-text-muted">
+                        {accountsError || "No social accounts connected."}{" "}
+                        <button type="button" onClick={() => navigate("/integrations")} className="cursor-pointer font-semibold text-[#ff7a9a] hover:underline">Connect one →</button>
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {accounts.map((a) => {
+                          const on = pubAccountIds.includes(a.id);
+                          return (
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() => setPubAccountIds((ids) => on ? ids.filter((i) => i !== a.id) : [...ids, a.id])}
+                              className={cn(
+                                "flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-semibold capitalize transition",
+                                on ? "border-[#ff3d6a] bg-[#ff3d6a]/10 text-[#ff7a9a]" : "border-c-border bg-surface-2 text-c-text-muted hover:text-c-text"
+                              )}
+                            >
+                              {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6L9 17l-5-5"/></svg>}
+                              {a.platform}{a.platform_username ? ` · ${a.platform_username}` : ""}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="mt-3.5 flex items-center justify-between">
+                      <div>
+                        <p className="text-[12px] font-bold text-c-text-secondary">Clips per day</p>
+                        <p className="text-[11px] text-c-text-muted">Spread evenly across the day after clips are ready</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPubPerDay((n) => Math.max(1, n - 1))}
+                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-[8px] border border-c-border bg-surface-2 text-c-text transition hover:bg-surface-3"
+                        >−</button>
+                        <span className="w-6 text-center text-[13px] font-bold text-c-text">{pubPerDay}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPubPerDay((n) => Math.min(10, n + 1))}
+                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-[8px] border border-c-border bg-surface-2 text-c-text transition hover:bg-surface-3"
+                        >+</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {error && <p className="mt-3 text-center text-[11.5px] font-medium text-red-400">{error}</p>}

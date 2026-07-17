@@ -88,11 +88,14 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
 
         now = datetime.now(timezone.utc)
         posts_created = 0
-        slot = 0  # tracks scheduling slot across clip × account combos
 
-        for clip_id in clip_ids[:publish_per_day]:
+        # Spread ALL clips at publish_per_day/day: clip i lands on day i//per_day,
+        # spaced interval_hours apart within the day. Every selected account gets
+        # the clip at the same time.
+        for i, clip_id in enumerate(clip_ids):
+            day, slot = divmod(i, publish_per_day)
+            scheduled_at = now + timedelta(days=day, hours=slot * interval_hours)
             for account_id, platform in rows:
-                scheduled_at = now + timedelta(hours=slot * interval_hours)
                 db.execute(
                     text("""
                         INSERT INTO scheduled_posts
@@ -113,7 +116,6 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
                     },
                 )
                 posts_created += 1
-                slot += 1
 
         db.commit()
 

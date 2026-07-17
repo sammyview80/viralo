@@ -41,7 +41,9 @@ class ClipConfig(BaseModel):
     # Captions
     add_captions: bool = Field(default=True, description="Burn captions into clip")
     caption_style: Literal[
-        "capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke", "classic", "impact", "minimal"
+        "capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke", "classic", "impact", "minimal",
+        "sunset", "royal", "ocean", "bubble", "banger", "money", "reveal-light", "podcast",
+        "pop-yellow", "pop-red", "karaoke-green", "karaoke-cyan", "comic", "cinema"
     ] | None = Field(
         default=None, description="Caption visual style (None = auto from template)"
     )
@@ -59,6 +61,10 @@ class ClipConfig(BaseModel):
     music_track: Literal["hype", "dramatic", "chill"] | None = Field(default=None, description="Music track key override (None = auto from template)")
     voiceover: bool = Field(default=False, description="Generate and mix AI narrator voiceover")
     occasion: Literal["football", "soccer", "sports", "cricket", "ufc", "boxing", "mma", "f1", "racing", "gaming", "esports", "podcast", "interview", "concert", "music", "wedding", "travel", "general"] | None = Field(default=None, description="Content occasion hint. None = auto-detect.")
+
+    # Auto-publish: schedule generated clips to social accounts after the pipeline completes
+    auto_publish: bool = Field(default=False, description="Auto-schedule clips to social accounts after generation")
+    auto_publish_config: dict | None = Field(default=None, description="Auto-publish settings: social_account_ids, publish_per_day, publish_interval_hours, caption_template")
 
     @model_validator(mode="after")
     def _check_duration_bounds(self) -> "ClipConfig":
@@ -91,6 +97,20 @@ CAPTION_STYLE_CATALOG: list[CaptionStyleInfo] = [
     CaptionStyleInfo(id="classic",     label="Classic",     desc="White subtitles, black outline",   family="outline", highlight="#ffffff"),
     CaptionStyleInfo(id="impact",      label="Impact",      desc="Huge meme-style outlined caps",    family="outline", highlight="#ffffff", uppercase=True),
     CaptionStyleInfo(id="minimal",     label="Minimal",     desc="Clean lower-third, no outline",    family="minimal", highlight="#ffffff"),
+    CaptionStyleInfo(id="sunset",       label="Sunset",       desc="Word pills, hot-pink highlight",    family="pill",    highlight="#ff5e7e"),
+    CaptionStyleInfo(id="royal",        label="Royal",        desc="Word pills, purple highlight",      family="pill",    highlight="#a855f7"),
+    CaptionStyleInfo(id="ocean",        label="Ocean",        desc="Word pills, sky-blue highlight",    family="pill",    highlight="#38bdf8"),
+    CaptionStyleInfo(id="bubble",       label="Bubble",       desc="Playful pink pills, no band",       family="pill",    highlight="#ff7ad9"),
+    CaptionStyleInfo(id="banger",       label="Banger",       desc="Bold caps pills, orange highlight", family="pill",    highlight="#ff8a00", uppercase=True),
+    CaptionStyleInfo(id="money",        label="Money",        desc="Bold caps pills, green highlight",  family="pill",    highlight="#22c55e", uppercase=True),
+    CaptionStyleInfo(id="reveal-light", label="Reveal Light", desc="Words appear, white box",           family="reveal",  highlight="#ffffff"),
+    CaptionStyleInfo(id="podcast",      label="Podcast",      desc="Big words on dark studio box",      family="reveal",  highlight="#ffffff"),
+    CaptionStyleInfo(id="pop-yellow",   label="Pop Yellow",   desc="One big yellow word at a time",     family="pop",     highlight="#ffe600", uppercase=True),
+    CaptionStyleInfo(id="pop-red",      label="Pop Red",      desc="One big red word at a time",        family="pop",     highlight="#ff2d2d", uppercase=True),
+    CaptionStyleInfo(id="karaoke-green",label="Karaoke Green",desc="Full line, green word sweep",       family="karaoke", highlight="#39ff14"),
+    CaptionStyleInfo(id="karaoke-cyan", label="Karaoke Cyan", desc="Full line, cyan word sweep",        family="karaoke", highlight="#00e5ff"),
+    CaptionStyleInfo(id="comic",        label="Comic",        desc="Yellow caps, thick black outline",  family="outline", highlight="#ffe600", uppercase=True),
+    CaptionStyleInfo(id="cinema",       label="Cinema",       desc="Subtle subtitles on dark band",     family="outline", highlight="#ffffff"),
 ]
 
 # Import-time drift guard: the catalog must exactly match ClipConfig's Literal

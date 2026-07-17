@@ -825,17 +825,44 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
     import uuid as _uuid_mod
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    job_id = self.request.id
-    _publish_progress(job_id, "starting", 2, "processing", "Preparing ranking video...")
+    job_id = self.request.id or video_id
+    last_pct = 0
 
-    n = len(segments)
-    badges = list(range(n, 0, -1)) if order == "countdown" else list(range(1, n + 1))
+    def emit_progress(step: str, pct: int, status: str, message: str, **video_fields) -> None:
+        nonlocal last_pct
+        last_pct = max(last_pct, pct)
+        _update_video(
+            tenant_id,
+            video_id,
+            status="ready" if status == "complete" else status,
+            pipeline_step=step,
+            pipeline_pct=last_pct,
+            **video_fields,
+        )
+        _publish_progress(job_id, step, last_pct, status, message)
 
-    tmpdir = tempfile.mkdtemp(prefix="viralo_ranking_")
+    tmpdir = None
     try:
-        _publish_progress(job_id, "downloading", 10, "processing", "Resolving sources...")
+        emit_progress(
+            "starting",
+            2,
+            "processing",
+            "Preparing ranking video...",
+            celery_task_id=job_id,
+            error_message=None,
+        )
+
+        n = len(segments)
+        badges = list(range(n, 0, -1)) if order == "countdown" else list(range(1, n + 1))
+        tmpdir = tempfile.mkdtemp(prefix="viralo_ranking_")
         source_paths = []
         for i, seg in enumerate(segments):
+            emit_progress(
+                "downloading",
+                5 + int(i / n * 15),
+                "processing",
+                f"Loading source {i + 1}/{n}...",
+            )
             src_path = os.path.join(tmpdir, f"src_{i}.mp4")
             if seg.get("source_type") == "upload" and seg.get("video_id"):
                 _download_stored_video(seg["video_id"], tenant_id, src_path)
@@ -845,7 +872,7 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
                 raise ValueError(f"Segment {i} has no url or video_id")
             source_paths.append(src_path)
 
-        _publish_progress(job_id, "rendering", 20, "processing", "Rendering segments...")
+        emit_progress("rendering", 20, "processing", f"Rendering 0/{n} segments...")
         seg_paths = [os.path.join(tmpdir, f"seg_{i}.mp4") for i in range(n)]
 
         # Build label list indexed by rank number (1-based): all_labels[0] = label for rank#1
@@ -876,15 +903,18 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
                 revealed_ranks=revealed,
                 template_config=template_config,
             )
-            pct = 20 + int((idx + 1) / n * 50)
-            _publish_progress(job_id, f"rendered_{idx+1}", pct, "processing", f"Rendered segment {idx+1}/{n}")
-
         with ThreadPoolExecutor(max_workers=min(n, 4)) as pool:
             futs = {pool.submit(render_one, i): i for i in range(n)}
-            for fut in as_completed(futs):
+            for completed, fut in enumerate(as_completed(futs), start=1):
                 fut.result()
+                emit_progress(
+                    f"rendered_{completed}",
+                    20 + int(completed / n * 50),
+                    "processing",
+                    f"Rendered {completed}/{n} segments",
+                )
 
-        _publish_progress(job_id, "concatenating", 75, "processing", "Joining segments...")
+        emit_progress("concatenating", 75, "processing", "Joining ranking segments...")
         concat_list = os.path.join(tmpdir, "concat.txt")
         with open(concat_list, "w") as f:
             for p in seg_paths:
@@ -898,7 +928,7 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
         if result.returncode != 0 or not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
             raise RuntimeError(f"ffmpeg concat failed: {result.stderr.decode()[-500:]}")
 
-        _publish_progress(job_id, "uploading", 88, "processing", "Uploading...")
+        emit_progress("uploading", 88, "processing", "Uploading ranking video...")
         clip_id = str(_uuid_mod.uuid4())
         storage_key = f"clips/{tenant_id}/{clip_id}.mp4"
         from shared.storage.base import get_storage
@@ -927,12 +957,12 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
                 },
             )
             session.execute(
-                text("UPDATE videos SET status='ready', storage_url=:url, updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
+                text("UPDATE videos SET storage_url=:url, updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
                 {"url": storage_url, "vid": video_id},
             )
 
         # Generate platform captions (same as clip pipeline)
-        _publish_progress(job_id, "captions", 95, "processing", "Generating platform captions...")
+        emit_progress("captions", 95, "processing", "Generating platform captions...")
         try:
             segment_labels = [s.get("segment_title", "") for s in segments]
             topic_hint = f"{title}. Segments: {', '.join(l for l in segment_labels if l)}"
@@ -960,23 +990,22 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
         except Exception as _cap_err:
             logging.warning(f"generate_video_ranking: caption generation failed (non-fatal): {_cap_err}")
 
-        _publish_progress(job_id, "complete", 100, "complete", "Ranking video ready")
+        emit_progress("complete", 100, "complete", "Ranking video ready")
         _publish_clip_event(job_id, "clip_ready", {"clip_id": clip_id, "video_id": video_id})
         return {"clip_id": clip_id, "storage_key": storage_key}
 
-    except Exception:
+    except Exception as exc:
         logging.exception("generate_video_ranking failed")
+        message = f"Ranking video generation failed: {str(exc)[:250]}"
         try:
-            with _get_session(tenant_id) as session:
-                session.execute(
-                    text("UPDATE videos SET status='error', updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
-                    {"vid": video_id},
-                )
-        except Exception:
-            pass
+            emit_progress("failed", last_pct, "failed", message, error_message=message)
+        except Exception as update_exc:
+            logging.warning("Could not persist ranking failure for %s: %s", video_id, update_exc)
+            _publish_progress(job_id, "failed", last_pct, "failed", message)
         raise
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 # ── Editor server-side render ─────────────────────────────────────────────────
 
@@ -1197,12 +1226,15 @@ def reconcile_stuck_videos(self) -> dict:
         with Session(engine) as s:
             rows = s.execute(text("""
                 SELECT id, tenant_id, source_url, clip_config, status,
-                       COALESCE((metadata->>'reconcile_retries')::int, 0) AS retries
+                       COALESCE((metadata->>'reconcile_retries')::int, 0) AS retries,
+                       source_type
                 FROM videos
                 WHERE (status = 'processing' AND updated_at < NOW() - INTERVAL '65 minutes')
                    OR (status IN ('queued','pending') AND updated_at < NOW() - INTERVAL '15 minutes')
             """)).fetchall()
-            for vid, tid, src_url, cfg, status_, retries in rows:
+            for vid, tid, src_url, cfg, status_, retries, source_type in rows:
+                if source_type == "ranking" and status_ in ("queued", "pending"):
+                    continue
                 if src_url and retries < 2:
                     s.execute(text("""
                         UPDATE videos

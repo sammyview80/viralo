@@ -339,6 +339,13 @@ export interface ClipConfig {
   music_track?: string | null;
   voiceover?: boolean;
   occasion?: string | null;
+  auto_publish?: boolean;
+  auto_publish_config?: {
+    social_account_ids: string[];
+    publish_per_day: number;
+    publish_interval_hours?: number;
+    caption_template?: string;
+  } | null;
 }
 
 export interface CaptionStyleInfo {
@@ -490,6 +497,66 @@ export interface RenderPayload {
   markers: EditorMarker[];
   quality: "draft" | "720p" | "1080p";
 }
+
+// ── Series (faceless auto-generated videos) ─────────────────────────────────
+
+export interface Series {
+  id: string;
+  name: string;
+  niche: string;
+  custom_prompt: string | null;
+  example_script: string | null;
+  language: string;
+  voice: string;
+  music_track: string | null;
+  art_style: string;
+  caption_style: string;
+  effects: Record<string, boolean>;
+  duration_sec: number;
+  social_account_ids: string[];
+  publish_time: string;
+  cadence: "daily" | "3x_week" | "weekly";
+  auto_publish: boolean;
+  is_active: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  created_at: string;
+}
+
+export type SeriesCreate = Omit<Series, "id" | "is_active" | "next_run_at" | "last_run_at" | "created_at">;
+
+export interface SeriesOption { id: string; label: string }
+export interface SeriesOptions {
+  niches: SeriesOption[];
+  voices: SeriesOption[];
+  art_styles: SeriesOption[];
+  music_tracks: SeriesOption[];
+  cadences: SeriesOption[];
+}
+
+export interface SeriesVideo {
+  id: string;
+  title: string | null;
+  status: string;
+  duration_sec: number | null;
+  thumbnail_url: string | null;
+  clip_id: string | null;
+  storage_url: string | null;
+  clip_thumb: string | null;
+  created_at: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export const seriesApi = {
+  options: () => videoReq<SeriesOptions>("GET", "/series/options"),
+  list: () => videoReq<Series[]>("GET", "/series"),
+  create: (data: Partial<SeriesCreate>) => videoReq<Series>("POST", "/series", data),
+  update: (id: string, data: Partial<SeriesCreate> & { is_active?: boolean }) =>
+    videoReq<Series>("PATCH", `/series/${id}`, data),
+  remove: (id: string) => videoReq<void>("DELETE", `/series/${id}`),
+  generateNow: (id: string) => videoReq<{ status: string; publish_at: string }>("POST", `/series/${id}/generate-now`),
+  videos: (id: string) => videoReq<SeriesVideo[]>("GET", `/series/${id}/videos`),
+};
 
 export const renderApi = {
   async startRender(clipId: string, payload: RenderPayload): Promise<{ render_id: string }> {

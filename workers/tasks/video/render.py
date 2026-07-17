@@ -244,11 +244,12 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
     entry = caption_timeline[cs]
     text_color, highlight_color, ctx_alpha, font_size, bg_color = cfg
     is_capcut = style in CAPCUT_STYLES
+    family = STYLE_FAMILY.get(style, "pill")
     is_vertical = height > width
 
-    if style == "minimal":
+    if family == "minimal":
         y_base = int(height * (0.88 if is_vertical else 0.90))
-    elif style == "word-pop":
+    elif family == "pop":
         y_base = int(height * 0.48)  # one big word, centered like TikTok word-pop edits
     else:
         y_base = int(height * (0.76 if is_vertical else 0.80))
@@ -405,29 +406,32 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                                    radius=12, fill=bg_color)
             draw.text((x, ly), ln, font=font_main, fill=text_color)
 
-    if style in ("classic", "impact"):
+    if family == "outline":
         ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
-        if style == "impact":
+        if style in UPPERCASE_STYLES:
             ctx_text = ctx_text.upper()
         ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
         draw_centered_outline(ctx_text, y_base, font_main, ctx_color,
-                              stroke_width=6 if style == "impact" else 4,
+                              stroke_width=6 if font_size >= 64 else 4,
                               bg=bg_color if bg_color[3] > 0 else None)
 
-    elif style == "tiktok" and isinstance(entry[0], list):
+    elif family == "reveal" and isinstance(entry[0], list):
         words, active_idx = entry
         draw_tiktok_reveal(words, active_idx, y_base)
 
-    elif style == "word-pop" and isinstance(entry[0], list):
+    elif family == "pop" and isinstance(entry[0], list):
         words, active_idx = entry
-        draw_centered_outline(words[active_idx].upper(), y_base, font_highlight,
+        word = entry[0][active_idx]
+        if style in UPPERCASE_STYLES:
+            word = word.upper()
+        draw_centered_outline(word, y_base, font_highlight,
                               text_color, stroke_width=6)
 
-    elif style == "karaoke" and isinstance(entry[0], list):
+    elif family == "karaoke" and isinstance(entry[0], list):
         words, active_idx = entry
         draw_karaoke_line(words, active_idx, y_base)
 
-    elif style in CAPCUT_STYLES and style != "capcut":
+    elif family == "pill" and style != "capcut":
         if isinstance(entry[0], list):
             words, active_idx = entry
             if style in UPPERCASE_PILL_STYLES:
@@ -438,7 +442,7 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
             ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
             draw_centered_outline(ctx_text, y_base, font_main, ctx_color, stroke_width=5)
 
-    elif style == "minimal":
+    elif family == "minimal":
         ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
         ctx_color = (*text_color[:3], int(text_color[3] * ctx_alpha))
         font = fit_font(ctx_text, font_main, int(width * 0.92))
@@ -1795,7 +1799,7 @@ def _export_clip(
     render_captions = captions
     if burn_captions and vo_path and vo_script:
         voice_duration = _media_duration_sec(vo_path) or max(0.2, clip.end - clip.start)
-        words_per_line = 5 if style == "tiktok" else (3 if style in CAPCUT_STYLES else 6)
+        words_per_line = 5 if STYLE_FAMILY.get(style) == "reveal" else (3 if style in CAPCUT_STYLES else 6)
         render_captions = _voiceover_script_to_captions(
             vo_script,
             voice_duration_sec=voice_duration,

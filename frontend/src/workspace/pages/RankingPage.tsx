@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { videoApi, token as authToken, API_BASES } from "@/lib/api";
+import { navigate } from "@/lib/router";
+import { videoApi } from "@/lib/api";
 import type { VideoResponse, ClipApiResponse } from "@/lib/api";
 import { TrimBar } from "../components/editor/TrimBar";
-
-const VIDEO_SSE_BASE = API_BASES.video;
 
 type View = "list" | "create";
 type InputType = "url" | "upload";
@@ -80,17 +79,6 @@ const TEMPLATES: { id: TemplateId; name: string; desc: string; config: TemplateC
     },
   },
 ];
-
-interface RankingJob {
-  jobId: string;
-  videoId: string;
-  label: string;
-  progress: number;
-  status: string;
-  done: boolean;
-  failed: boolean;
-  clipUrl: string;
-}
 
 interface Segment {
   id: string;
@@ -711,7 +699,7 @@ function ColorCustomizer({
 /* ── Create view ── */
 interface CreateViewProps {
   onBack: () => void;
-  onJobCreated: () => void;
+  onJobCreated: (videoId: string) => void;
 }
 
 function RankingPhonePreview({
@@ -756,80 +744,6 @@ function RankingPhonePreview({
   );
 }
 
-function RankingJobsStrip({
-  jobs,
-  onDismiss,
-}: {
-  jobs: RankingJob[];
-  onDismiss: (jobId: string) => void;
-}) {
-  if (jobs.length === 0) return null;
-
-  return (
-    <div className="mb-5 rounded-[16px] border border-white/[.08] bg-white/[.025] p-3">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Ranking Jobs</h2>
-        <span className="text-[11px] font-medium text-zinc-600">{jobs.length} active</span>
-      </div>
-      <div className="grid gap-2">
-        {jobs.map((job) => (
-          <div key={job.jobId} className="rounded-[12px] border border-white/[.07] bg-[#0b0f17] px-3 py-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-[13px] font-bold text-white">{job.label}</p>
-                <p className="mt-0.5 text-[11px] text-zinc-500">
-                  {job.failed ? "Failed" : job.done ? "Ready" : job.status}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {!job.done && !job.failed && (
-                  <svg className="animate-spin" width="18" height="18" viewBox="0 0 20 20" fill="none">
-                    <circle cx="10" cy="10" r="8" stroke="#ff3d6a" strokeOpacity="0.25" strokeWidth="2.5" />
-                    <path d="M10 2a8 8 0 0 1 8 8" stroke="#ff3d6a" strokeWidth="2.5" strokeLinecap="round" />
-                  </svg>
-                )}
-                {job.done && !job.failed && (
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                    <circle cx="10" cy="10" r="9" fill="#34d399" fillOpacity="0.15" />
-                    <polyline points="5.5 10.5 8.5 13.5 14.5 7.5" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-                {job.failed && (
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                    <circle cx="10" cy="10" r="9" fill="#f87171" fillOpacity="0.15" />
-                    <path d="M7 7l6 6M13 7l-6 6" stroke="#f87171" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                )}
-                {job.done && job.clipUrl && (
-                  <a href={job.clipUrl} target="_blank" rel="noreferrer"
-                    className="rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#e8304f]">
-                    View
-                  </a>
-                )}
-                <button
-                  onClick={() => onDismiss(job.jobId)}
-                  className="grid h-7 w-7 place-items-center rounded-[8px] text-zinc-600 transition hover:bg-white/[.05] hover:text-zinc-300"
-                  aria-label={`Dismiss ${job.label}`}
-                >
-                  x
-                </button>
-              </div>
-            </div>
-            {!job.done && !job.failed && (
-              <div className="mt-2">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[.06]">
-                  <div className="h-full rounded-full bg-[#ff3d6a] transition-all duration-500" style={{ width: `${job.progress}%` }} />
-                </div>
-                <p className="mt-1 text-right text-[10px] font-semibold text-zinc-500">{job.progress}%</p>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function CreateView({ onBack, onJobCreated }: CreateViewProps) {
   const [segments, setSegments] = useState<Segment[]>(() => [newSegment(), newSegment()]);
   const [title, setTitle] = useState("");
@@ -839,12 +753,8 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
-  const [jobs, setJobs] = useState<RankingJob[]>([]);
   const [builderStep, setBuilderStep] = useState<BuilderStep>("sources");
   const [expandedSegmentId, setExpandedSegmentId] = useState<string>(() => segments[0]?.id ?? "");
-
-  const updateJob = (jobId: string, patch: Partial<RankingJob>) =>
-    setJobs((prev) => prev.map((j) => (j.jobId === jobId ? { ...j, ...patch } : j)));
 
   const updateSeg = (id: string, patch: Partial<Segment>) =>
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -1008,69 +918,13 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
         ),
       };
       const res = await videoApi.createRanking(payload);
-      const newJob: RankingJob = {
-        jobId: res.job_id,
-        videoId: res.video_id,
-        label: title || "Top Ranking",
-        progress: 0,
-        status: "Starting…",
-        done: false,
-        failed: false,
-        clipUrl: "",
-      };
-      setJobs((prev) => [newJob, ...prev]);
-      onJobCreated();
       setGenerating(false);
+      onJobCreated(res.video_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate ranking");
       setGenerating(false);
     }
   };
-
-  // SSE subscriptions
-  useEffect(() => {
-    const t = authToken.get() || "";
-    if (!t) return;
-    const activeJobs = jobs.filter((j) => !j.done && !j.failed);
-    if (activeJobs.length === 0) return;
-
-    const cleanups = activeJobs.map((job) => {
-      const es = new EventSource(
-        `${VIDEO_SSE_BASE}/progress/${job.jobId}?token=${encodeURIComponent(t)}`
-      );
-      es.onmessage = (e) => {
-        try {
-          const d = JSON.parse(e.data);
-          if (d.type === "keepalive") return;
-          const patch: Partial<RankingJob> = {};
-          if (d.message) patch.status = d.message;
-          if (d.pct != null) patch.progress = d.pct;
-          const finished = d.status === "complete" || d.step === "done" || d.pct === 100;
-          if (finished) {
-            patch.progress = 100;
-            es.close();
-            videoApi.clips(job.videoId)
-              .then((r) => {
-                const url = r.items.find((c) => c.storage_url)?.storage_url ?? "";
-                updateJob(job.jobId, { done: true, clipUrl: url, progress: 100 });
-              })
-              .catch(() => updateJob(job.jobId, { done: true }));
-          }
-          if (d.status === "failed") {
-            patch.failed = true;
-            patch.status = d.message || "Failed";
-            es.close();
-          }
-          if (Object.keys(patch).length) updateJob(job.jobId, patch);
-        } catch { /* ignore */ }
-      };
-      es.onerror = () => es.close();
-      return () => es.close();
-    });
-
-    return () => cleanups.forEach((fn) => fn());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobs.map((j) => j.jobId).join(",")]);
 
   const accent = templateConfig.accentColor;
   const currentStepIndex = BUILDER_STEPS.findIndex((step) => step.id === builderStep);
@@ -1397,11 +1251,6 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
 
   return (
     <div className="mx-auto w-full max-w-[1240px] px-4 py-6">
-      <RankingJobsStrip
-        jobs={jobs}
-        onDismiss={(jobId) => setJobs((prev) => prev.filter((j) => j.jobId !== jobId))}
-      />
-
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <button
@@ -1472,7 +1321,7 @@ export function RankingPage() {
   ) : (
     <CreateView
       onBack={() => setView("list")}
-      onJobCreated={() => setView("list")}
+      onJobCreated={(videoId) => navigate(`/projects/${videoId}`)}
     />
   );
 }

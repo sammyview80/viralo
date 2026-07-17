@@ -52,6 +52,20 @@ export const CAPTION_STYLES: CaptionStyleOption[] = [
   { id:"classic",     label:"Classic",      desc:"White subtitles, black outline",   family:"outline", highlight:"#ffffff" },
   { id:"impact",      label:"Impact",       desc:"Huge meme-style outlined caps",    family:"outline", highlight:"#ffffff", uppercase:true },
   { id:"minimal",     label:"Minimal",      desc:"Clean lower-third, no outline",    family:"minimal", highlight:"#ffffff" },
+  { id:"sunset",       label:"Sunset",        desc:"Word pills, hot-pink highlight",    family:"pill",    highlight:"#ff5e7e" },
+  { id:"royal",        label:"Royal",         desc:"Word pills, purple highlight",      family:"pill",    highlight:"#a855f7" },
+  { id:"ocean",        label:"Ocean",         desc:"Word pills, sky-blue highlight",    family:"pill",    highlight:"#38bdf8" },
+  { id:"bubble",       label:"Bubble",        desc:"Playful pink pills, no band",       family:"pill",    highlight:"#ff7ad9" },
+  { id:"banger",       label:"Banger",        desc:"Bold caps pills, orange highlight", family:"pill",    highlight:"#ff8a00", uppercase:true },
+  { id:"money",        label:"Money",         desc:"Bold caps pills, green highlight",  family:"pill",    highlight:"#22c55e", uppercase:true },
+  { id:"reveal-light", label:"Reveal Light",  desc:"Words appear, white box",           family:"reveal",  highlight:"#ffffff" },
+  { id:"podcast",      label:"Podcast",       desc:"Big words on dark studio box",      family:"reveal",  highlight:"#ffffff" },
+  { id:"pop-yellow",   label:"Pop Yellow",    desc:"One big yellow word at a time",     family:"pop",     highlight:"#ffe600", uppercase:true },
+  { id:"pop-red",      label:"Pop Red",       desc:"One big red word at a time",        family:"pop",     highlight:"#ff2d2d", uppercase:true },
+  { id:"karaoke-green",label:"Karaoke Green", desc:"Full line, green word sweep",       family:"karaoke", highlight:"#39ff14" },
+  { id:"karaoke-cyan", label:"Karaoke Cyan",  desc:"Full line, cyan word sweep",        family:"karaoke", highlight:"#00e5ff" },
+  { id:"comic",        label:"Comic",         desc:"Yellow caps, thick black outline",  family:"outline", highlight:"#ffe600", uppercase:true },
+  { id:"cinema",       label:"Cinema",        desc:"Subtle subtitles on dark band",     family:"outline", highlight:"#ffffff" },
 ];
 
 /* ─── Pipeline step label mapping ─── */
