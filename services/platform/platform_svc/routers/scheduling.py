@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.deps import get_current_user, get_tenant_db
@@ -89,7 +89,8 @@ async def create_scheduled_post(
             SocialAccount.is_active == True,
         )
     )
-    if not account_result.scalar_one_or_none():
+    account = account_result.scalar_one_or_none()
+    if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Social account not found.")
 
     clip_storage_url = await _resolve_clip_storage_url(db, body.clip_id, tenant_id)
@@ -101,7 +102,7 @@ async def create_scheduled_post(
         tenant_id=tenant_id,
         clip_id=body.clip_id,
         social_account_id=body.social_account_id,
-        platform=body.platform.lower(),
+        platform=account.platform,
         status="scheduled",
         scheduled_at=body.scheduled_at,
         caption=body.caption,
@@ -126,11 +127,14 @@ async def publish_post_now(
     from celery import Celery
 
     result = await db.execute(
-        select(ScheduledPost).where(
+        update(ScheduledPost).where(
             ScheduledPost.id == post_id,
             ScheduledPost.tenant_id == uuid.UUID(token.tenant_id),
             ScheduledPost.status.in_(["scheduled", "pending", "failed"]),
-        )
+        ).values(
+            status="processing",
+            scheduled_at=datetime.now(timezone.utc),
+        ).returning(ScheduledPost)
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -143,10 +147,7 @@ async def publish_post_now(
     if not post.clip_storage_url and post.clip_id:
         post.clip_storage_url = await _resolve_clip_storage_url(db, post.clip_id, uuid.UUID(token.tenant_id))
 
-    post.status = "processing"
-    post.scheduled_at = datetime.now(timezone.utc)
     await db.commit()
-    await db.refresh(post)
 
     # Enqueue directly — don't wait for beat
     broker_url = os.getenv("CELERY_BROKER_URL", os.getenv("RABBITMQ_URL", "amqp://viralo:viralo@rabbitmq:5672//"))

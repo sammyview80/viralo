@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,21 +64,34 @@ class SeriesCreate(BaseModel):
     caption_style: str = Field(default="capcut", max_length=32)
     effects: dict = Field(default_factory=dict)
     duration_sec: int = Field(default=65, ge=30, le=180)
-    social_account_ids: list[str] = Field(default_factory=list)
+    social_account_ids: list[uuid.UUID] = Field(default_factory=list)
     publish_time: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
     cadence: Literal["daily", "3x_week", "weekly"] = "daily"
     auto_publish: bool = True
+
+    @field_validator("publish_time")
+    @classmethod
+    def validate_publish_time(cls, value: str) -> str:
+        datetime.strptime(value, "%H:%M")
+        return value
 
 
 class SeriesUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
-    social_account_ids: list[str] | None = None
+    social_account_ids: list[uuid.UUID] | None = None
     publish_time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     cadence: Literal["daily", "3x_week", "weekly"] | None = None
     auto_publish: bool | None = None
     music_track: str | None = None
     caption_style: str | None = None
+
+    @field_validator("publish_time")
+    @classmethod
+    def validate_publish_time(cls, value: str | None) -> str | None:
+        if value is not None:
+            datetime.strptime(value, "%H:%M")
+        return value
 
 
 def _next_run_at(cadence: str, publish_time: str) -> datetime:
@@ -147,7 +160,8 @@ async def create_series(
          "cp": body.custom_prompt, "ex": body.example_script, "lang": body.language,
          "voice": body.voice, "music": body.music_track, "art": body.art_style,
          "cap": body.caption_style, "fx": json.dumps(body.effects), "dur": body.duration_sec,
-         "accts": json.dumps(body.social_account_ids), "pt": body.publish_time,
+         "accts": json.dumps([str(account_id) for account_id in body.social_account_ids]),
+         "pt": body.publish_time,
          "cad": body.cadence, "ap": body.auto_publish, "next_run": next_run},
     )
     await db.commit()
@@ -169,7 +183,7 @@ async def update_series(
     for k, v in updates.items():
         if k == "social_account_ids":
             sets.append("social_account_ids = CAST(:accts AS jsonb)")
-            params["accts"] = json.dumps(v)
+            params["accts"] = json.dumps([str(account_id) for account_id in v])
         else:
             sets.append(f"{k} = :{k}")
             params[k] = v
@@ -246,11 +260,15 @@ async def series_videos(
                   AND v.metadata->>'series_id' = :sid
                 ORDER BY v.created_at DESC LIMIT 100"""),
         {"tid": token.tenant_id, "sid": str(series_id)})).fetchall()
+    from video.schemas import sign_media_url
+
     out = []
     for r in rows:
         d = dict(r._mapping)
         d["id"] = str(d["id"])
         d["clip_id"] = str(d["clip_id"]) if d["clip_id"] else None
         d["created_at"] = d["created_at"].isoformat() if d["created_at"] else None
+        for key in ("thumbnail_url", "storage_url", "clip_thumb"):
+            d[key] = sign_media_url(d.get(key))
         out.append(d)
     return out

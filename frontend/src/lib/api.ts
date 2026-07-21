@@ -390,6 +390,10 @@ export interface YouTubeFormatsResponse {
 }
 
 export const videoApi = {
+  progressStream: async (jobId: string) => {
+    const { ticket } = await videoReq<{ ticket: string }>("POST", `/progress/${jobId}/ticket`);
+    return new EventSource(`${API_BASES.video}/progress/${jobId}?ticket=${encodeURIComponent(ticket)}`);
+  },
   captionStyles: () => videoReq<CaptionStyleInfo[]>("GET", "/caption-styles"),
   upload: (file: File, title: string, config?: ClipConfig) => {
     const fd = new FormData();

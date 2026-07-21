@@ -230,23 +230,54 @@ def _engine():
 def process_due_series() -> dict:
     """Beat task: enqueue generation for every active series whose run is due."""
     now = datetime.now(timezone.utc)
-    launched = 0
+    claimed = []
     with Session(_engine()) as db:
         rows = db.execute(
-            text("""SELECT id, tenant_id, cadence, publish_time FROM series
-                    WHERE is_active = true AND next_run_at IS NOT NULL AND next_run_at <= :now"""),
+            text("""SELECT id, tenant_id, cadence, publish_time, next_run_at, dispatch_pending_at
+                    FROM series
+                    WHERE is_active = true AND (
+                        dispatch_pending_at IS NOT NULL
+                        OR (next_run_at IS NOT NULL AND next_run_at <= :now)
+                    )
+                    FOR UPDATE SKIP LOCKED"""),
             {"now": now},
         ).fetchall()
         for row in rows:
-            publish_at = _next_publish_at(row.cadence, row.publish_time, now)
-            db.execute(
-                text("""UPDATE series SET last_run_at = :now,
-                        next_run_at = :next, updated_at = now() WHERE id = :id"""),
-                {"now": now, "next": publish_at - timedelta(hours=GENERATION_LEAD_HOURS), "id": row.id},
-            )
-            generate_series_video.delay(str(row.id), publish_at.isoformat())
-            launched += 1
+            publish_at = row.dispatch_pending_at or _next_publish_at(row.cadence, row.publish_time, now)
+            if row.dispatch_pending_at is None:
+                next_run_at = (
+                    publish_at
+                    + timedelta(days=CADENCE_DAYS.get(row.cadence, 1))
+                    - timedelta(hours=GENERATION_LEAD_HOURS)
+                )
+                db.execute(
+                    text("""UPDATE series SET last_run_at = :now,
+                            next_run_at = :next, dispatch_pending_at = :publish_at,
+                            updated_at = now() WHERE id = :id"""),
+                    {"now": now, "next": next_run_at, "publish_at": publish_at, "id": row.id},
+                )
+            else:
+                next_run_at = row.next_run_at
+            claimed.append((row.id, publish_at, next_run_at))
         db.commit()
+
+    launched = 0
+    for series_id, publish_at, next_run_at in claimed:
+        try:
+            task_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"viralo-series:{series_id}:{publish_at.isoformat()}"))
+            generate_series_video.apply_async(
+                args=[str(series_id), publish_at.isoformat()], task_id=task_id
+            )
+            with Session(_engine()) as db:
+                db.execute(
+                    text("""UPDATE series SET dispatch_pending_at = NULL, updated_at = now()
+                            WHERE id = :id AND dispatch_pending_at = :publish_at"""),
+                    {"id": series_id, "publish_at": publish_at},
+                )
+                db.commit()
+            launched += 1
+        except Exception:
+            logging.exception("process_due_series: enqueue failed for series %s", series_id)
     if launched:
         logging.info("process_due_series: launched %d generation jobs", launched)
     return {"launched": launched}
@@ -375,7 +406,7 @@ def _words_from_scenes(scenes: list[dict], scene_durations: list[float]) -> list
                  soft_time_limit=1500, time_limit=1800, max_retries=1)
 def generate_series_video(self, series_id: str, publish_at_iso: str | None = None) -> dict:
     """Generate one faceless video for a series and (optionally) schedule posts."""
-    from workers.tasks.video._core import VideoMeta, ClipResult
+    from workers.tasks.video._core import ClipResult, VideoMeta, _get_session
     from workers.tasks.video.render import (
         _generate_captions, _export_clip, _mix_audio_tracks, _media_duration_sec,
     )
@@ -388,19 +419,19 @@ def generate_series_video(self, series_id: str, publish_at_iso: str | None = Non
         raise RuntimeError(f"series {series_id} not found")
     series = dict(row)
     tenant_id = str(series["tenant_id"])
-    video_id = str(uuid.uuid4())
+    run_key = f"{series_id}:{publish_at_iso or 'manual'}"
+    video_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"viralo-series-run:{run_key}"))
     work_dir = Path(os.getenv("VIDEO_TEMP_DIR", "/tmp/viralo-video")) / f"series_{video_id}"
     work_dir.mkdir(parents=True, exist_ok=True)
 
     def _set_status(status: str, **extra):
         sets = ", ".join(f"{k} = :{k}" for k in extra)
-        with Session(_engine()) as db:
+        with _get_session(tenant_id) as db:
             db.execute(
                 text(f"UPDATE videos SET status = :st{', ' + sets if sets else ''}, updated_at = now() "
                      "WHERE id = CAST(:vid AS uuid)"),
                 {"st": status, "vid": video_id, **extra},
             )
-            db.commit()
 
     try:
         # 1. Script
@@ -408,20 +439,46 @@ def generate_series_video(self, series_id: str, publish_at_iso: str | None = Non
         scenes = script["scenes"]
         full_script = " ".join(s["narration"].strip() for s in scenes)
 
-        with Session(_engine()) as db:
-            db.execute(
+        with _get_session(tenant_id) as db:
+            inserted = db.execute(
                 text("""INSERT INTO videos (id, tenant_id, title, topic, source_type, status,
-                                            pipeline_step, script_text, metadata, created_at, updated_at)
+                                            pipeline_step, script_text, metadata, series_run_key,
+                                            created_at, updated_at)
                         VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), :title, :topic, 'series',
-                                'processing', 'generate', :script, CAST(:meta AS jsonb), now(), now())"""),
+                                'processing', 'generate', :script, CAST(:meta AS jsonb), :run_key,
+                                now(), now())
+                        ON CONFLICT (series_run_key) DO NOTHING
+                        RETURNING id"""),
                 {"id": video_id, "tid": tenant_id, "title": (script.get("title") or series["name"])[:255],
                  "topic": series["niche"], "script": full_script,
+                 "run_key": run_key,
                  "meta": json.dumps({"series_id": series_id,
                                      "publish_at": publish_at_iso,
                                      "description": script.get("description", ""),
                                      "hashtags": script.get("hashtags", [])})},
             )
-            db.commit()
+            if inserted.scalar_one_or_none() is None:
+                reclaimed = db.execute(
+                    text("""UPDATE videos
+                            SET status = 'processing', pipeline_step = 'generate',
+                                script_text = :script, metadata = CAST(:meta AS jsonb),
+                                error_message = NULL, updated_at = now()
+                            WHERE series_run_key = :run_key AND status = 'failed'
+                            RETURNING id"""),
+                    {"run_key": run_key, "script": full_script,
+                     "meta": json.dumps({"series_id": series_id, "publish_at": publish_at_iso})},
+                ).scalar_one_or_none()
+                if reclaimed is None:
+                    return {"skipped": True, "reason": "series run already active or complete"}
+                db.execute(
+                    text("""DELETE FROM scheduled_posts WHERE clip_id IN
+                            (SELECT id FROM clips WHERE video_id = CAST(:vid AS uuid))"""),
+                    {"vid": video_id},
+                )
+                db.execute(
+                    text("DELETE FROM clips WHERE video_id = CAST(:vid AS uuid)"),
+                    {"vid": video_id},
+                )
 
         # 2. Per-scene TTS + image + Ken-Burns clip
         voice = series.get("voice") or "en-US-GuyNeural"
@@ -481,22 +538,27 @@ def generate_series_video(self, series_id: str, publish_at_iso: str | None = Non
         from workers.tasks.video.tasks import upload_clip_to_storage
         upload_clip_to_storage.delay(clip_id, clip_path, tenant_id, "")
 
-        _set_status("completed", pipeline_step="completed", duration_sec=int(total))
-
         # 6. Schedule posts on the connected accounts at publish time
         posts = 0
-        account_ids = [a for a in (series.get("social_account_ids") or []) if a]
+        try:
+            account_ids = [
+                str(uuid.UUID(str(account_id)))
+                for account_id in (series.get("social_account_ids") or [])
+                if account_id
+            ]
+        except (TypeError, ValueError):
+            logging.warning("series %s has an invalid social account id; skipping auto-publish", series_id)
+            account_ids = []
         if series.get("auto_publish") and account_ids and publish_at_iso:
             publish_at = datetime.fromisoformat(publish_at_iso)
             caption_text = (script.get("description") or script.get("title") or "")[:2000]
             hashtags = script.get("hashtags") or []
-            with Session(_engine()) as db:
-                id_list = ",".join(f"'{a}'" for a in account_ids)
+            with _get_session(tenant_id) as db:
                 accounts = db.execute(
-                    text(f"""SELECT id, platform FROM social_accounts
+                    text("""SELECT id, platform FROM social_accounts
                              WHERE tenant_id = CAST(:tid AS uuid) AND is_active = true
-                               AND id IN ({id_list})"""),
-                    {"tid": tenant_id},
+                               AND id = ANY(CAST(:account_ids AS uuid[]))"""),
+                    {"tid": tenant_id, "account_ids": account_ids},
                 ).fetchall()
                 for acct_id, platform in accounts:
                     db.execute(
@@ -510,7 +572,8 @@ def generate_series_video(self, series_id: str, publish_at_iso: str | None = Non
                          "tags": json.dumps(hashtags)},
                     )
                     posts += 1
-                db.commit()
+
+        _set_status("completed", pipeline_step="completed", duration_sec=int(total))
 
         logging.info("generate_series_video: series=%s video=%s clip=%s posts=%d",
                      series_id, video_id, clip_id, posts)

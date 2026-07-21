@@ -255,7 +255,7 @@ export function ProjectsPage() {
     for (const video of inProgress) {
       const tid = video.celery_task_id!;
       if (sseRef.current.has(tid)) continue;
-      const es = new EventSource(`${VIDEO_SSE_BASE}/progress/${tid}?token=${encodeURIComponent(t)}`);
+      void videoApi.progressStream(tid).then((es) => {
       es.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data);
@@ -278,6 +278,7 @@ export function ProjectsPage() {
       };
       es.onerror = () => { es.close(); sseRef.current.delete(tid); };
       sseRef.current.set(tid, es);
+      }).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useMemo(() => history.map((v) => `${v.id}:${v.status}:${v.celery_task_id}`).join(","), [history])]);

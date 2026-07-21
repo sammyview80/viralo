@@ -1,9 +1,15 @@
 import os
+import hashlib
+import hmac
+import time
 import aiofiles
 from pathlib import Path
+from urllib.parse import quote
 from shared.storage.base import StorageAdapter
+from shared.config import settings
 
 LOCAL_STORAGE_DIR = os.getenv("LOCAL_STORAGE_DIR", "/tmp/viralo-storage")
+LOCAL_STORAGE_URL_TTL_SECONDS = int(os.getenv("LOCAL_STORAGE_URL_TTL_SECONDS", "3600"))
 
 
 def _safe_local_path(path: str) -> Path:
@@ -15,6 +21,28 @@ def _safe_local_path(path: str) -> Path:
     if target != base and base not in target.parents:
         raise ValueError("Storage path escapes local storage root")
     return target
+
+
+def sign_local_url(path: str, expires_in: int = LOCAL_STORAGE_URL_TTL_SECONDS, now: int | None = None) -> str:
+    relative = path.removeprefix("/storage/").lstrip("/")
+    _safe_local_path(relative)
+    expires = (int(time.time()) if now is None else now) + expires_in
+    payload = f"{relative}\n{expires}".encode()
+    signature = hmac.new(settings.secret_key.encode(), payload, hashlib.sha256).hexdigest()
+    return f"/storage/{quote(relative, safe='/')}?expires={expires}&sig={signature}"
+
+
+def verify_local_url(path: str, expires: int, signature: str, now: int | None = None) -> bool:
+    if expires < (int(time.time()) if now is None else now):
+        return False
+    relative = path.lstrip("/")
+    try:
+        _safe_local_path(relative)
+    except ValueError:
+        return False
+    payload = f"{relative}\n{expires}".encode()
+    expected = hmac.new(settings.secret_key.encode(), payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 class LocalStorageAdapter(StorageAdapter):
@@ -33,8 +61,7 @@ class LocalStorageAdapter(StorageAdapter):
         return f"/storage/{path.lstrip('/')}"
 
     async def get_signed_url(self, path: str, expires_in: int = 3600) -> str:
-        _safe_local_path(path)
-        return f"/storage/{path.lstrip('/')}"
+        return sign_local_url(path, expires_in)
 
     async def delete(self, path: str) -> None:
         full_path = _safe_local_path(path)

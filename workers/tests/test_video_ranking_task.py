@@ -150,7 +150,7 @@ def test_reconciler_does_not_fail_queued_ranking_jobs(monkeypatch):
 
         def fetchall(self):
             base = ("video-id", "tenant-id", None, {}, "queued", 0)
-            return [(*base, "ranking")] if "source_type" in self.statement else [base]
+            return [(*base, "ranking", {})] if "source_type" in self.statement else [base]
 
     class Session:
         def __enter__(self):

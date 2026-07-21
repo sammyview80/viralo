@@ -63,7 +63,6 @@ class OAuthConnectResponse(BaseModel):
 class ScheduledPostCreate(BaseModel):
     clip_id: uuid.UUID
     social_account_id: uuid.UUID
-    platform: str
     scheduled_at: datetime
     caption: str | None = None
     hashtags: list[str] | None = None

@@ -721,8 +721,7 @@ export function ClipsPage() {
     for (const videoId of pendingVideoIds) {
       if (sseSourcesRef.current.has(videoId)) continue; // already subscribed
 
-      const url = `${VIDEO_SSE_BASE}/progress/${videoId}?token=${encodeURIComponent(authToken)}`;
-      const es = new EventSource(url);
+      void videoApi.progressStream(videoId).then((es) => {
 
       es.onmessage = (e) => {
         try {
@@ -753,6 +752,7 @@ export function ClipsPage() {
       };
 
       sseSourcesRef.current.set(videoId, es);
+      }).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useMemo(() => clips.map((c) => `${c.id}:${c.status}`).join(","), [clips])]);
@@ -1282,5 +1282,4 @@ export function ClipsPage() {
     </>
   );
 }
-
 

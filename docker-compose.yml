@@ -1,14 +1,7 @@
-version: "3.9"
-
 x-service-defaults: &service-defaults
   networks:
     - viralo-internal
   restart: unless-stopped
-  # Warm-shutdown window: on `restart`/`stop`/deploy, Docker sends SIGTERM and waits
-  # this long before SIGKILL. Lets a Celery worker finish a short in-flight task
-  # (download/transcribe) cleanly instead of being killed mid-task at the 10s default.
-  # Longer renders that exceed this are SIGKILLed and safely requeued
-  # (task_reject_on_worker_lost) + caught by reconcile_stuck_videos.
   stop_grace_period: 120s
   env_file:
     - .env
@@ -25,29 +18,27 @@ x-healthcheck-defaults: &healthcheck-defaults
   start_period: 30s
 
 services:
-  # ── Infrastructure ────────────────────────────────────────────────────────
-
   postgres:
     <<: *service-defaults
     image: postgres:16-alpine
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-viralo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viralo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: viralo
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "pg_isready -U viralo"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
 
   redis:
     <<: *service-defaults
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     mem_limit: 256m
     memswap_limit: 256m
     volumes:
@@ -60,13 +51,13 @@ services:
     <<: *service-defaults
     image: rabbitmq:3-management-alpine
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     mem_limit: 1g
     memswap_limit: 1g
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-viralo}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-viralo}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS}
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit consumer_timeout 10800000"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
@@ -77,8 +68,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-
-
   frontend:
     <<: *service-defaults
     build:
@@ -104,15 +93,13 @@ services:
       <<: *healthcheck-defaults
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
 
-  # ── API Services ──────────────────────────────────────────────────────────
-
   core-service:
     <<: *service-defaults
     build:
       context: .
       dockerfile: services/core/Dockerfile
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
@@ -130,16 +117,13 @@ services:
       context: .
       dockerfile: services/video/Dockerfile
     ports:
-      - "8003:8003"
-    # 2g: the /youtube/formats probe runs yt-dlp + a Deno n-challenge solver
-    # in-process; Deno's V8 was OOM-killed (SIGKILL -9) under the old 512m cap.
+      - "127.0.0.1:8003:8003"
     mem_limit: 2g
     memswap_limit: 2g
     environment:
       YTDLP_COOKIES_FILE: /app/yt-cookies.txt
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_PROXY_LIST: ${YTDLP_PROXY_LIST:-}
-      # /youtube/formats probes yt-dlp in-process; needs the PO-token server like the workers.
       BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
     volumes:
       - video-temp:/tmp/viralo-video
@@ -163,7 +147,7 @@ services:
       context: .
       dockerfile: services/agent/Dockerfile
     ports:
-      - "8004:8004"
+      - "127.0.0.1:8004:8004"
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
@@ -183,7 +167,7 @@ services:
       context: .
       dockerfile: services/workflow/Dockerfile
     ports:
-      - "8005:8005"
+      - "127.0.0.1:8005:8005"
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
@@ -203,7 +187,7 @@ services:
       context: .
       dockerfile: services/platform/Dockerfile
     ports:
-      - "8006:8006"
+      - "127.0.0.1:8006:8006"
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:
@@ -217,9 +201,6 @@ services:
       <<: *healthcheck-defaults
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8006/health')\""]
 
-  # ── Workers ───────────────────────────────────────────────────────────────
-
-  # PO Token provider — yt-dlp web/tv/mweb clients need PO tokens to return formats.
   bgutil-pot:
     image: brainicism/bgutil-ytdlp-pot-provider:1.3.1
     restart: unless-stopped
@@ -228,7 +209,6 @@ services:
     expose:
       - "4416"
     healthcheck:
-      # image has only node — no curl/wget
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4416/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
@@ -478,15 +458,14 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── Dev Tools ─────────────────────────────────────────────────────────────
-
   flower:
     <<: *service-defaults
     image: mher/flower:2.0
+    profiles: ["dev"]
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     environment:
-      CELERY_BROKER_URL: ${RABBITMQ_URL:-amqp://viralo:viralo@rabbitmq:5672//}
+      CELERY_BROKER_URL: ${RABBITMQ_URL:?set RABBITMQ_URL}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -494,11 +473,12 @@ services:
   pgadmin:
     <<: *service-defaults
     image: dpage/pgadmin4:latest
+    profiles: ["dev"]
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@viralo.dev
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:?set PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?set PGADMIN_PASSWORD}
 
 networks:
   viralo-internal:

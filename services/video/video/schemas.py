@@ -3,7 +3,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any, Literal, get_args
+from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from shared.storage.local import sign_local_url
+
+
+def sign_media_url(value: str | None) -> str | None:
+    if value and value.startswith("/storage/"):
+        return sign_local_url(urlsplit(value).path)
+    return value
 
 EditorCaptionTemplate = Literal[
     "default",
@@ -137,6 +145,8 @@ class VideoResponse(BaseModel):
     created_at: Any
     model_config = {"from_attributes": True}
 
+    _sign_media = field_validator("storage_url", "thumbnail_url", mode="before")(sign_media_url)
+
     @field_validator("clip_config", mode="before")
     @classmethod
     def hide_destination_config(cls, value: Any) -> Any:
@@ -165,6 +175,10 @@ class ClipResponse(BaseModel):
     upscaled_storage_url: str | None = None
     created_at: Any
     model_config = {"from_attributes": True}
+
+    _sign_media = field_validator(
+        "storage_url", "thumbnail_url", "upscaled_storage_url", mode="before"
+    )(sign_media_url)
 
 
 class ClipPatchRequest(BaseModel):
@@ -227,6 +241,8 @@ class RenderStatusResponse(BaseModel):
     download_url: str | None = None
     error_message: str | None = None
     created_at: str
+
+    _sign_media = field_validator("download_url", mode="before")(sign_media_url)
 
 
 class VideoListResponse(BaseModel):
@@ -311,6 +327,8 @@ class SearchVideoHit(BaseModel):
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+    _sign_media = field_validator("thumbnail_url", mode="before")(sign_media_url)
+
 
 class SearchClipHit(BaseModel):
     type: Literal["clip"] = "clip"
@@ -323,6 +341,8 @@ class SearchClipHit(BaseModel):
     thumbnail_url: str | None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+    _sign_media = field_validator("thumbnail_url", mode="before")(sign_media_url)
 
 
 class SearchResponse(BaseModel):

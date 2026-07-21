@@ -566,31 +566,37 @@ async def import_youtube(
 # SSE progress stream
 # ---------------------------------------------------------------------------
 
-@router.get("/progress/{job_id}")
-async def video_progress(
+@router.post("/progress/{job_id}/ticket")
+async def create_progress_ticket(
     job_id: str,
-    token: str | None = Query(None, alias="token"),
+    token: TokenPayload = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db_no_rls),
 ):
-    # EventSource cannot send custom headers; accept token as query param.
-    # Treat it as a short-lived bearer and still enforce tenant ownership of the job.
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
-    try:
-        payload = _decode_access_token(token)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    import secrets
 
     owner = await db.execute(
         select(Video.id).where(
             Video.celery_task_id == job_id,
-            Video.tenant_id == uuid.UUID(payload.tenant_id),
+            Video.tenant_id == uuid.UUID(token.tenant_id),
             Video.status != "deleted",
         )
     )
     if owner.scalar_one_or_none() is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        raise HTTPException(status_code=404, detail="Job not found")
+    ticket = secrets.token_urlsafe(32)
+    await redis.setex(f"progress_ticket:{ticket}", 60, job_id)
+    return {"ticket": ticket}
+
+@router.get("/progress/{job_id}")
+async def video_progress(
+    job_id: str,
+    ticket: str | None = Query(None),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    claimed_job = await redis.getdel(f"progress_ticket:{ticket}") if ticket else None
+    if claimed_job != job_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid stream ticket")
 
     async def event_generator():
         import time as _time

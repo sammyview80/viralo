@@ -1,14 +1,5 @@
-"""
-WebSub webhook endpoints.
-
-GET  /api/v1/websub/callback/{channel_id}  — hub verification challenge
-POST /api/v1/websub/callback/{channel_id}  — incoming YouTube push notification
-
-GET  /api/v1/websub/channels               — list subscribed channels
-POST /api/v1/websub/channels               — subscribe to a channel
-DELETE /api/v1/websub/channels/{channel_id} — unsubscribe
-"""
 import logging
+import re
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
@@ -30,10 +21,23 @@ from workers.tasks.websub import (
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["websub"])
+MAX_WEBSUB_BODY_BYTES = 256 * 1024
 
-# ---------------------------------------------------------------------------
-# Hub verification + push receiver
-# ---------------------------------------------------------------------------
+
+async def _read_websub_body(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared:
+        try:
+            if int(declared) > MAX_WEBSUB_BODY_BYTES:
+                raise HTTPException(status_code=413, detail="WebSub payload too large")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_WEBSUB_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="WebSub payload too large")
+    return bytes(body)
 
 @router.get("/websub/callback/{channel_id}", include_in_schema=False)
 async def websub_verify(
@@ -49,22 +53,21 @@ async def websub_verify(
     if not hub_challenge:
         raise HTTPException(status_code=400, detail="Missing hub.challenge")
     log.info("WebSub verify: mode=%s channel=%s", hub_mode, channel_id)
-    # Echo challenge back — confirms we own this callback URL
     return Response(content=hub_challenge, media_type="text/plain")
 
 
 @router.post("/websub/callback/{channel_id}", include_in_schema=False)
 async def websub_push(channel_id: str, request: Request):
     """Receive YouTube push notification for new video."""
-    body = await request.body()
+    if not re.fullmatch(r"UC[\w-]{22}", channel_id):
+        raise HTTPException(status_code=400, detail="Invalid channel ID")
+    body = await _read_websub_body(request)
 
-    # Verify HMAC signature
     sig_header = request.headers.get("X-Hub-Signature", "")
-    if WEBSUB_SECRET and not verify_websub_signature(body, sig_header):
+    if not verify_websub_signature(body, sig_header):
         log.warning("WebSub: invalid signature for channel %s", channel_id)
         raise HTTPException(status_code=403, detail="Invalid signature")
 
-    # Parse Atom feed XML to extract video ID and URL
     try:
         root = ET.fromstring(body.decode("utf-8"))
         ns = {
@@ -77,14 +80,11 @@ async def websub_push(channel_id: str, request: Request):
             return Response(status_code=200)
 
         video_id_el = entry.find("yt:videoId", ns)
-        link_el = entry.find("atom:link", ns)
-
         video_id = video_id_el.text.strip() if video_id_el is not None else ""
-        video_url = link_el.get("href", "") if link_el is not None else f"https://www.youtube.com/watch?v={video_id}"
-
-        if not video_id:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
             log.warning("WebSub: could not extract video_id from push for channel %s", channel_id)
             return Response(status_code=200)
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
 
         log.info("WebSub push: channel=%s video=%s url=%s", channel_id, video_id, video_url)
 
@@ -92,17 +92,12 @@ async def websub_push(channel_id: str, request: Request):
         log.error("WebSub: XML parse error for channel %s: %s", channel_id, e)
         return Response(status_code=200)  # Always 200 to prevent hub retries on our parse errors
 
-    # Dispatch to Celery — return 200 immediately so hub doesn't retry
     process_websub_notification.apply_async(
         args=[channel_id, video_id, video_url, body.decode("utf-8", errors="replace")],
         queue="viralo.post.publish",
     )
     return Response(status_code=200)
 
-
-# ---------------------------------------------------------------------------
-# Channel subscription management (authenticated)
-# ---------------------------------------------------------------------------
 
 from pydantic import BaseModel
 

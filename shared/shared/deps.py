@@ -25,6 +25,7 @@ async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    redis: aioredis.Redis = Depends(get_redis),
 ) -> TokenPayload:
     token = credentials.credentials
     try:
@@ -37,6 +38,9 @@ async def get_current_user(
         )
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+    revoked_at = await redis.get(f"user:{payload.get('sub')}:tokens_revoked_at")
+    if revoked_at and float(payload.get("iat", 0)) <= float(revoked_at):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
     return TokenPayload(**payload)
 
 

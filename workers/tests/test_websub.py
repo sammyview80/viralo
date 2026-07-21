@@ -9,18 +9,13 @@ Covers:
 """
 import hashlib
 import hmac
+import os
 import sys
 import uuid
 from unittest.mock import MagicMock, patch
 
-# Make celery task decorator a pass-through so the real function body is callable
-_celery_mock = MagicMock()
-_celery_mock.task = lambda **_kw: (lambda f: f)
-_celery_mock.task.__call__ = lambda **_kw: (lambda f: f)
-sys.modules["workers.celery_app"] = MagicMock(celery_app=_celery_mock)
-
-
-WEBSUB_SECRET = "test-secret"
+WEBSUB_SECRET = "test-websub-secret-at-least-32-bytes"
+os.environ.setdefault("WEBSUB_SECRET", WEBSUB_SECRET)
 
 
 def _sig(body: bytes, secret: str = WEBSUB_SECRET) -> str:
@@ -158,6 +153,8 @@ def test_process_notification_triggers_pipeline(mock_session_cls):
         MagicMock(),                                                     # INSERT delivery
         MagicMock(fetchall=MagicMock(return_value=[sub_row])),         # SELECT subs
         MagicMock(),                                                     # UPDATE last_video
+        MagicMock(),                                                     # SET LOCAL for video insert
+        MagicMock(),                                                     # INSERT video
         MagicMock(),                                                     # UPDATE delivery job_id (2nd Session block)
     ]
     session.execute.side_effect = fetch_results

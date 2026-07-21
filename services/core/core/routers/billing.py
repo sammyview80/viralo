@@ -9,6 +9,7 @@ import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.deps import get_current_user, get_db_no_rls
@@ -38,6 +39,37 @@ class EsewaVerifyRequest(BaseModel):
     tenant_id: str | None = None
     plan_name: str
     reference: str
+
+
+async def _upsert_subscription(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    plan_id: uuid.UUID,
+    billing_cycle: str,
+    *,
+    stripe_subscription_id: str | None = None,
+    stripe_customer_id: str | None = None,
+) -> None:
+    values: dict[str, object] = {
+        "id": uuid.uuid4(),
+        "tenant_id": tenant_id,
+        "plan_id": plan_id,
+        "status": "active",
+        "billing_cycle": billing_cycle,
+        "current_period_start": datetime.now(timezone.utc),
+    }
+    if stripe_subscription_id is not None:
+        values["stripe_subscription_id"] = stripe_subscription_id
+    if stripe_customer_id is not None:
+        values["stripe_customer_id"] = stripe_customer_id
+
+    updates = {key: value for key, value in values.items() if key not in {"id", "tenant_id"}}
+    updates["updated_at"] = datetime.now(timezone.utc)
+    await db.execute(
+        pg_insert(Subscription)
+        .values(**values)
+        .on_conflict_do_update(index_elements=[Subscription.tenant_id], set_=updates)
+    )
 
 
 @router.get("/plans")
@@ -203,29 +235,11 @@ async def confirm_checkout(
     stripe_sub_id = session.get("subscription")
     stripe_customer_id = session.get("customer")
 
-    existing = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1))
-    sub = existing.scalar_one_or_none()
-    now = datetime.now(timezone.utc)
-
-    if sub:
-        sub.plan_id = plan_id
-        sub.stripe_subscription_id = stripe_sub_id
-        sub.stripe_customer_id = stripe_customer_id
-        sub.status = "active"
-        sub.billing_cycle = billing_cycle
-        sub.current_period_start = now
-    else:
-        sub = Subscription(
-            tenant_id=tenant_id,
-            plan_id=plan_id,
-            stripe_subscription_id=stripe_sub_id,
-            stripe_customer_id=stripe_customer_id,
-            status="active",
-            billing_cycle=billing_cycle,
-            current_period_start=now,
-        )
-        db.add(sub)
-
+    await _upsert_subscription(
+        db, tenant_id, plan_id, billing_cycle,
+        stripe_subscription_id=stripe_sub_id,
+        stripe_customer_id=stripe_customer_id,
+    )
     await db.commit()
 
     plan_result = await db.execute(select(Plan).where(Plan.id == plan_id))
@@ -265,31 +279,11 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db_no_
         stripe_sub_id = session.get("subscription")
         stripe_customer_id = session.get("customer")
 
-        existing = await db.execute(
-            select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1)
+        await _upsert_subscription(
+            db, tenant_id, plan_id, billing_cycle,
+            stripe_subscription_id=stripe_sub_id,
+            stripe_customer_id=stripe_customer_id,
         )
-        sub = existing.scalar_one_or_none()
-
-        now = datetime.now(timezone.utc)
-        if sub:
-            sub.plan_id = plan_id
-            sub.stripe_subscription_id = stripe_sub_id
-            sub.stripe_customer_id = stripe_customer_id
-            sub.status = "active"
-            sub.billing_cycle = billing_cycle
-            sub.current_period_start = now
-        else:
-            sub = Subscription(
-                tenant_id=tenant_id,
-                plan_id=plan_id,
-                stripe_subscription_id=stripe_sub_id,
-                stripe_customer_id=stripe_customer_id,
-                status="active",
-                billing_cycle=billing_cycle,
-                current_period_start=now,
-            )
-            db.add(sub)
-
         await db.commit()
 
     return {"status": "ok"}
@@ -348,26 +342,6 @@ async def esewa_verify(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
 
-    existing = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1)
-    )
-    sub = existing.scalar_one_or_none()
-
-    now = datetime.now(timezone.utc)
-    if sub:
-        sub.plan_id = plan.id
-        sub.status = "active"
-        sub.billing_cycle = "monthly"
-        sub.current_period_start = now
-    else:
-        sub = Subscription(
-            tenant_id=tenant_id,
-            plan_id=plan.id,
-            status="active",
-            billing_cycle="monthly",
-            current_period_start=now,
-        )
-        db.add(sub)
-
+    await _upsert_subscription(db, tenant_id, plan.id, "monthly")
     await db.commit()
     return {"status": "ok", "plan": plan.name, "reference": body.reference}

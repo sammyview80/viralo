@@ -1,4 +1,5 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
+from ipaddress import ip_address
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from shared.schemas.auth import (
 )
 from shared.models.public.user import User
 from shared.models.public.tenant import Tenant
+from shared.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -23,6 +25,22 @@ REFRESH_COOKIE = "viralo_refresh"
 REFRESH_TOKEN_DAYS = 30
 RATE_LIMIT_MAX = 5
 RATE_LIMIT_WINDOW = 900  # 15 minutes
+
+
+def _client_ip(request: Request) -> str:
+    direct = request.client.host if request.client else "unknown"
+    trusted = {value.strip() for value in settings.trusted_proxy_ips.split(",") if value.strip()}
+    chain = [value.strip() for value in request.headers.get("X-Forwarded-For", "").split(",") if value.strip()]
+    candidate = direct
+    if direct in trusted:
+        for hop in reversed(chain):
+            if hop not in trusted:
+                candidate = hop
+                break
+    try:
+        return str(ip_address(candidate))
+    except ValueError:
+        return "unknown"
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -51,13 +69,15 @@ async def register(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     # Rate limit registrations per IP (10 per hour) — proxy-aware
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
-    reg_key = f"register_attempts:{ip}"
-    reg_count = await redis.incr(reg_key)
+    ip = _client_ip(request)
+    email_key = f"register_attempts:{ip}:{body.email.strip().lower()}"
+    ip_key = f"register_attempts:{ip}:all"
+    reg_count, ip_count = await redis.incr(email_key), await redis.incr(ip_key)
     if reg_count == 1:
-        await redis.expire(reg_key, 3600)
-    if reg_count > 10:
+        await redis.expire(email_key, 3600)
+    if ip_count == 1:
+        await redis.expire(ip_key, 3600)
+    if reg_count > 10 or ip_count > 100:
         raise HTTPException(status_code=429, detail="Too many registration attempts. Try again later.")
 
     # Check email unique
@@ -100,9 +120,8 @@ async def login(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     # Rate limiting — use X-Forwarded-For (proxy-aware)
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
-    rate_key = f"login_attempts:{ip}"
+    ip = _client_ip(request)
+    rate_key = f"login_attempts:{ip}:{body.email.strip().lower()}"
     attempts = await redis.incr(rate_key)
     if attempts == 1:
         await redis.expire(rate_key, RATE_LIMIT_WINDOW)
@@ -165,26 +184,27 @@ async def refresh_tokens(
     user_id = payload["sub"]
     jti = payload["jti"]
 
-    # Check if blacklisted
-    blacklisted = await redis.get(f"blacklist:{jti}")
-    if blacklisted:
+    revoked_at = await redis.get(f"user:{user_id}:tokens_revoked_at")
+    if revoked_at and float(payload.get("iat", 0)) <= float(revoked_at):
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Token revoked")
+
+    claimed = await redis.set(f"blacklist:{jti}", "1", nx=True, ex=REFRESH_TOKEN_DAYS * 86400)
+    if not claimed:
         # Grace window: concurrent tabs/requests often fire simultaneous refreshes.
         # If we issued a new access token for this user within the last 30 s,
         # return it instead of treating this as malicious token reuse.
         cached = await redis.get(f"refresh_grace:{user_id}")
         if cached:
-            return TokenResponse(access_token=cached.decode())
+            return TokenResponse(access_token=cached)
         # Second use outside grace window — genuine reuse attack
         await redis.setex(
             f"user:{user_id}:tokens_revoked_at",
             REFRESH_TOKEN_DAYS * 86400,
-            datetime.now(timezone.utc).isoformat(),
+            str(datetime.now(timezone.utc).timestamp()),
         )
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Token reuse detected. Please log in again.")
-
-    # Blacklist old jti
-    await redis.setex(f"blacklist:{jti}", REFRESH_TOKEN_DAYS * 86400, "1")
 
     # Get user
     result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))

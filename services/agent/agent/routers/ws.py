@@ -3,11 +3,12 @@ import logging
 import uuid
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from shared.auth import decode_token
 from shared.db import AsyncSessionLocal
+from shared.deps import get_current_user
+from shared.schemas.auth import TokenPayload
 from agent.models import BrainstormSession
 
 logger = logging.getLogger(__name__)
@@ -17,29 +18,55 @@ import os
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 
+@router.post("/ws/{session_id}/ticket")
+async def websocket_ticket(session_id: str, token: TokenPayload = Depends(get_current_user)):
+    import secrets
+
+    try:
+        session_uuid = uuid.UUID(session_id)
+        tenant_uuid = uuid.UUID(token.tenant_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session")
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(BrainstormSession.id).where(
+            BrainstormSession.id == session_uuid,
+            BrainstormSession.tenant_id == tenant_uuid,
+            BrainstormSession.status != "deleted",
+        ))
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+    ticket = secrets.token_urlsafe(32)
+    redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+    try:
+        await redis.setex(f"ws_ticket:{ticket}", 60, session_id)
+    finally:
+        await redis.aclose()
+    return {"ticket": ticket}
+
+
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(
     session_id: str,
     websocket: WebSocket,
-    token: str = Query(...),
+    ticket: str = Query(...),
 ):
-    # Auth via query param
+    redis = aioredis.from_url(REDIS_URL)
     try:
-        payload = decode_token(token)
-        if payload.get("type") != "access":
-            await websocket.close(code=4001)
-            return
+        claimed = await redis.getdel(f"ws_ticket:{ticket}")
+        if isinstance(claimed, bytes):
+            claimed = claimed.decode()
+        if claimed != session_id:
+            raise ValueError("invalid ticket")
         session_uuid = uuid.UUID(session_id)
-        tenant_uuid = uuid.UUID(str(payload.get("tenant_id")))
     except Exception:
         await websocket.close(code=4001)
+        await redis.aclose()
         return
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(BrainstormSession.id).where(
                 BrainstormSession.id == session_uuid,
-                BrainstormSession.tenant_id == tenant_uuid,
                 BrainstormSession.status != "deleted",
             )
         )
@@ -49,7 +76,6 @@ async def websocket_endpoint(
 
     await websocket.accept()
 
-    redis = aioredis.from_url(REDIS_URL)
     pubsub = redis.pubsub()
 
     try:

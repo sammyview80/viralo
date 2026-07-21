@@ -182,6 +182,7 @@ export function ProcessingView({
 
   useEffect(() => {
     if (!current.celery_task_id || doneRef.current) return;
+    const jobId = current.celery_task_id;
 
     const isRanking = current.source_type === "ranking";
 
@@ -208,12 +209,11 @@ export function ProcessingView({
     };
     const stepLabels = isRanking ? rankingStepLabels : clippingStepLabels;
 
-    function connect() {
+    async function connect() {
       if (doneRef.current) return;
       const t = authToken.get() || "";
       if (!t) return;
-      const url = `${VIDEO_SSE_BASE}/progress/${current.celery_task_id}`;
-      const es = new EventSource(`${url}?token=${encodeURIComponent(t)}`);
+      const es = await videoApi.progressStream(jobId);
       esRef.current = es;
 
       es.onopen = () => { sseActiveRef.current = true; retryRef.current = 0; };

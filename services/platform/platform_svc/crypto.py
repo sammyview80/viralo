@@ -8,8 +8,9 @@ from cryptography.fernet import Fernet
 def _get_fernet() -> Fernet:
     key = os.getenv("ENCRYPTION_KEY", "")
     if not key:
-        # Generate a stable key from SECRET_KEY for dev environments
         from shared.config import settings
+        if settings.environment != "development":
+            raise RuntimeError("ENCRYPTION_KEY must be configured outside development")
         import hashlib
 
         raw = hashlib.sha256(settings.secret_key.encode()).digest()

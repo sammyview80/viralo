@@ -25,7 +25,9 @@ SYNC_DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
 engine = create_engine(SYNC_DATABASE_URL, pool_pre_ping=True)
 
 WEBSUB_HUB = "https://pubsubhubbub.appspot.com/subscribe"
-WEBSUB_SECRET = os.getenv("WEBSUB_SECRET", "viralo-websub-secret")
+WEBSUB_SECRET = os.getenv("WEBSUB_SECRET", "").strip()
+if len(WEBSUB_SECRET.encode()) < 32:
+    raise RuntimeError("WEBSUB_SECRET must contain at least 32 bytes")
 LEASE_SECONDS = 432000  # 5 days — renew every 3 days so always fresh
 
 
@@ -271,6 +273,8 @@ def verify_websub_signature(body: bytes, signature_header: str) -> bool:
         return False
     try:
         method, sig = signature_header.split("=", 1)
+        if method.lower() != "sha1":
+            return False
         expected = hmac.new(WEBSUB_SECRET.encode(), body, hashlib.sha1).hexdigest()
         return hmac.compare_digest(expected, sig)
     except Exception:

@@ -65,19 +65,27 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
         logging.info("_auto_schedule_clips: no platforms/accounts configured, skipping")
         return
 
-    with Session(engine) as db:
+    with _get_session(tenant_id) as db:
         # Resolve social_account_ids — fetch matching accounts for this tenant
         if social_account_ids:
-            id_list = ",".join(f"'{sid}'" for sid in social_account_ids if sid)
+            try:
+                account_ids = [str(uuid.UUID(str(sid))) for sid in social_account_ids if sid]
+            except (TypeError, ValueError):
+                logging.warning("_auto_schedule_clips: invalid social account id, skipping")
+                return
             rows = db.execute(
-                text(f"SELECT id, platform FROM social_accounts WHERE tenant_id = :tid AND is_active = true AND id IN ({id_list})"),
-                {"tid": tenant_id},
+                text("""SELECT id, platform FROM social_accounts
+                        WHERE tenant_id = CAST(:tid AS uuid) AND is_active = true
+                          AND id = ANY(CAST(:account_ids AS uuid[]))"""),
+                {"tid": tenant_id, "account_ids": account_ids},
             ).fetchall()
         elif platforms:
-            placeholders = ",".join(f"'{p}'" for p in platforms)
+            platform_names = [str(platform).lower() for platform in platforms if platform]
             rows = db.execute(
-                text(f"SELECT id, platform FROM social_accounts WHERE tenant_id = :tid AND is_active = true AND platform IN ({placeholders})"),
-                {"tid": tenant_id},
+                text("""SELECT id, platform FROM social_accounts
+                        WHERE tenant_id = CAST(:tid AS uuid) AND is_active = true
+                          AND platform = ANY(CAST(:platforms AS text[]))"""),
+                {"tid": tenant_id, "platforms": platform_names},
             ).fetchall()
         else:
             rows = []
@@ -116,9 +124,6 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
                     },
                 )
                 posts_created += 1
-
-        db.commit()
-
     logging.info("_auto_schedule_clips: created %d scheduled posts for tenant %s", posts_created, tenant_id)
 
 
@@ -852,4 +857,3 @@ def _download_stored_video(video_id: str, tenant_id: str, out_path: str) -> None
     asyncio.run(storage.download(row[0], out_path))
     if not Path(out_path).exists() or Path(out_path).stat().st_size == 0:
         raise RuntimeError(f"Downloaded source for video {video_id} is empty")
-

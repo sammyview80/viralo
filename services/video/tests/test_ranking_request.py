@@ -48,7 +48,6 @@ def test_ranking_request_rejects_end_before_start():
 
 @pytest.mark.asyncio
 async def test_progress_stream_replays_latest_terminal_event(monkeypatch):
-    tenant_id = uuid.uuid4()
     terminal = json.dumps({
         "job_id": "ranking-job",
         "step": "failed",
@@ -56,14 +55,6 @@ async def test_progress_stream_replays_latest_terminal_event(monkeypatch):
         "status": "failed",
         "message": "Ranking video generation failed.",
     })
-
-    class OwnerResult:
-        def scalar_one_or_none(self):
-            return uuid.uuid4()
-
-    class Database:
-        async def execute(self, _statement):
-            return OwnerResult()
 
     class PubSub:
         async def subscribe(self, *_channels):
@@ -80,6 +71,10 @@ async def test_progress_stream_replays_latest_terminal_event(monkeypatch):
             pass
 
     class Redis:
+        async def getdel(self, key):
+            assert key == "progress_ticket:ticket"
+            return "ranking-job"
+
         def pubsub(self):
             return PubSub()
 
@@ -87,17 +82,10 @@ async def test_progress_stream_replays_latest_terminal_event(monkeypatch):
             assert key == "job:ranking-job:progress:last"
             return terminal.encode()
 
-    monkeypatch.setattr(
-        videos,
-        "_decode_access_token",
-        lambda _token: SimpleNamespace(tenant_id=str(tenant_id)),
-    )
-
     response = await videos.video_progress(
         job_id="ranking-job",
-        token="token",
+        ticket="ticket",
         redis=Redis(),
-        db=Database(),
     )
     chunk = await asyncio.wait_for(anext(response.body_iterator), timeout=0.1)
 

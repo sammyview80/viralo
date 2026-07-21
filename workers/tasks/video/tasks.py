@@ -131,11 +131,17 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
                 {"url": storage_url, "cid": clip_id},
             )
 
+        from shared.storage.local import sign_local_url
+        media_url = sign_local_url(storage_url) if storage_url.startswith("/storage/") else storage_url
+        signed_thumbnail = (
+            sign_local_url(thumbnail_url) if thumbnail_url and thumbnail_url.startswith("/storage/")
+            else thumbnail_url
+        )
         _publish_clip_event(job_id, "clip_upload_complete", {
             "clip_id": clip_id,
             "video_id": video_id,
-            "media_url": storage_url,
-            "thumbnail_url": thumbnail_url,
+            "media_url": media_url,
+            "thumbnail_url": signed_thumbnail,
         })
 
         # Push clip metadata to Google Sheets for n8n publishing workflow
@@ -1227,14 +1233,32 @@ def reconcile_stuck_videos(self) -> dict:
             rows = s.execute(text("""
                 SELECT id, tenant_id, source_url, clip_config, status,
                        COALESCE((metadata->>'reconcile_retries')::int, 0) AS retries,
-                       source_type
+                       source_type, metadata
                 FROM videos
                 WHERE (status = 'processing' AND updated_at < NOW() - INTERVAL '65 minutes')
                    OR (status IN ('queued','pending') AND updated_at < NOW() - INTERVAL '15 minutes')
             """)).fetchall()
-            for vid, tid, src_url, cfg, status_, retries, source_type in rows:
-                if source_type == "ranking" and status_ in ("queued", "pending"):
+            for vid, tid, src_url, cfg, status_, retries, source_type, metadata in rows:
+                if source_type == "ranking":
                     continue
+                if source_type == "series" and retries < 2 and metadata:
+                    series_id = metadata.get("series_id")
+                    publish_at = metadata.get("publish_at")
+                    if series_id:
+                        s.execute(text("""
+                            UPDATE videos
+                            SET metadata = COALESCE(metadata,'{}'::jsonb)
+                                           || jsonb_build_object('reconcile_retries', :r),
+                                status='failed', updated_at=NOW()
+                            WHERE id = :vid
+                        """), {"r": retries + 1, "vid": vid})
+                        s.commit()
+                        celery_app.send_task(
+                            "workers.tasks.series.generate_series_video",
+                            args=[str(series_id), publish_at],
+                        )
+                        requeued += 1
+                        continue
                 if src_url and retries < 2:
                     s.execute(text("""
                         UPDATE videos

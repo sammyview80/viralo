@@ -24,13 +24,15 @@ def create_access_token(
     email: str,
     plan: str,
 ) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {
         "sub": user_id,
         "tenant_id": tenant_id,
         "email": email,
         "plan": plan,
         "type": "access",
+        "iat": now,
         "exp": expire,
     }
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
@@ -39,11 +41,13 @@ def create_access_token(
 def create_refresh_token(user_id: str) -> tuple[str, str]:
     """Returns (token, jti)"""
     jti = str(uuid.uuid4())
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(days=settings.refresh_token_expire_days)
     payload = {
         "sub": user_id,
         "jti": jti,
         "type": "refresh",
+        "iat": now,
         "exp": expire,
     }
     token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)

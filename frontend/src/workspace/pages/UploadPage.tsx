@@ -57,7 +57,7 @@ export function UploadPage() {
       const tid = video.celery_task_id!;
       if (historySseRef.current.has(tid)) continue;
 
-      const es = new EventSource(`${VIDEO_SSE_BASE}/progress/${tid}?token=${encodeURIComponent(t)}`);
+      void videoApi.progressStream(tid).then((es) => {
       es.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data);
@@ -84,6 +84,7 @@ export function UploadPage() {
       };
       es.onerror = () => { es.close(); historySseRef.current.delete(tid); };
       historySseRef.current.set(tid, es);
+      }).catch(() => {});
     }
 
     return () => {/* keep sources open across renders — cleaned up above */};

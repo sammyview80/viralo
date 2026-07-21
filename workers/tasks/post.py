@@ -117,13 +117,21 @@ def process_due_posts():
     """Celery Beat task — find pending posts due for publishing and enqueue them."""
     # Recover posts stuck in 'processing' for >10 min (worker crash / container restart)
     with engine.connect() as conn:
+        conn.execute(
+            text("""
+                UPDATE scheduled_posts
+                SET status = 'scheduled', scheduled_at = NOW(), updated_at = NOW()
+                WHERE status = 'processing'
+                  AND updated_at < NOW() - interval '10 minutes'
+            """)
+        )
         recovered = conn.execute(
             text("""
                 UPDATE scheduled_posts
-                SET status = 'scheduled',
-                    scheduled_at = NOW(),
+                SET status = 'failed',
+                    last_error = 'Publish outcome unknown after worker interruption; reconcile before retry',
                     updated_at = NOW()
-                WHERE status = 'processing'
+                WHERE status = 'publishing'
                   AND updated_at < NOW() - interval '10 minutes'
             """)
         ).rowcount
@@ -181,11 +189,18 @@ def publish_post(self, tenant_id: str, post_id: str):
     tmp_path = None
     clip_id = None   # guard: except block references this before tuple unpack
     platform = "social"
+    publish_attempted = False
     try:
         # ── 1. Load post + social account ─────────────────────────────────────
         with _get_session(tenant_id) as session:
             row = session.execute(
                 text("""
+                    WITH claimed AS (
+                        UPDATE scheduled_posts
+                        SET status = 'publishing', updated_at = NOW()
+                        WHERE id = CAST(:pid AS uuid) AND status = 'processing'
+                        RETURNING *
+                    )
                     SELECT
                         sp.id,
                         sp.platform,
@@ -200,7 +215,7 @@ def publish_post(self, tenant_id: str, post_id: str):
                         sa.platform_user_id,
                         sa.scope,
                         COALESCE(sp.clip_storage_url, c.storage_url) AS clip_storage_url
-                    FROM scheduled_posts sp
+                    FROM claimed sp
                     JOIN social_accounts sa
                         ON sa.id = sp.social_account_id
                     LEFT JOIN clips c
@@ -211,7 +226,7 @@ def publish_post(self, tenant_id: str, post_id: str):
             ).fetchone()
 
         if not row:
-            logger.error("publish_post: post %s not found", post_id)
+            logger.info("publish_post: post %s was already claimed or is no longer publishable", post_id)
             return
 
         (
@@ -284,8 +299,8 @@ def publish_post(self, tenant_id: str, post_id: str):
         if not clip_storage_url:
             # Clip upload still in progress — retry after 60s
             logger.warning("publish_post: clip_storage_url not yet available for post %s, retrying", post_id)
-            with engine.connect() as conn:
-                conn.execute(
+            with _get_session(tenant_id) as session:
+                session.execute(
                     text("""
                         UPDATE scheduled_posts
                         SET status = 'pending',
@@ -295,7 +310,6 @@ def publish_post(self, tenant_id: str, post_id: str):
                     """),
                     {"pid": post_id},
                 )
-                conn.commit()
             return
 
         from shared.storage.base import get_storage
@@ -328,6 +342,7 @@ def publish_post(self, tenant_id: str, post_id: str):
             # oauth_token_secret stored in scope field
             pub_kwargs.setdefault("oauth_token_secret", scope)
 
+        publish_attempted = True
         result = publisher.publish(
             video_path=tmp_path,
             caption=caption or "",
@@ -397,10 +412,27 @@ def publish_post(self, tenant_id: str, post_id: str):
     except Exception as exc:
         logger.exception("publish_post: exception for post %s", post_id)
 
+        if publish_attempted:
+            with _get_session(tenant_id) as session:
+                session.execute(
+                    text("""
+                        UPDATE scheduled_posts
+                        SET status = 'failed',
+                            last_error = :err,
+                            updated_at = NOW()
+                        WHERE id = CAST(:pid AS uuid)
+                    """),
+                    {
+                        "err": ("Publish outcome unknown; reconcile before retry: " + str(exc))[:1000],
+                        "pid": post_id,
+                    },
+                )
+            return
+
         # Load current retry_count from DB
         try:
-            with engine.connect() as conn:
-                r = conn.execute(
+            with _get_session(tenant_id) as session:
+                r = session.execute(
                     text("SELECT retry_count FROM scheduled_posts WHERE id = CAST(:pid AS uuid)"),
                     {"pid": post_id},
                 ).fetchone()
@@ -408,18 +440,18 @@ def publish_post(self, tenant_id: str, post_id: str):
         except Exception:
             current_retries = self.request.retries
 
-        with engine.connect() as conn:
-            conn.execute(
+        with _get_session(tenant_id) as session:
+            session.execute(
                 text("""
                     UPDATE scheduled_posts
                     SET retry_count = COALESCE(retry_count, 0) + 1,
                         last_error = :err,
+                        status = 'processing',
                         updated_at = NOW()
                     WHERE id = CAST(:pid AS uuid)
                 """),
                 {"err": str(exc)[:1000], "pid": post_id},
             )
-            conn.commit()
 
         if current_retries < 3:
             raise self.retry(exc=exc, countdown=60)
@@ -427,8 +459,8 @@ def publish_post(self, tenant_id: str, post_id: str):
             # Final failure
             try:
                 platform_name = "social"
-                with engine.connect() as conn:
-                    r2 = conn.execute(
+                with _get_session(tenant_id) as session:
+                    r2 = session.execute(
                         text("SELECT platform FROM scheduled_posts WHERE id = CAST(:pid AS uuid)"),
                         {"pid": post_id},
                     ).fetchone()

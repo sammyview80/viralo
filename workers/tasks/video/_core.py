@@ -307,22 +307,26 @@ def _is_unlimited(tenant_id: str) -> bool:
         with Session(engine) as s:
             row = s.execute(
                 text("""
-                    SELECT u.email, p.name AS plan_name
-                    FROM users u
-                    LEFT JOIN subscriptions sub ON sub.tenant_id = u.id AND sub.status = 'active'
+                    SELECT array_remove(array_agg(lower(u.email)), NULL) AS emails,
+                           p.name AS plan_name
+                    FROM tenants t
+                    LEFT JOIN users u ON u.tenant_id = t.id
+                    LEFT JOIN subscriptions sub ON sub.tenant_id = t.id AND sub.status = 'active'
                     LEFT JOIN plans p ON p.id = sub.plan_id
-                    WHERE u.id = CAST(:tid AS uuid)
+                    WHERE t.id = CAST(:tid AS uuid)
+                    GROUP BY p.name, sub.updated_at
+                    ORDER BY sub.updated_at DESC NULLS LAST
                     LIMIT 1
                 """),
                 {"tid": str(tenant_id)},
             ).fetchone()
         if not row:
             return False
-        email, plan_name = row
-        if email and email.lower() in _UNLIMITED_EMAILS:
+        emails, plan_name = row
+        if any(email in _UNLIMITED_EMAILS for email in (emails or [])):
             return True
         # free plan has video_duration_limit_min set; all others (pro/starter/creator/unlimited) are None
-        from shared.shared.plan_gate import get_plan_features
+        from shared.plan_gate import get_plan_features
         features = get_plan_features(plan_name or "free")
         return features.video_duration_limit_min is None
     except Exception:
@@ -492,4 +496,3 @@ def _srt_to_plain(srt: str) -> str:
             continue
         lines.append(line)
     return " ".join(lines)
-
