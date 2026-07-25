@@ -1239,8 +1239,6 @@ def reconcile_stuck_videos(self) -> dict:
                    OR (status IN ('queued','pending') AND updated_at < NOW() - INTERVAL '15 minutes')
             """)).fetchall()
             for vid, tid, src_url, cfg, status_, retries, source_type, metadata in rows:
-                if source_type == "ranking":
-                    continue
                 if source_type == "series" and retries < 2 and metadata:
                     series_id = metadata.get("series_id")
                     publish_at = metadata.get("publish_at")
