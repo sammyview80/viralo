@@ -2,14 +2,21 @@
 Smoke test: verifies new pipeline stages don't crash on synthetic word data.
 Does NOT require real video files or LLM calls.
 """
+import json
+import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from workers.tasks.video._core import ClipResult, SpeakerSegment, TopicBlock, WordTimestamp
 from workers.tasks.video.ai import _hook_score, _topic_coherence_score
 from workers.tasks.video.diarize import _assign_speakers_to_words
 from workers.tasks.video.feedback import get_score_weight_adjustments
-from workers.tasks.video.pipeline import _build_auto_publish_schedule
+from workers.tasks.video.pipeline import (
+    _auto_publish_content,
+    _auto_schedule_clips,
+    _build_auto_publish_schedule,
+)
 from workers.tasks.video.repair import _repair_all_clips
 from workers.tasks.video.segment import _segment_topics
 
@@ -79,6 +86,93 @@ def test_auto_publish_schedule_clamps_legacy_interval_to_avoid_duplicate_slots()
         datetime(2026, 7, 26, 2, tzinfo=UTC),
         datetime(2026, 7, 26, 10, tzinfo=UTC),
     ]
+
+
+def test_auto_publish_content_reuses_ai_copy_and_youtube_fields():
+    metadata = {
+        "ai_title": "AI-generated title",
+        "platforms": {
+            "shorts": {
+                "description": "AI hook based on this clip.",
+                "tags": ["Viral", "#Topic", "#Topic"],
+            },
+        },
+        "trending_hashtags": ["#fallback"],
+    }
+
+    caption, tags, kwargs = _auto_publish_content(
+        "Original title", metadata, "youtube"
+    )
+
+    assert caption == "AI hook based on this clip."
+    assert tags == ["viral", "topic"]
+    assert kwargs == {
+        "title": "AI-generated title",
+        "description": "AI hook based on this clip.",
+        "tags": ["viral", "topic"],
+    }
+
+
+def test_auto_publish_content_preserves_caption_override_for_youtube():
+    caption, tags, kwargs = _auto_publish_content(
+        "Original title",
+        {
+            "social": {
+                "shorts": {
+                    "description": "AI description",
+                    "tags": ["#Shorts"],
+                },
+            },
+        },
+        "youtube",
+        "Channel caption template",
+    )
+
+    assert caption == "Channel caption template"
+    assert tags == ["shorts"]
+    assert kwargs["description"] == caption
+
+
+def test_auto_schedule_clips_binds_ai_content_to_scheduled_post():
+    account_id = uuid.uuid4()
+    clip_id = uuid.uuid4()
+    account_rows = MagicMock()
+    account_rows.fetchall.return_value = [(account_id, "youtube")]
+    clip_rows = MagicMock()
+    clip_rows.fetchall.return_value = [(
+        clip_id,
+        "AI title",
+        {
+            "platforms": {
+                "shorts": {
+                    "description": "AI description",
+                    "tags": ["#Viral", "Topic"],
+                },
+            },
+        },
+    )]
+    session = MagicMock()
+    session.execute.side_effect = [account_rows, clip_rows, MagicMock()]
+
+    @contextmanager
+    def fake_session(_tenant_id):
+        yield session
+
+    with patch("workers.tasks.video.pipeline._get_session", fake_session):
+        _auto_schedule_clips(
+            str(uuid.uuid4()),
+            [clip_id],
+            {"social_account_ids": [str(account_id)]},
+        )
+
+    insert_params = session.execute.call_args_list[2].args[1]
+    assert insert_params["caption"] == "AI description"
+    assert json.loads(insert_params["hashtags"]) == ["viral", "topic"]
+    assert json.loads(insert_params["platform_kwargs"]) == {
+        "title": "AI title",
+        "description": "AI description",
+        "tags": ["viral", "topic"],
+    }
 
 
 def test_diarize_assign_full_pipeline():

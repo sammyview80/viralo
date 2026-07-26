@@ -42,6 +42,7 @@ from workers.tasks.video.repair import _repair_all_clips
 
 __all__ = [
     '_auto_schedule_clips',
+    '_auto_publish_content',
     '_build_auto_publish_schedule',
     'run_video_pipeline',
     '_segments_to_words',
@@ -50,6 +51,67 @@ __all__ = [
     '_reexport_clip_from_source',
     '_download_stored_video',
 ]
+
+
+def _auto_publish_content(
+    title: str,
+    metadata: dict | str | None,
+    platform: str,
+    caption_template: str = "",
+) -> tuple[str, list[str], dict]:
+    """Reuse the clip's AI-generated social copy for a scheduled platform."""
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except (TypeError, ValueError):
+            metadata = {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    social = metadata.get("platforms")
+    if not isinstance(social, dict):
+        social = metadata.get("social")
+    social = social if isinstance(social, dict) else {}
+    platform_key = platform.lower()
+    aliases = {
+        "instagram": ("instagram", "reels"),
+        "reels": ("reels", "instagram"),
+        "youtube": ("youtube", "shorts", "youtube_shorts"),
+        "youtube_shorts": ("youtube_shorts", "shorts", "youtube"),
+        "shorts": ("shorts", "youtube", "youtube_shorts"),
+        "x": ("x", "twitter"),
+        "twitter": ("twitter", "x"),
+    }.get(platform_key, (platform_key,))
+    content = next(
+        (social[key] for key in aliases if isinstance(social.get(key), dict)),
+        {},
+    )
+    if not content:
+        content = next(
+            (value for value in social.values() if isinstance(value, dict)),
+            {},
+        )
+    resolved_title = str(metadata.get("ai_title") or title or "").strip()
+    description = str(content.get("description") or "").strip()
+    raw_tags = content.get("tags") or metadata.get("trending_hashtags") or []
+    raw_tags = raw_tags if isinstance(raw_tags, (list, tuple)) else []
+    tags = list(dict.fromkeys(
+        tag
+        for item in raw_tags
+        if (tag := str(item).strip().lstrip("#").lower())
+    ))[:20]
+    caption = (
+        str(caption_template or "").strip()
+        or description
+        or str(metadata.get("viral_reason") or metadata.get("reason") or "").strip()
+        or resolved_title
+    )
+    platform_kwargs = {}
+    if platform_key in {"youtube", "youtube_shorts", "shorts"}:
+        platform_kwargs = {
+            "title": resolved_title[:100],
+            "description": caption,
+            "tags": tags,
+        }
+    return caption, tags, platform_kwargs
 
 
 def _build_auto_publish_schedule(
@@ -137,20 +199,37 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
         now = datetime.now(UTC)
         posts_created = 0
         scheduled_times = _build_auto_publish_schedule(len(clip_ids), ap_cfg, now)
+        clip_rows = db.execute(
+            text("""SELECT id, title, metadata FROM clips
+                    WHERE tenant_id = CAST(:tid AS uuid)
+                      AND id = ANY(CAST(:clip_ids AS uuid[]))"""),
+            {"tid": tenant_id, "clip_ids": [str(clip_id) for clip_id in clip_ids]},
+        ).fetchall()
+        clip_content = {
+            str(clip_id): (title or "", metadata)
+            for clip_id, title, metadata in clip_rows
+        }
 
         # Spread ALL clips at publish_per_day/day: clip i lands on day i//per_day,
         # spaced interval_hours apart within the day. Every selected account gets
         # the clip at the same time.
         for clip_id, scheduled_at in zip(clip_ids, scheduled_times, strict=True):
             for account_id, platform in rows:
+                title, metadata = clip_content.get(str(clip_id), ("", {}))
+                caption, hashtags, platform_kwargs = _auto_publish_content(
+                    title, metadata, platform, caption_template
+                )
                 db.execute(
                     text("""
                         INSERT INTO scheduled_posts
                             (id, tenant_id, clip_id, social_account_id, platform,
-                             status, scheduled_at, caption, created_at, updated_at)
+                             status, scheduled_at, caption, hashtags, platform_kwargs,
+                             created_at, updated_at)
                         VALUES
                             (:id, :tid, :clip_id, :acct_id, :platform,
-                             'scheduled', :scheduled_at, :caption, now(), now())
+                             'scheduled', :scheduled_at, :caption,
+                             CAST(:hashtags AS jsonb), CAST(:platform_kwargs AS jsonb),
+                             now(), now())
                     """),
                     {
                         "id": _uuid.uuid4(),
@@ -159,7 +238,9 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
                         "acct_id": account_id,
                         "platform": platform,
                         "scheduled_at": scheduled_at,
-                        "caption": caption_template or None,
+                        "caption": caption or None,
+                        "hashtags": json.dumps(hashtags),
+                        "platform_kwargs": json.dumps(platform_kwargs),
                     },
                 )
                 posts_created += 1
