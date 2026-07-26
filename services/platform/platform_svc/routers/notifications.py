@@ -18,6 +18,10 @@ from platform_svc.schemas import NotificationListResponse, NotificationResponse
 router = APIRouter(tags=["notifications"])
 
 
+def _owned_by(token: TokenPayload):
+    return Notification.user_id == uuid.UUID(token.sub)
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -30,9 +34,10 @@ async def list_notifications(
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """List notifications for the current tenant, optionally filtered to unread only."""
-    q = select(Notification)
-    count_q = select(func.count()).select_from(Notification)
+    """List notifications for the current user."""
+    ownership = _owned_by(token)
+    q = select(Notification).where(ownership)
+    count_q = select(func.count()).select_from(Notification).where(ownership)
 
     if unread is True:
         q = q.where(Notification.is_read == False)
@@ -61,7 +66,7 @@ async def mark_notification_read(
 ):
     """Mark a single notification as read."""
     result = await db.execute(
-        select(Notification).where(Notification.id == notification_id)
+        select(Notification).where(Notification.id == notification_id, _owned_by(token))
     )
     notification = result.scalar_one_or_none()
     if not notification:
@@ -79,10 +84,10 @@ async def mark_all_notifications_read(
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """Mark all unread notifications as read for the current tenant."""
+    """Mark all unread notifications as read for the current user."""
     await db.execute(
         update(Notification)
-        .where(Notification.is_read == False)
+        .where(Notification.is_read == False, _owned_by(token))
         .values(is_read=True)
     )
     await db.commit()
@@ -96,7 +101,7 @@ async def delete_notification(
 ):
     """Permanently delete a notification."""
     result = await db.execute(
-        select(Notification).where(Notification.id == notification_id)
+        select(Notification).where(Notification.id == notification_id, _owned_by(token))
     )
     notification = result.scalar_one_or_none()
     if not notification:
@@ -113,13 +118,13 @@ async def notifications_stream(
 ):
     """
     SSE stream for real-time notifications.
-    Subscribes to Redis channel: notifications:{tenant_id}
+    Subscribes to the current user's Redis notification channel.
     """
     tenant_id = token.tenant_id
 
     async def event_generator():
         pubsub = redis.pubsub()
-        channel = f"notifications:{tenant_id}"
+        channel = f"notifications:{tenant_id}:{token.sub}"
         await pubsub.subscribe(channel)
         try:
             timeout_seconds = 3600  # 1 hour max connection
