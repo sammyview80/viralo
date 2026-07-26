@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, get_args
 from urllib.parse import urlsplit
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from shared.storage.local import sign_local_url
 
@@ -32,6 +33,43 @@ EditorCaptionTemplate = Literal[
     "sports",
     "soft",
 ]
+
+
+class AutoPublishConfig(BaseModel):
+    social_account_ids: list[str] = Field(min_length=1, max_length=20)
+    publish_per_day: int = Field(default=3, ge=1, le=10)
+    publish_interval_hours: int = Field(default=8, ge=1, le=24)
+    publish_start_at: str | None = None
+    caption_template: str = Field(default="", max_length=2000)
+
+    @field_validator("social_account_ids")
+    @classmethod
+    def _validate_social_account_ids(cls, values: list[str]) -> list[str]:
+        for value in values:
+            try:
+                uuid.UUID(value)
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise ValueError("social_account_ids must contain valid UUIDs") from exc
+        return values
+
+    @field_validator("publish_start_at")
+    @classmethod
+    def _validate_publish_start_at(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("publish_start_at must be a valid ISO datetime") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("publish_start_at must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_daily_window(self) -> AutoPublishConfig:
+        if self.publish_per_day * self.publish_interval_hours > 24:
+            raise ValueError("publish interval must fit all daily posts within 24 hours")
+        return self
 
 
 class ClipConfig(BaseModel):
@@ -72,14 +110,16 @@ class ClipConfig(BaseModel):
 
     # Auto-publish: schedule generated clips to social accounts after the pipeline completes
     auto_publish: bool = Field(default=False, description="Auto-schedule clips to social accounts after generation")
-    auto_publish_config: dict | None = Field(default=None, description="Auto-publish settings: social_account_ids, publish_per_day, publish_interval_hours, caption_template")
+    auto_publish_config: AutoPublishConfig | None = Field(default=None, description="Auto-publish settings")
 
     @model_validator(mode="after")
-    def _check_duration_bounds(self) -> "ClipConfig":
+    def _check_duration_bounds(self) -> ClipConfig:
         # Frontend can send an inverted pair (e.g. slider race). Swap rather than
         # 422 so a transient UI glitch never blocks a clip job.
         if self.duration_min > self.duration_max:
             self.duration_min, self.duration_max = self.duration_max, self.duration_min
+        if self.auto_publish and self.auto_publish_config is None:
+            raise ValueError("auto_publish_config is required when auto_publish is enabled")
         return self
 
 

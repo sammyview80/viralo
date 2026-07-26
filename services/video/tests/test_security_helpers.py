@@ -1,10 +1,9 @@
 import time
 
 import pytest
-
 from shared.storage.local import _safe_local_path, sign_local_url, verify_local_url
 from video.routers.videos import _validate_youtube_url
-from video.schemas import ClipResponse
+from video.schemas import ClipConfig, ClipResponse
 
 
 def test_validate_youtube_url_rejects_non_youtube_hosts():
@@ -58,3 +57,55 @@ def test_clip_response_signs_local_url_without_changing_stored_value():
         "created_at": "2026-07-20T00:00:00Z",
     })
     assert response.storage_url.startswith(raw_url + "?expires=")
+
+
+def test_auto_publish_config_accepts_timezone_aware_start():
+    account_id = "00000000-0000-0000-0000-000000000001"
+    config = ClipConfig(
+        auto_publish=True,
+        auto_publish_config={
+            "social_account_ids": [account_id],
+            "publish_per_day": 2,
+            "publish_interval_hours": 6,
+            "publish_start_at": "2026-07-26T09:00:00+05:45",
+        },
+    )
+
+    assert config.model_dump()["auto_publish_config"]["social_account_ids"] == [account_id]
+
+
+@pytest.mark.parametrize(
+    "auto_publish_config",
+    [
+        None,
+        {
+            "social_account_ids": ["not-a-uuid"],
+            "publish_per_day": 2,
+            "publish_interval_hours": 6,
+        },
+        {
+            "social_account_ids": ["00000000-0000-0000-0000-000000000001"],
+            "publish_per_day": 0,
+            "publish_interval_hours": 6,
+        },
+        {
+            "social_account_ids": ["00000000-0000-0000-0000-000000000001"],
+            "publish_per_day": 2,
+            "publish_interval_hours": 25,
+        },
+        {
+            "social_account_ids": ["00000000-0000-0000-0000-000000000001"],
+            "publish_per_day": 3,
+            "publish_interval_hours": 12,
+        },
+        {
+            "social_account_ids": ["00000000-0000-0000-0000-000000000001"],
+            "publish_per_day": 2,
+            "publish_interval_hours": 6,
+            "publish_start_at": "2026-07-26T09:00:00",
+        },
+    ],
+)
+def test_auto_publish_config_rejects_invalid_boundary_input(auto_publish_config):
+    with pytest.raises(ValueError):
+        ClipConfig(auto_publish=True, auto_publish_config=auto_publish_config)
