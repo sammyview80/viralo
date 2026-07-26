@@ -120,14 +120,16 @@ def test_publishes_to_redis():
     conn_ctx, _ = _conn_ctx(fetchone=(False, False, []))
     mock_engine.connect.return_value = conn_ctx
     tenant_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
 
     with patch.object(notif, "Session", return_value=session_ctx):
-        notif.send_notification(tenant_id, None, type="video_ready", title="Ready", body="Done.")
+        notif.send_notification(tenant_id, user_id, type="video_ready", title="Ready", body="Done.")
 
     mock_redis.publish.assert_called_once()
     channel, payload_str = mock_redis.publish.call_args[0]
-    assert channel == f"notifications:{tenant_id}"
+    assert channel == f"notifications:{tenant_id}:{user_id}"
     payload = json.loads(payload_str)
+    assert payload["user_id"] == user_id
     assert payload["type"] == "video_ready"
     assert payload["title"] == "Ready"
 
@@ -230,7 +232,10 @@ def test_stale_push_subscription_deleted():
 
     with patch.object(notif, "Session", return_value=session_ctx), \
          patch.object(notif, "_send_web_push", return_value=False):  # 410 Gone
-        notif.send_notification(str(uuid.uuid4()), None, type="video_ready", title="T", body="B")
+        notif.send_notification(
+            str(uuid.uuid4()), str(uuid.uuid4()),
+            type="video_ready", title="T", body="B",
+        )
 
     # Stale subscription should trigger a DELETE execute call
     delete_conn.execute.assert_called_once()
