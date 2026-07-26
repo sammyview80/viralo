@@ -2,13 +2,16 @@
 Smoke test: verifies new pipeline stages don't crash on synthetic word data.
 Does NOT require real video files or LLM calls.
 """
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
-from workers.tasks.video._core import WordTimestamp, ClipResult, TopicBlock, SpeakerSegment
-from workers.tasks.video.diarize import _assign_speakers_to_words
-from workers.tasks.video.segment import _segment_topics
-from workers.tasks.video.repair import _repair_all_clips
+
+from workers.tasks.video._core import ClipResult, SpeakerSegment, TopicBlock, WordTimestamp
 from workers.tasks.video.ai import _hook_score, _topic_coherence_score
+from workers.tasks.video.diarize import _assign_speakers_to_words
 from workers.tasks.video.feedback import get_score_weight_adjustments
+from workers.tasks.video.pipeline import _build_auto_publish_schedule
+from workers.tasks.video.repair import _repair_all_clips
+from workers.tasks.video.segment import _segment_topics
 
 
 def _make_transcript(n_words=100):
@@ -22,6 +25,60 @@ def _make_transcript(n_words=100):
         words.append(WordTimestamp(word=w, start=t, end=t + 0.4))
         t += 0.5
     return words
+
+
+def test_auto_publish_schedule_honors_start_interval_and_day_rollover():
+    now = datetime(2026, 7, 25, 10, tzinfo=UTC)
+    schedule = _build_auto_publish_schedule(
+        4,
+        {
+            "publish_per_day": 2,
+            "publish_interval_hours": 6,
+            "publish_start_at": "2026-07-26T09:00:00Z",
+        },
+        now,
+    )
+
+    assert schedule == [
+        datetime(2026, 7, 26, 9, tzinfo=UTC),
+        datetime(2026, 7, 26, 15, tzinfo=UTC),
+        datetime(2026, 7, 27, 9, tzinfo=UTC),
+        datetime(2026, 7, 27, 15, tzinfo=UTC),
+    ]
+
+
+def test_auto_publish_schedule_never_starts_in_past_and_supports_legacy_config():
+    now = datetime(2026, 7, 25, 10, tzinfo=UTC)
+
+    past = _build_auto_publish_schedule(
+        2,
+        {
+            "publish_per_day": 2,
+            "publish_interval_hours": 4,
+            "publish_start_at": "2026-07-24T09:00:00Z",
+        },
+        now,
+    )
+    legacy = _build_auto_publish_schedule(1, {}, now)
+
+    assert past == [now, datetime(2026, 7, 25, 14, tzinfo=UTC)]
+    assert legacy == [now]
+
+
+def test_auto_publish_schedule_clamps_legacy_interval_to_avoid_duplicate_slots():
+    now = datetime(2026, 7, 25, 10, tzinfo=UTC)
+    schedule = _build_auto_publish_schedule(
+        4,
+        {"publish_per_day": 3, "publish_interval_hours": 12},
+        now,
+    )
+
+    assert schedule == [
+        now,
+        datetime(2026, 7, 25, 18, tzinfo=UTC),
+        datetime(2026, 7, 26, 2, tzinfo=UTC),
+        datetime(2026, 7, 26, 10, tzinfo=UTC),
+    ]
 
 
 def test_diarize_assign_full_pipeline():

@@ -17,7 +17,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace as dataclass_replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
 from typing import Optional
@@ -42,6 +42,7 @@ from workers.tasks.video.repair import _repair_all_clips
 
 __all__ = [
     '_auto_schedule_clips',
+    '_build_auto_publish_schedule',
     'run_video_pipeline',
     '_segments_to_words',
     '_gvc_inner',
@@ -50,15 +51,54 @@ __all__ = [
     '_download_stored_video',
 ]
 
+
+def _build_auto_publish_schedule(
+    clip_count: int,
+    ap_cfg: dict,
+    now: datetime | None = None,
+) -> list[datetime]:
+    """Return bounded publish times, accepting legacy unvalidated configs."""
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+
+    def bounded_int(key: str, default: int, minimum: int, maximum: int) -> int:
+        try:
+            value = int(ap_cfg.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return min(maximum, max(minimum, value))
+
+    publish_per_day = bounded_int("publish_per_day", 3, 1, 10)
+    interval_hours = bounded_int("publish_interval_hours", 8, 1, 24)
+    interval_hours = min(interval_hours, max(1, 24 // publish_per_day))
+    requested_start = current
+    raw_start = ap_cfg.get("publish_start_at")
+    if raw_start:
+        try:
+            requested_start = (
+                raw_start
+                if isinstance(raw_start, datetime)
+                else datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+            )
+            if requested_start.tzinfo is None:
+                requested_start = current
+        except (TypeError, ValueError):
+            requested_start = current
+
+    base = max(current, requested_start)
+    return [
+        base + timedelta(days=day, hours=slot * interval_hours)
+        for day, slot in (divmod(index, publish_per_day) for index in range(max(0, clip_count)))
+    ]
+
+
 def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
     """Create ScheduledPost records for auto-publish after a WebSub-triggered pipeline."""
-    from datetime import datetime, timezone, timedelta
     import uuid as _uuid
 
     platforms = ap_cfg.get("platforms", [])
     social_account_ids = ap_cfg.get("social_account_ids", [])
-    publish_per_day = max(1, int(ap_cfg.get("publish_per_day", 3)))
-    interval_hours = max(1, int(ap_cfg.get("publish_interval_hours", 8)))
     caption_template = ap_cfg.get("caption_template", "")
 
     if not platforms and not social_account_ids:
@@ -94,15 +134,14 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
             logging.info("_auto_schedule_clips: no active social accounts found for tenant %s", tenant_id)
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         posts_created = 0
+        scheduled_times = _build_auto_publish_schedule(len(clip_ids), ap_cfg, now)
 
         # Spread ALL clips at publish_per_day/day: clip i lands on day i//per_day,
         # spaced interval_hours apart within the day. Every selected account gets
         # the clip at the same time.
-        for i, clip_id in enumerate(clip_ids):
-            day, slot = divmod(i, publish_per_day)
-            scheduled_at = now + timedelta(days=day, hours=slot * interval_hours)
+        for clip_id, scheduled_at in zip(clip_ids, scheduled_times, strict=True):
             for account_id, platform in rows:
                 db.execute(
                     text("""
