@@ -124,25 +124,33 @@ def test_subscribe_channel_upsert(mock_session_cls, mock_sub):
 @patch("workers.tasks.websub.Session")
 def test_process_notification_already_processed(mock_session_cls):
     """Already-processed video is skipped."""
-    cm, _ = _session_cm(fetchone_return=(uuid.uuid4(), True))
+    cm, db = _session_cm(fetchone_return=None)
     mock_session_cls.return_value = cm
 
-    from workers.tasks.websub import process_websub_notification
-    result = process_websub_notification("UCtest123456789012345678", "vid123", "https://youtube.com/watch?v=vid123")
+    with patch("workers.tasks.websub.celery_app.send_task") as mock_send_task:
+        from workers.tasks.websub import process_websub_notification
+        result = process_websub_notification(
+            "UCtest123456789012345678",
+            "vid123",
+            "https://youtube.com/watch?v=vid123",
+        )
 
-    assert result == {"skipped": True, "reason": "already processed"}
+    assert result == {"skipped": True, "reason": "already processed or in progress"}
+    claim_sql = str(db.execute.call_args.args[0])
+    assert "ON CONFLICT (video_id) DO UPDATE" in claim_sql
+    assert "RETURNING id" in claim_sql
+    mock_send_task.assert_not_called()
 
 
 @patch("workers.tasks.websub.Session")
 def test_process_notification_no_subscriptions(mock_session_cls):
     """No active subscriptions → pipeline not triggered."""
     session = MagicMock()
-    # Calls in order: dedup SELECT, INSERT delivery, SELECT subs, UPDATE last_video
+    # Calls in order: claim delivery, SELECT subs, UPDATE last_video
     fetch_results = [
-        MagicMock(fetchone=MagicMock(return_value=None)),   # dedup: not processed
-        MagicMock(),                                          # INSERT
-        MagicMock(fetchall=MagicMock(return_value=[])),     # subs: empty
-        MagicMock(),                                          # UPDATE last_video
+        MagicMock(fetchone=MagicMock(return_value=(uuid.uuid4(),))),
+        MagicMock(fetchall=MagicMock(return_value=[])),
+        MagicMock(),
     ]
     session.execute.side_effect = fetch_results
     cm = MagicMock()
@@ -165,13 +173,12 @@ def test_process_notification_triggers_pipeline(mock_session_cls):
 
     session = MagicMock()
     fetch_results = [
-        MagicMock(fetchone=MagicMock(return_value=None)),              # dedup
-        MagicMock(),                                                     # INSERT delivery
+        MagicMock(fetchone=MagicMock(return_value=(uuid.uuid4(),))),   # claim delivery
         MagicMock(fetchall=MagicMock(return_value=[sub_row])),         # SELECT subs
-        MagicMock(),                                                     # UPDATE last_video
-        MagicMock(),                                                     # SET LOCAL for video insert
-        MagicMock(),                                                     # INSERT video
-        MagicMock(),                                                     # UPDATE delivery job_id (2nd Session block)
+        MagicMock(),                                                    # UPDATE last_video
+        MagicMock(),                                                    # SET LOCAL for video insert
+        MagicMock(fetchone=MagicMock(return_value=(uuid.uuid4(),))),   # INSERT video
+        MagicMock(),                                                    # finish delivery
     ]
     session.execute.side_effect = fetch_results
     cm = MagicMock()
@@ -195,6 +202,7 @@ def test_process_notification_triggers_pipeline(mock_session_cls):
     task_name, = video_calls[0].args
     assert task_name == "workers.tasks.video.process_youtube_video"
     assert video_calls[0].kwargs["queue"] == "viralo.video.pipeline"
+    assert video_calls[0].kwargs["task_id"] == result["jobs"][0]["job_id"]
     cfg = video_calls[0].kwargs["args"][3]
     assert cfg["auto_publish"] is False
 

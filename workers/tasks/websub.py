@@ -154,28 +154,26 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
     """Triggered by webhook when YouTube pushes a new video notification."""
     log.info("WebSub notification: channel=%s video=%s", channel_id, video_id)
 
-    # Dedup — skip if already processed
+    # Atomically claim this delivery. A crashed claim becomes retryable after
+    # five minutes; simultaneous pushes cannot both fan out.
     with Session(engine) as db:
-        existing = db.execute(
-            text("SELECT id, processed FROM websub_deliveries WHERE video_id = :vid"),
-            {"vid": video_id},
-        ).fetchone()
-
-        if existing and existing[1]:
-            log.info("WebSub: video %s already processed, skipping", video_id)
-            return {"skipped": True, "reason": "already processed"}
-
-        # Log delivery
         delivery_id = uuid.uuid4()
-        db.execute(
+        claimed = db.execute(
             text("""
                 INSERT INTO websub_deliveries (id, channel_id, video_id, raw_payload, processed, received_at)
                 VALUES (:id, :cid, :vid, :payload, false, now())
-                ON CONFLICT (video_id) DO NOTHING
+                ON CONFLICT (video_id) DO UPDATE
+                SET raw_payload = EXCLUDED.raw_payload, received_at = now()
+                WHERE websub_deliveries.processed = false
+                  AND websub_deliveries.received_at < now() - interval '5 minutes'
+                RETURNING id
             """),
             {"id": delivery_id, "cid": channel_id, "vid": video_id, "payload": raw_payload},
-        )
+        ).fetchone()
         db.commit()
+        if not claimed:
+            log.info("WebSub: video %s already processed or in progress, skipping", video_id)
+            return {"skipped": True, "reason": "already processed or in progress"}
 
         # Fetch all active subscriptions for this channel
         subs = db.execute(
@@ -207,7 +205,7 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
     jobs = []
     for sub in subs:
         sub_id, tenant_id, auto_publish, pub_cfg, channel_name = sub
-        job_id = str(uuid.uuid4())
+        job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"viralo:websub:{tenant_id}:{video_id}"))
         ap_cfg = pub_cfg or {}
         cfg = {
             "max_clips": int(ap_cfg.get("num_clips", 4)),
@@ -225,7 +223,7 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
         # Create video row before dispatch — clips.video_id has FK to videos.id
         with Session(engine) as vdb:
             vdb.execute(text("SET LOCAL app.current_tenant = :tid"), {"tid": str(tenant_id)})
-            vdb.execute(
+            inserted = vdb.execute(
                 text("""
                     INSERT INTO videos
                         (id, tenant_id, source_type, source_url, status, clip_config, created_at, updated_at)
@@ -233,6 +231,7 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
                         (CAST(:id AS uuid), CAST(:tid AS uuid), 'youtube_url', :url, 'queued',
                          CAST(:cfg AS jsonb), now(), now())
                     ON CONFLICT (id) DO NOTHING
+                    RETURNING id
                 """),
                 {
                     "id": job_id,
@@ -240,21 +239,18 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
                     "url": video_url,
                     "cfg": json.dumps(cfg),
                 },
-            )
+            ).fetchone()
             vdb.commit()
+
+        if not inserted:
+            continue
 
         celery_app.send_task(
             "workers.tasks.video.process_youtube_video",
             args=[str(tenant_id), job_id, video_url, cfg],
             queue="viralo.video.pipeline",
+            task_id=job_id,
         )
-        # Update delivery with job_id
-        with Session(engine) as db:
-            db.execute(
-                text("UPDATE websub_deliveries SET job_id = :jid, processed = true WHERE video_id = :vid"),
-                {"jid": uuid.UUID(job_id), "vid": video_id},
-            )
-            db.commit()
         jobs.append({"tenant_id": str(tenant_id), "job_id": job_id})
         log.info("WebSub: triggered pipeline job=%s tenant=%s video=%s", job_id, tenant_id, video_id)
 
@@ -271,6 +267,20 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
             )
         except Exception:
             log.warning("WebSub: failed to send channel_video notification for tenant %s", tenant_id)
+
+    with Session(engine) as db:
+        db.execute(
+            text("""
+                UPDATE websub_deliveries
+                SET job_id = :jid, processed = true
+                WHERE video_id = :vid
+            """),
+            {
+                "jid": uuid.UUID(jobs[-1]["job_id"]) if jobs else None,
+                "vid": video_id,
+            },
+        )
+        db.commit()
 
     return {"triggered": len(jobs), "jobs": jobs}
 
