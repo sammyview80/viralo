@@ -238,6 +238,22 @@ async def _resolve_channel_id(input_str: str) -> tuple[str, str]:
             pass
 
     if handle:
+        yt_key = os.getenv("YOUTUBE_API_KEY", "")
+        if yt_key:
+            try:
+                async with httpx.AsyncClient(timeout=10) as c:
+                    r = await c.get(
+                        "https://www.googleapis.com/youtube/v3/channels",
+                        params={"part": "snippet", "forHandle": handle, "key": yt_key},
+                    )
+                items = r.json().get("items", [])
+                if items:
+                    cid = items[0]["id"]
+                    name = items[0]["snippet"].get("title", "")
+                    if cid:
+                        return cid, name
+            except Exception:
+                pass
         url = f"https://www.youtube.com/@{handle}"
         try:
             async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
