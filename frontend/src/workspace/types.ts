@@ -1,5 +1,6 @@
 export type PageKey =
   | "studio"
+  | "lyric-video"
   | "series"
   | "series-create"
   | "clips"

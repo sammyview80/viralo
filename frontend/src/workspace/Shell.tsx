@@ -19,7 +19,7 @@ type ActiveKey = PageKey | "dashboard";
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  studio: "Video Studio", clips: "Clips", projects: "Projects", upload: "Uploader",
+  studio: "Video Studio", "lyric-video": "Lyric Video", clips: "Clips", projects: "Projects", upload: "Uploader",
   brainstorm: "Brainstorm", workflows: "Workflow Builder", scheduler: "Scheduler",
   analytics: "Analytics", trending: "Trending", integrations: "Integrations",
   settings: "Settings", onboarding: "Onboarding", ranking: "Video Ranking",
