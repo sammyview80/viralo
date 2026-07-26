@@ -6,7 +6,6 @@ import { navigate } from "@/lib/router";
 import { videoApi, platformApi, type ClipConfig, type VideoResponse, type SocialAccount } from "@/lib/api";
 import { DEFAULT_CONFIG } from "./UploadPage";
 import { CAPTION_STYLES, type CaptionStyleOption } from "./upload/constants";
-import { LyricVideoPlanner } from "./studio/LyricVideoPlanner";
 
 // ── YouTube Import Modal ──────────────────────────────────────────────────────
 
@@ -193,6 +192,15 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
   const [accountsError, setAccountsError] = useState("");
   const [pubAccountIds, setPubAccountIds] = useState<string[]>([]);
   const [pubPerDay, setPubPerDay] = useState(3);
+  const [pubIntervalHours, setPubIntervalHours] = useState(8);
+  const [pubStartAt, setPubStartAt] = useState(() => {
+    const nextHour = new Date();
+    nextHour.setMinutes(0, 0, 0);
+    nextHour.setHours(nextHour.getHours() + 1);
+    return new Date(nextHour.getTime() - nextHour.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 16);
+  });
 
   const carouselRef = useRef<HTMLDivElement>(null);
 
@@ -258,6 +266,19 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
 
   const handleImport = useCallback(async () => {
     if (!urlVal.trim() || !urlReady) return;
+    if (autoSchedule && pubAccountIds.length === 0) {
+      setError("Select at least one social account for auto publish, or turn the toggle off.");
+      return;
+    }
+    if (autoSchedule && pubPerDay * pubIntervalHours > 24) {
+      setError("The post interval must fit all daily posts within 24 hours.");
+      return;
+    }
+    const publishStart = new Date(pubStartAt);
+    if (autoSchedule && (!pubStartAt || Number.isNaN(publishStart.getTime()))) {
+      setError("Choose a valid date and time for the first post.");
+      return;
+    }
     setUploading(true);
     setError("");
     try {
@@ -278,22 +299,18 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
           auto_publish_config: {
             social_account_ids: pubAccountIds,
             publish_per_day: pubPerDay,
-            publish_interval_hours: Math.max(1, Math.floor(24 / pubPerDay)),
+            publish_interval_hours: pubIntervalHours,
+            publish_start_at: publishStart.toISOString(),
           },
         } : {}),
       };
-      if (autoSchedule && pubAccountIds.length === 0) {
-        setError("Select at least one social account for auto publish, or turn the toggle off.");
-        setUploading(false);
-        return;
-      }
       const video = await videoApi.youtube(urlVal.trim(), undefined, cfg);
       navigate(`/projects/${video.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, urlReady, ratio, clipLen, clipCount, template, findMoment, autoSchedule, pubAccountIds, pubPerDay]);
+  }, [urlVal, urlReady, ratio, clipLen, clipCount, template, findMoment, autoSchedule, pubAccountIds, pubPerDay, pubIntervalHours, pubStartAt]);
 
   const selectClass = "flex h-[50px] items-center gap-2 rounded-[12px] border border-c-border bg-surface-2 px-3.5 transition focus-within:border-[#ff3d6a]/50";
 
@@ -509,25 +526,39 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
                         })}
                       </div>
                     )}
-                    <div className="mt-3.5 flex items-center justify-between">
-                      <div>
-                        <p className="text-[12px] font-bold text-c-text-secondary">Clips per day</p>
-                        <p className="text-[11px] text-c-text-muted">Spread evenly across the day after clips are ready</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setPubPerDay((n) => Math.max(1, n - 1))}
-                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-[8px] border border-c-border bg-surface-2 text-c-text transition hover:bg-surface-3"
-                        >−</button>
-                        <span className="w-6 text-center text-[13px] font-bold text-c-text">{pubPerDay}</span>
-                        <button
-                          type="button"
-                          onClick={() => setPubPerDay((n) => Math.min(10, n + 1))}
-                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-[8px] border border-c-border bg-surface-2 text-c-text transition hover:bg-surface-3"
-                        >+</button>
-                      </div>
-                    </div>
+                    {pubAccountIds.length > 0 && <div className="mt-3.5 grid gap-3 sm:grid-cols-3">
+                      <label>
+                        <span className="mb-1 block text-[11px] font-bold text-c-text-secondary">Posts per day</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={pubPerDay}
+                          onChange={(e) => setPubPerDay(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
+                          className="h-9 w-full rounded-[9px] border border-c-border bg-surface-2 px-2.5 text-[12px] font-semibold text-c-text outline-none focus:border-[#ff3d6a]/50"
+                        />
+                      </label>
+                      <label>
+                        <span className="mb-1 block text-[11px] font-bold text-c-text-secondary">Interval (hours)</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={24}
+                          value={pubIntervalHours}
+                          onChange={(e) => setPubIntervalHours(Math.min(24, Math.max(1, Number(e.target.value) || 1)))}
+                          className="h-9 w-full rounded-[9px] border border-c-border bg-surface-2 px-2.5 text-[12px] font-semibold text-c-text outline-none focus:border-[#ff3d6a]/50"
+                        />
+                      </label>
+                      <label>
+                        <span className="mb-1 block text-[11px] font-bold text-c-text-secondary">First post</span>
+                        <input
+                          type="datetime-local"
+                          value={pubStartAt}
+                          onChange={(e) => setPubStartAt(e.target.value)}
+                          className="h-9 w-full rounded-[9px] border border-c-border bg-surface-2 px-2.5 text-[11px] font-semibold text-c-text outline-none focus:border-[#ff3d6a]/50"
+                        />
+                      </label>
+                    </div>}
                   </div>
                 )}
               </div>
@@ -547,6 +578,329 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
             </div>
           </>
         )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── Upload Config Modal (same recipe as YouTube import, no download step) ──────
+
+interface UploadModalProps {
+  file: File;
+  onClose: () => void;
+}
+
+function UploadConfigModal({ file, onClose }: UploadModalProps) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [ratio, setRatio]         = useState<string>("9:16");
+  const [clipLen, setClipLen]     = useState<string>("any");
+  const [clipCount, setClipCount] = useState<string>("auto");
+  const [tab, setTab]             = useState<typeof TEMPLATE_TABS[number]>("9:16 template");
+  const [template, setTemplate]   = useState<string>("tiktok");
+  const [feat, setFeat]           = useState({ emoji: true, highlight: true, silences: false, brolls: false });
+  const [findMoment, setFindMoment] = useState("");
+  const [autoSchedule, setAutoSchedule] = useState(false);
+  const [accounts, setAccounts] = useState<SocialAccount[] | null>(null);
+  const [accountsError, setAccountsError] = useState("");
+  const [pubAccountIds, setPubAccountIds] = useState<string[]>([]);
+  const [pubPerDay, setPubPerDay] = useState(3);
+  const [pubIntervalHours, setPubIntervalHours] = useState(8);
+  const [pubStartAt, setPubStartAt] = useState(() => {
+    const nextHour = new Date();
+    nextHour.setMinutes(0, 0, 0);
+    nextHour.setHours(nextHour.getHours() + 1);
+    return new Date(nextHour.getTime() - nextHour.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 16);
+  });
+
+  const carouselRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!autoSchedule || accounts !== null) return;
+    let alive = true;
+    platformApi.listAccounts()
+      .then((list) => {
+        if (!alive) return;
+        const active = list.filter((a) => a.is_active);
+        setAccounts(active);
+        setPubAccountIds(active.map((a) => a.id));
+      })
+      .catch(() => { if (alive) { setAccounts([]); setAccountsError("Could not load social accounts"); } });
+    return () => { alive = false; };
+  }, [autoSchedule, accounts]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const handleUpload = useCallback(async () => {
+    if (autoSchedule && pubAccountIds.length === 0) {
+      setError("Select at least one social account for auto publish, or turn the toggle off.");
+      return;
+    }
+    if (autoSchedule && pubPerDay * pubIntervalHours > 24) {
+      setError("The post interval must fit all daily posts within 24 hours.");
+      return;
+    }
+    const publishStart = new Date(pubStartAt);
+    if (autoSchedule && (!pubStartAt || Number.isNaN(publishStart.getTime()))) {
+      setError("Choose a valid date and time for the first post.");
+      return;
+    }
+    setUploading(true);
+    setError("");
+    try {
+      const tpl = CAPTION_STYLES.find((s) => (s.id ?? "auto") === template);
+      const len = CLIP_LENGTHS.find((c) => c.id === clipLen);
+      const cnt = CLIP_COUNTS.find((c) => c.id === clipCount);
+      const cfg: ClipConfig = {
+        ...DEFAULT_CONFIG,
+        output_quality: "source",
+        aspect_ratio: ratio,
+        add_captions: true,
+        caption_style: tpl?.id ?? null,
+        ...(len?.min != null ? { duration_min: len.min, duration_max: len.max } : {}),
+        ...(cnt?.value != null ? { max_clips: cnt.value } : {}),
+        ...(findMoment.trim() ? { topic_focus: findMoment.trim() } : {}),
+        ...(autoSchedule && pubAccountIds.length > 0 ? {
+          auto_publish: true,
+          auto_publish_config: {
+            social_account_ids: pubAccountIds,
+            publish_per_day: pubPerDay,
+            publish_interval_hours: pubIntervalHours,
+            publish_start_at: publishStart.toISOString(),
+          },
+        } : {}),
+      };
+      const video = await videoApi.upload(file, file.name.replace(/\.[^.]+$/, ""), cfg);
+      navigate(`/projects/${video.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+      setUploading(false);
+    }
+  }, [file, ratio, clipLen, clipCount, template, findMoment, autoSchedule, pubAccountIds, pubPerDay, pubIntervalHours, pubStartAt]);
+
+  const selectClass = "flex h-[50px] items-center gap-2 rounded-[12px] border border-c-border bg-surface-2 px-3.5 transition focus-within:border-[#ff3d6a]/50";
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+      <div className="relative flex max-h-[92vh] w-full max-w-[680px] flex-col overflow-hidden rounded-[20px] border border-c-border bg-surface-0 shadow-[0_40px_120px_rgba(0,0,0,.7)]">
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+
+          {/* ── File header ── */}
+          <div className="mb-4 flex items-center gap-3 rounded-[14px] border border-c-border bg-surface-1 p-3">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-[10px] border border-amber-400/20 bg-amber-400/[.08]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="truncate text-[13.5px] font-bold text-c-text">{file.name}</p>
+                <span className="ml-auto shrink-0 rounded-[6px] bg-surface-2 px-2 py-0.5 text-[10.5px] font-bold text-c-text-muted">{(file.size / (1024 * 1024)).toFixed(1)} MB</span>
+              </div>
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                <div className="h-full w-full rounded-full bg-emerald-500" />
+              </div>
+              <p className="mt-1.5 text-[11px] font-semibold text-c-text-muted">Ready</p>
+            </div>
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3}><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+            <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] text-c-text-muted transition hover:bg-surface-2 hover:text-c-text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+
+          {/* ── Ratio + Clip length + Number of clips ── */}
+          <div className="mb-4 grid gap-3 sm:grid-cols-3">
+            <label className={selectClass}>
+              <span className="text-[11px] font-bold uppercase tracking-wide text-c-text-muted">Ratio</span>
+              <select value={ratio} onChange={(e) => setRatio(e.target.value)} className="flex-1 cursor-pointer appearance-none bg-transparent text-right text-[13px] font-bold text-c-text outline-none [&>option]:bg-surface-0">
+                {RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2.2}><path d="M6 9l6 6 6-6"/></svg>
+            </label>
+            <label className={selectClass}>
+              <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-c-text-muted">Length</span>
+              <select value={clipLen} onChange={(e) => setClipLen(e.target.value)} className="flex-1 cursor-pointer appearance-none bg-transparent text-right text-[13px] font-bold text-c-text outline-none [&>option]:bg-surface-0">
+                {CLIP_LENGTHS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2.2}><path d="M6 9l6 6 6-6"/></svg>
+            </label>
+            <label className={selectClass}>
+              <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-c-text-muted">Clips</span>
+              <select value={clipCount} onChange={(e) => setClipCount(e.target.value)} className="flex-1 cursor-pointer appearance-none bg-transparent text-right text-[13px] font-bold text-c-text outline-none [&>option]:bg-surface-0">
+                {CLIP_COUNTS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2.2}><path d="M6 9l6 6 6-6"/></svg>
+            </label>
+          </div>
+
+          {/* ── Template tabs ── */}
+          <div className="mb-3 flex items-center gap-1 border-b border-c-border">
+            {TEMPLATE_TABS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={cn(
+                  "relative flex items-center gap-1 px-3 py-2 text-[12.5px] font-bold transition",
+                  tab === t ? "text-c-text" : "text-c-text-muted hover:text-c-text-secondary"
+                )}
+              >
+                {t}{t === "Brand template" && <span className="text-[11px]">💎</span>}
+                {tab === t && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-[#ff3d6a]" />}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Caption template carousel ── */}
+          {tab === "9:16 template" ? (
+            <div className="relative">
+              <div ref={carouselRef} className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {CAPTION_STYLES.map((s) => (
+                  <CaptionCard key={String(s.id)} s={s} selected={template === (s.id ?? "auto")} onSelect={() => setTemplate(s.id ?? "auto")} />
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => carouselRef.current?.scrollBy({ left: 280, behavior: "smooth" })}
+                className="absolute right-1 top-[92px] grid h-8 w-8 place-items-center rounded-full border border-c-border bg-surface-0 text-c-text shadow-lg transition hover:bg-surface-3"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </div>
+          ) : (
+            <div className="grid place-items-center rounded-[14px] border border-dashed border-c-border bg-surface-1 py-12 text-center">
+              <p className="text-[12.5px] font-semibold text-c-text-muted">{tab === "My template" ? "No saved templates yet" : "Brand templates are a premium feature"}</p>
+            </div>
+          )}
+
+          {/* ── Feature toggles ── */}
+          <div className="mt-4 rounded-[14px] border border-c-border bg-surface-1 p-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <FeatureCheck label="Add emoji"         checked={feat.emoji}     onChange={() => setFeat((f) => ({ ...f, emoji: !f.emoji }))} />
+              <FeatureCheck label="Highlight keywords" checked={feat.highlight} onChange={() => setFeat((f) => ({ ...f, highlight: !f.highlight }))} />
+              <FeatureCheck label="Remove silences"    checked={feat.silences}  onChange={() => setFeat((f) => ({ ...f, silences: !f.silences }))} />
+              <FeatureCheck label="Add B-rolls"        checked={feat.brolls}    onChange={() => setFeat((f) => ({ ...f, brolls: !f.brolls }))} badge />
+            </div>
+            <div className="mt-4 mb-1.5 flex items-center justify-between">
+              <p className="text-[12px] font-bold text-c-text-secondary">Find clip moment <span className="font-medium text-c-text-muted">(optional)</span></p>
+              <span className="text-[10.5px] font-semibold text-c-text-muted">Powered by Spark</span>
+            </div>
+            <input
+              value={findMoment}
+              onChange={(e) => setFindMoment(e.target.value)}
+              placeholder="Only want specific parts? e.g. when they talk about the chorus."
+              className="h-[44px] w-full rounded-[10px] border border-c-border bg-surface-1 px-3.5 text-[12.5px] text-c-text outline-none transition placeholder:text-c-text-muted focus:border-[#ff3d6a]/50"
+            />
+          </div>
+
+          {/* ── Auto schedule ── */}
+          <div className="mt-3 rounded-[14px] border border-c-border bg-surface-1">
+            <div className="flex h-[52px] items-center gap-3 px-4">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth={1.8}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              <span className="flex-1 text-[13px] font-semibold text-c-text">Auto schedule and post to social account</span>
+              <button
+                type="button"
+                onClick={() => setAutoSchedule((v) => !v)}
+                className={cn("relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors", autoSchedule ? "bg-[#ff3d6a]" : "bg-surface-3")}
+              >
+                <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]", autoSchedule ? "left-[calc(100%-22px)]" : "left-0.5")} />
+              </button>
+            </div>
+            {autoSchedule && (
+              <div className="border-t border-c-border px-4 py-3.5">
+                <p className="mb-2 text-[12px] font-bold text-c-text-secondary">Post to accounts</p>
+                {accounts === null ? (
+                  <p className="text-[12px] text-c-text-muted">Loading accounts…</p>
+                ) : accounts.length === 0 ? (
+                  <p className="text-[12px] text-c-text-muted">
+                    {accountsError || "No social accounts connected."}{" "}
+                    <button type="button" onClick={() => navigate("/integrations")} className="cursor-pointer font-semibold text-[#ff7a9a] hover:underline">Connect one →</button>
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {accounts.map((a) => {
+                      const on = pubAccountIds.includes(a.id);
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => setPubAccountIds((ids) => on ? ids.filter((i) => i !== a.id) : [...ids, a.id])}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-semibold capitalize transition",
+                            on ? "border-[#ff3d6a] bg-[#ff3d6a]/10 text-[#ff7a9a]" : "border-c-border bg-surface-2 text-c-text-muted hover:text-c-text"
+                          )}
+                        >
+                          {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6L9 17l-5-5"/></svg>}
+                          {a.platform}{a.platform_username ? ` · ${a.platform_username}` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {pubAccountIds.length > 0 && <div className="mt-3.5 grid gap-3 sm:grid-cols-3">
+                  <label>
+                    <span className="mb-1 block text-[11px] font-bold text-c-text-secondary">Posts per day</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={pubPerDay}
+                      onChange={(e) => setPubPerDay(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
+                      className="h-9 w-full rounded-[9px] border border-c-border bg-surface-2 px-2.5 text-[12px] font-semibold text-c-text outline-none focus:border-[#ff3d6a]/50"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-[11px] font-bold text-c-text-secondary">Interval (hours)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={pubIntervalHours}
+                      onChange={(e) => setPubIntervalHours(Math.min(24, Math.max(1, Number(e.target.value) || 1)))}
+                      className="h-9 w-full rounded-[9px] border border-c-border bg-surface-2 px-2.5 text-[12px] font-semibold text-c-text outline-none focus:border-[#ff3d6a]/50"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-[11px] font-bold text-c-text-secondary">First post</span>
+                    <input
+                      type="datetime-local"
+                      value={pubStartAt}
+                      onChange={(e) => setPubStartAt(e.target.value)}
+                      className="h-9 w-full rounded-[9px] border border-c-border bg-surface-2 px-2.5 text-[11px] font-semibold text-c-text outline-none focus:border-[#ff3d6a]/50"
+                    />
+                  </label>
+                </div>}
+              </div>
+            )}
+          </div>
+
+          {error && <p className="mt-3 text-center text-[11.5px] font-medium text-red-400">{error}</p>}
+        </div>
+
+        {/* ── Sticky footer: Get AI clips ── */}
+        <div className="shrink-0 border-t border-c-border bg-surface-0 p-4">
+          <Button
+            disabled={uploading}
+            onClick={handleUpload}
+            className="h-[52px] w-full rounded-[13px] bg-gradient-to-r from-[#ff3d6a] via-[#ff5f86] to-[#ff7a3d] text-[14.5px] font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.30)] disabled:opacity-50"
+          >
+            {uploading ? <><span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent align-[-2px]" />Generating…</> : "✦ Get AI clips"}
+          </Button>
+        </div>
       </div>
     </div>,
     document.body
@@ -651,8 +1005,8 @@ export function StudioPage() {
 
   const [url, setUrl]             = useState("");
   const [drag, setDrag]           = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [recents, setRecents]     = useState<VideoResponse[]>([]);
@@ -697,21 +1051,15 @@ export function StudioPage() {
     }
   }, []);
 
-  const handleFile = useCallback(async (files: FileList | null) => {
+  // File picked/dropped: open the same config recipe as YouTube import, minus the download step.
+  const handleFile = useCallback((files: FileList | null) => {
     if (!files?.length) return;
-    const file = files[0];
-    setUploading(true);
     setUploadError("");
-    try {
-      const video = await videoApi.upload(file, file.name.replace(/\.[^.]+$/, ""), DEFAULT_CONFIG);
-      navigate(`/projects/${video.id}`);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-      setUploading(false);
-    }
+    setUploadFile(files[0]);
   }, []);
 
-  const pickFile = () => { if (!uploading) fileInputRef.current?.click(); };
+  const pickFile = () => { if (!uploadFile) fileInputRef.current?.click(); };
+  const closeUploadModal = () => setUploadFile(null);
 
   // GET CLIPS: a YouTube URL opens the import modal; anything else opens the file picker.
   const handleGetClips = () => {
@@ -736,15 +1084,24 @@ export function StudioPage() {
       {ytModalOpen && (
         <YoutubeImportModal initialUrl={ytInitialUrl} prefetched={ytPrefetch} onClose={closeYtModal} />
       )}
+      {uploadFile && (
+        <UploadConfigModal file={uploadFile} onClose={closeUploadModal} />
+      )}
 
-      <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files)} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={(e) => { handleFile(e.target.files); e.target.value = ""; }}
+      />
 
       <div
         {...dragProps}
         className="flex min-h-full flex-1 flex-col bg-surface-0"
       >
         {/* ── Hero ── */}
-        <div className="relative overflow-hidden">
+        <div className="relative shrink-0 overflow-hidden">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,61,106,.16),transparent_45%)]" />
           <div className="relative mx-auto flex w-full max-w-[860px] flex-col items-center px-4 pb-7 pt-8 text-center">
             <p className="text-[11px] font-bold uppercase tracking-[.22em] text-[#ff6f92]">Video Studio</p>
@@ -770,11 +1127,11 @@ export function StudioPage() {
               <button
                 type="button"
                 onClick={handleGetClips}
-                disabled={uploading || ytFetching}
+                disabled={ytFetching}
                 className="ml-2 flex shrink-0 items-center gap-2 rounded-full bg-[#ff3d6a] px-5 py-2.5 text-[12.5px] font-bold text-white shadow-[0_10px_26px_rgba(255,61,106,.30)] transition hover:bg-[#ff537b] disabled:opacity-50"
               >
                 {ytFetching && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />}
-                {uploading ? "Uploading…" : ytFetching ? "Fetching…" : "GET CLIPS"}
+                {ytFetching ? "Fetching…" : "GET CLIPS"}
               </button>
             </div>
 
@@ -831,9 +1188,7 @@ export function StudioPage() {
               )}
             >
               <div className="grid h-11 w-11 place-items-center rounded-[13px] border border-amber-400/20 bg-amber-400/[.08]">
-                {uploading
-                  ? <span className="block h-5 w-5 animate-spin rounded-full border-2 border-amber-300/40 border-t-amber-300" />
-                  : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth={1.8}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               </div>
               <h3 className="mt-3 font-display text-[15px] font-bold text-c-text">Upload Video</h3>
               <p className="mt-1.5 text-[12px] leading-5 text-c-text-muted">Drop any MP4, MOV or WebM — podcast, webinar, tutorial — and clip it into viral shorts.</p>
@@ -862,8 +1217,6 @@ export function StudioPage() {
               </div>
             </button>
           </div>
-
-          <LyricVideoPlanner />
 
           {uploadError && (
             <div className="mt-5 flex items-center gap-2.5 rounded-[12px] border border-red-400/20 bg-red-400/[.07] px-4 py-3 text-[12.5px] font-medium text-red-400">
