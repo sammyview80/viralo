@@ -260,6 +260,49 @@ def test_unlimited_email_bypass_checks_all_tenant_users():
         assert _core._is_unlimited(str(uuid.uuid4())) is True
 
 
+@pytest.mark.asyncio
+async def test_notification_list_is_scoped_to_current_user():
+    from platform_svc.routers import notifications
+    from shared.schemas.auth import TokenPayload
+
+    token = TokenPayload(sub=str(uuid.uuid4()), tenant_id=str(uuid.uuid4()),
+                         email="u@example.com", plan="free", type="access")
+    count_result = MagicMock()
+    count_result.scalar_one.return_value = 0
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = []
+    db = AsyncMock()
+    db.execute.side_effect = [count_result, list_result]
+
+    await notifications.list_notifications(
+        unread=None, page=1, per_page=20, token=token, db=db
+    )
+
+    for call in db.execute.await_args_list:
+        sql = str(call.args[0])
+        assert "notifications.user_id =" in sql
+
+
+def test_video_notification_targets_uploading_user():
+    from workers.tasks.video import _core
+
+    user_id = str(uuid.uuid4())
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = (user_id,)
+    conn_cm = MagicMock()
+    conn_cm.__enter__.return_value = conn
+    conn_cm.__exit__.return_value = False
+    notification_module = MagicMock()
+
+    with patch.object(_core.engine, "connect", return_value=conn_cm), \
+         patch.dict(sys.modules, {"workers.tasks.notification": notification_module}):
+        _core._notify_video(
+            str(uuid.uuid4()), str(uuid.uuid4()), "video_ready", "Ready", "Done"
+        )
+
+    assert notification_module.send_notification.delay.call_args.kwargs["user_id"] == user_id
+
+
 def test_publish_exception_after_external_call_fails_closed(tmp_path, monkeypatch):
     from workers.publishers.base import PublishResult
     from workers.tasks import post
