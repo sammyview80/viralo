@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 import { trendsApi, type VideoMeta, type TrendSearchResponse } from "@/lib/api";
 import { navigate } from "@/lib/router";
@@ -54,6 +54,41 @@ function SparklesIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
       className="size-4" aria-hidden>
       <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5 fill-current" aria-hidden>
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  );
+}
+
+function TrendingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
+      className="size-8" aria-hidden>
+      <path d="M22 7 13.5 15.5 8.5 10.5 2 17M16 7h6v6" />
+    </svg>
+  );
+}
+
+function EmptyBoxIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
+      className="size-8" aria-hidden>
+      <path d="M21 8v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8M1 5l1.65-2.75A1 1 0 0 1 3.5 2h17a1 1 0 0 1 .85.47L23 5M1 5l1.65 2.75A1 1 0 0 0 3.5 8h17a1 1 0 0 0 .85-.47L23 5M1 5h22" />
+    </svg>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      className="size-4 shrink-0" aria-hidden>
+      <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
     </svg>
   );
 }
@@ -123,51 +158,61 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
         href={video.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex gap-3 rounded-xl border border-white/[.06] bg-white/[.03] p-3
-                   transition hover:border-white/[.12] hover:bg-white/[.06]"
+        className="flex gap-3 rounded-xl border border-c-border bg-surface-1 p-3
+                   shadow-sm transition hover:-translate-y-0.5 hover:border-c-border-hover
+                   hover:bg-surface-2 hover:shadow-md"
       >
-        {/* Thumbnail */}
-        <div className="relative shrink-0">
-          <div className="size-20 overflow-hidden rounded-lg bg-white/[.06] sm:size-24">
-            {video.thumbnail ? (
-              <img src={video.thumbnail} alt="" className="size-full object-cover" loading="lazy" />
-            ) : (
-              <div className="size-full" />
-            )}
+        {/* Thumbnail — 16:9, matches source video shape */}
+        <div className="relative aspect-video w-32 shrink-0 overflow-hidden rounded-lg bg-surface-2 sm:w-44">
+          {video.thumbnail ? (
+            <img src={video.thumbnail} alt="" loading="lazy"
+              className="size-full object-cover transition duration-300 group-hover/card:scale-105" />
+          ) : (
+            <div className="grid size-full place-items-center text-c-text-muted">
+              <PlayIcon />
+            </div>
+          )}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center
+                          bg-black/0 opacity-0 transition group-hover/card:bg-black/25 group-hover/card:opacity-100">
+            <span className="grid size-9 place-items-center rounded-full bg-white/90 text-black shadow-lg">
+              <PlayIcon />
+            </span>
           </div>
           {video.duration_sec && (
-            <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 py-px text-[10px] text-white">
+            <span className="absolute bottom-1 right-1 rounded bg-black/75 px-1.5 py-px text-[10px] font-medium text-white">
               {fmtDuration(video.duration_sec)}
             </span>
           )}
           {rank !== undefined && (
-            <span className="absolute -left-1 -top-1 flex size-5 items-center justify-center
-                             rounded-full bg-[#ff3d6a] text-[10px] font-bold text-white shadow">
+            <span className="absolute -left-1.5 -top-1.5 flex size-6 items-center justify-center
+                             rounded-full bg-[#ff3d6a] text-[11px] font-bold text-white shadow-md ring-2 ring-surface-1">
               {rank}
             </span>
           )}
         </div>
 
         {/* Info */}
-        <div className="min-w-0 flex-1 pr-24 sm:pr-40">
-          <p className="line-clamp-2 text-sm font-medium leading-snug text-white/90
-                        group-hover/card:text-white">
+        <div className="min-w-0 flex-1 py-0.5 pr-24 sm:pr-40">
+          <p className="line-clamp-2 text-sm font-medium leading-snug text-c-text
+                        transition group-hover/card:text-[#ff3d6a]">
             {video.title}
           </p>
           {video.channel && (
-            <p className="mt-0.5 truncate text-xs text-white/40">{video.channel}</p>
+            <p className="mt-1 truncate text-xs text-c-text-muted">{video.channel}</p>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <PlatformBadge platform={video.platform} />
             {video.views && (
-              <span className="text-xs text-white/50">{fmtViews(video.views)} views</span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-c-text-secondary">
+                {fmtViews(video.views)} views
+              </span>
             )}
             {video.likes && (
-              <span className="text-xs text-white/40">{fmtViews(video.likes)} likes</span>
+              <span className="text-xs text-c-text-muted">♥ {fmtViews(video.likes)}</span>
             )}
           </div>
           {video.hashtags.length > 0 && (
-            <p className="mt-1.5 line-clamp-1 text-xs text-[#ff3d6a]/70">
+            <p className="mt-2 line-clamp-1 text-xs text-[#ff3d6a]/70">
               {video.hashtags.slice(0, 5).map((h) => `#${h}`).join(" ")}
             </p>
           )}
@@ -191,8 +236,8 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
         {video.platform === "youtube" && (
           <button
             onClick={handleSubscribe}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/[.08]
-                       bg-white/[.04] px-2.5 text-xs font-medium text-white/55 transition
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-c-border
+                       bg-surface-2 px-2.5 text-xs font-medium text-c-text-secondary transition
                        hover:border-red-400/25 hover:bg-red-500/10 hover:text-red-300"
             title="Subscribe to channel"
           >
@@ -216,8 +261,8 @@ function HashtagCloud({ tags, onSearch }: { tags: string[]; onSearch: (t: string
         <button
           key={tag}
           onClick={() => onSearch(`#${tag}`)}
-          className="rounded-full border border-white/[.08] bg-white/[.04] px-3 py-1
-                     text-xs text-white/60 transition hover:border-[#ff3d6a]/40
+          className="rounded-full border border-c-border bg-surface-2 px-3 py-1
+                     text-xs text-c-text-secondary transition hover:border-[#ff3d6a]/40
                      hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
         >
           #{tag}
@@ -243,20 +288,20 @@ function PlatformTabs({ active, onChange, counts }: {
     { id: "web", label: "Web", count: counts.web },
   ];
   return (
-    <div className="flex gap-1 rounded-xl border border-white/[.06] bg-white/[.03] p-1">
+    <div className="flex gap-1 rounded-xl border border-c-border bg-surface-1 p-1">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
           className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
             active === t.id
-              ? "bg-white/[.08] text-white"
-              : "text-white/50 hover:text-white/70"
+              ? "bg-surface-2 text-c-text"
+              : "text-c-text-muted hover:text-c-text-secondary"
           }`}
         >
           {t.label}
           <span className={`rounded-full px-1.5 py-px text-[10px] ${
-            active === t.id ? "bg-[#ff3d6a] text-white" : "bg-white/[.06] text-white/40"
+            active === t.id ? "bg-[#ff3d6a] text-white" : "bg-surface-2 text-c-text-muted"
           }`}>
             {t.count}
           </span>
@@ -270,12 +315,12 @@ function PlatformTabs({ active, onChange, counts }: {
 
 function SkeletonCard() {
   return (
-    <div className="flex gap-3 rounded-xl border border-white/[.06] bg-white/[.03] p-3">
-      <div className="size-20 shrink-0 animate-pulse rounded-lg bg-white/[.06] sm:size-24" />
+    <div className="flex gap-3 rounded-xl border border-c-border bg-surface-1 p-3">
+      <div className="size-20 shrink-0 animate-pulse rounded-lg bg-surface-2 sm:size-24" />
       <div className="flex-1 space-y-2 py-1">
-        <div className="h-3 w-3/4 animate-pulse rounded bg-white/[.06]" />
-        <div className="h-3 w-1/2 animate-pulse rounded bg-white/[.06]" />
-        <div className="h-5 w-20 animate-pulse rounded-full bg-white/[.06]" />
+        <div className="h-3 w-3/4 animate-pulse rounded bg-surface-2" />
+        <div className="h-3 w-1/2 animate-pulse rounded bg-surface-2" />
+        <div className="h-5 w-20 animate-pulse rounded-full bg-surface-2" />
       </div>
     </div>
   );
@@ -293,12 +338,12 @@ function AiAnalysis({ analysis, onSearch }: {
         <SparklesIcon />
         <span className="text-[11px] font-bold uppercase tracking-widest">AI Trend Analysis</span>
       </div>
-      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+      <p className="mt-3 text-[13px] leading-relaxed text-c-text-secondary">
         {analysis.insights}
       </p>
       {analysis.suggested_topics.length > 0 && (
-        <div className="mt-4 border-t border-white/[.06] pt-4">
-          <p className="mb-2.5 text-[10px] font-bold uppercase tracking-widest text-white/30">
+        <div className="mt-4 border-t border-c-border pt-4">
+          <p className="mb-2.5 text-[10px] font-bold uppercase tracking-widest text-c-text-muted">
             Suggested related topics
           </p>
           <div className="flex flex-wrap gap-2">
@@ -306,8 +351,8 @@ function AiAnalysis({ analysis, onSearch }: {
               <button
                 key={s}
                 onClick={() => onSearch(s)}
-                className="rounded-full border border-white/[.08] bg-white/[.04] px-3
-                           py-1.5 text-xs text-white/60 transition hover:border-[#ff3d6a]/40
+                className="rounded-full border border-c-border bg-surface-2 px-3
+                           py-1.5 text-xs text-c-text-secondary transition hover:border-[#ff3d6a]/40
                            hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
               >
                 {s}
@@ -335,32 +380,32 @@ function TrendInsightRail({ result, onSearch }: {
       {result.analysis ? (
         <AiAnalysis analysis={result.analysis} onSearch={onSearch} />
       ) : (
-        <div className="rounded-xl border border-white/[.06] bg-white/[.03] p-4">
-          <div className="flex items-center gap-2 text-white/70">
+        <div className="rounded-xl border border-c-border bg-surface-1 p-4">
+          <div className="flex items-center gap-2 text-c-text-secondary">
             <SparklesIcon />
             <span className="text-[11px] font-bold uppercase tracking-widest">AI Trend Analysis</span>
           </div>
-          <p className="mt-3 text-[13px] leading-6 text-white/45">
+          <p className="mt-3 text-[13px] leading-6 text-c-text-muted">
             Analysis is not available for this search yet. Refresh the trend scan to request a new read.
           </p>
         </div>
       )}
 
-      <div className="rounded-xl border border-white/[.06] bg-white/[.03] p-4">
+      <div className="rounded-xl border border-c-border bg-surface-1 p-4">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-white/35">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-c-text-muted">
             Platform mix
           </p>
           {result.from_cache && (
-            <span className="rounded-full border border-white/[.06] px-2 py-0.5 text-[10px] text-white/35">
+            <span className="rounded-full border border-c-border px-2 py-0.5 text-[10px] text-c-text-muted">
               cached
             </span>
           )}
         </div>
         <div className="space-y-2">
           {platformStats.map(({ label, count, color }) => (
-            <div key={label} className="flex items-center justify-between rounded-lg bg-white/[.035] px-3 py-2">
-              <span className="text-xs text-white/55">{label}</span>
+            <div key={label} className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2">
+              <span className="text-xs text-c-text-secondary">{label}</span>
               <span className={`text-sm font-bold ${color}`}>{count}</span>
             </div>
           ))}
@@ -368,8 +413,8 @@ function TrendInsightRail({ result, onSearch }: {
       </div>
 
       {result.common_hashtags.length > 0 && (
-        <div className="rounded-xl border border-white/[.06] bg-white/[.03] p-4">
-          <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-white/35">
+        <div className="rounded-xl border border-c-border bg-surface-1 p-4">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-c-text-muted">
             Trending hashtags
           </p>
           <HashtagCloud
@@ -404,6 +449,11 @@ export function TrendingPage() {
   const [result, setResult] = useState<TrendSearchResponse | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [history, setHistory] = useState<string[]>(loadHistory);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!initialQuery) searchInputRef.current?.focus();
+  }, [initialQuery]);
 
   const doSearch = useCallback(async (topic: string, forceRefresh = false) => {
     const t = topic.trim();
@@ -445,29 +495,47 @@ export function TrendingPage() {
     <div className="mx-auto max-w-[1400px] space-y-6 px-4 py-6">
 
         {/* Header */}
-        <div>
-          <h1 className="text-xl font-semibold text-white">Trending</h1>
-          <p className="mt-1 text-sm text-white/50">
-            Discover viral AI videos across YouTube, TikTok, and the web.
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#ff3d6a]/10 text-[#ff3d6a]">
+            <TrendingIcon />
+          </span>
+          <div>
+            <h1 className="text-xl font-semibold text-c-text">Trending</h1>
+            <p className="mt-0.5 text-sm text-c-text-muted">
+              Discover viral AI videos across YouTube, TikTok, and the web.
+            </p>
+          </div>
         </div>
 
         {/* Search bar */}
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-c-text-muted">
               <SearchIcon />
             </span>
             <input
+              ref={searchInputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && doSearch(query)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") doSearch(query);
+                if (e.key === "Escape") { setQuery(""); setResult(null); }
+              }}
               placeholder="Search trending videos… e.g. AI tools 2025"
-              className="h-11 w-full rounded-xl border border-white/[.08] bg-white/[.04]
-                         pl-10 pr-4 text-sm text-white placeholder-white/30
-                         outline-none transition focus:border-[#ff3d6a]/50 focus:bg-white/[.06]"
+              className="h-11 w-full rounded-xl border border-c-border bg-surface-1
+                         pl-10 pr-9 text-sm text-c-text placeholder:text-c-text-muted
+                         outline-none transition focus:border-[#ff3d6a]/50 focus:bg-surface-2"
             />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="Clear search input"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-c-text-muted transition hover:text-c-text-secondary"
+              >
+                ✕
+              </button>
+            )}
           </div>
           <button
             onClick={() => doSearch(query)}
@@ -486,8 +554,8 @@ export function TrendingPage() {
                 disabled={loading}
                 title="Force refresh — bypass cache"
                 className="flex h-11 w-11 items-center justify-center rounded-xl border
-                           border-white/[.08] bg-white/[.04] text-white/50 transition
-                           hover:border-white/20 hover:text-white/80 disabled:opacity-40"
+                           border-c-border bg-surface-1 text-c-text-muted transition
+                           hover:border-c-border-hover hover:text-c-text-secondary disabled:opacity-40"
               >
                 <RefreshIcon spinning={loading} />
               </button>
@@ -495,7 +563,7 @@ export function TrendingPage() {
                 onClick={() => { setResult(null); setQuery(""); }}
                 title="Clear results"
                 className="flex h-11 w-11 items-center justify-center rounded-xl border
-                           border-white/[.08] bg-white/[.04] text-white/50 transition
+                           border-c-border bg-surface-1 text-c-text-muted transition
                            hover:border-red-500/30 hover:text-red-400"
               >
                 ✕
@@ -506,14 +574,25 @@ export function TrendingPage() {
 
         {/* History + Suggestions */}
         {!result && !loading && (
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {history.length === 0 && (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-c-border py-10 text-center">
+                <span className="grid size-12 place-items-center rounded-full bg-[#ff3d6a]/10 text-[#ff3d6a]">
+                  <TrendingIcon />
+                </span>
+                <p className="mt-1 text-sm font-medium text-c-text">See what's going viral right now</p>
+                <p className="max-w-sm text-xs text-c-text-muted">
+                  Search a topic to pull the top trending videos, or try one of the suggestions below.
+                </p>
+              </div>
+            )}
             {history.length > 0 && (
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wider text-white/30">Recent searches</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-c-text-muted">Recent searches</p>
                   <button
                     onClick={() => { clearHistory(); setHistory([]); }}
-                    className="text-[10px] text-white/30 transition hover:text-white/60"
+                    className="text-[10px] text-c-text-muted transition hover:text-c-text-secondary"
                   >
                     Clear
                   </button>
@@ -523,18 +602,18 @@ export function TrendingPage() {
                     <button
                       key={h}
                       onClick={() => doSearch(h)}
-                      className="flex items-center gap-1.5 rounded-full border border-white/[.08] bg-white/[.04] px-3
-                                 py-1.5 text-xs text-white/70 transition hover:border-[#ff3d6a]/40
+                      className="flex items-center gap-1.5 rounded-full border border-c-border bg-surface-1 px-3
+                                 py-1.5 text-xs text-c-text-secondary transition hover:border-[#ff3d6a]/40
                                  hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
                     >
-                      <span className="text-white/30">↺</span>{h}
+                      <span className="text-c-text-muted">↺</span>{h}
                     </button>
                   ))}
                 </div>
               </div>
             )}
             <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/30">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-c-text-muted">
                 Suggested searches
               </p>
               <div className="flex flex-wrap gap-2">
@@ -542,8 +621,8 @@ export function TrendingPage() {
                   <button
                     key={s}
                     onClick={() => doSearch(s)}
-                    className="rounded-full border border-white/[.08] bg-white/[.04] px-3
-                               py-1.5 text-xs text-white/60 transition hover:border-[#ff3d6a]/40
+                    className="rounded-full border border-c-border bg-surface-1 px-3
+                               py-1.5 text-xs text-c-text-secondary transition hover:border-[#ff3d6a]/40
                                hover:bg-[#ff3d6a]/10 hover:text-[#ff3d6a]"
                   >
                     {s}
@@ -556,14 +635,21 @@ export function TrendingPage() {
 
         {/* Error */}
         {error && (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            {error}
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span className="flex items-center gap-2"><AlertIcon />{error}</span>
+            <button
+              onClick={() => doSearch(query)}
+              className="shrink-0 rounded-lg border border-red-500/30 px-3 py-1 text-xs font-semibold text-red-200 transition hover:bg-red-500/15"
+            >
+              Retry
+            </button>
           </div>
         )}
 
         {/* Skeleton */}
         {loading && (
           <div className="space-y-3">
+            <p className="text-xs text-c-text-muted">Scanning YouTube, TikTok, and the web for "{query}"…</p>
             {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
         )}
@@ -586,8 +672,8 @@ export function TrendingPage() {
                     }}
                   />
                 </div>
-                <div className="flex items-center gap-2 text-xs text-white/40">
-                  <span>{result.summary.total} videos found</span>
+                <div className="flex items-center gap-2 text-xs text-c-text-muted">
+                  <span>{visibleVideos.length} {visibleVideos.length === 1 ? "video" : "videos"} found</span>
                 </div>
               </div>
 
@@ -604,9 +690,15 @@ export function TrendingPage() {
                   ))}
                 </div>
               ) : (
-                <p className="py-8 text-center text-sm text-white/40">
-                  No {activeTab === "all" ? "" : activeTab + " "}results found.
-                </p>
+                <div className="flex flex-col items-center gap-2 py-14 text-center">
+                  <span className="grid size-11 place-items-center rounded-full bg-surface-2 text-c-text-muted">
+                    <EmptyBoxIcon />
+                  </span>
+                  <p className="text-sm font-medium text-c-text">
+                    No {activeTab === "all" ? "" : activeTab + " "}results found
+                  </p>
+                  <p className="text-xs text-c-text-muted">Try a different platform tab or search term.</p>
+                </div>
               )}
             </div>
 

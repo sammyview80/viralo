@@ -121,7 +121,7 @@ function detectPlatform(url: string): string | null {
 }
 
 const inputCls =
-  "min-w-0 flex-1 rounded-[11px] border border-white/[.08] bg-white/[.04] px-4 py-3 text-[13px] font-medium text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]";
+  "min-w-0 flex-1 rounded-[11px] border border-c-border bg-surface-1 px-4 py-3 text-[13px] font-medium text-c-text placeholder-c-text-muted outline-none transition focus:border-[#ff3d6a]/50 focus:shadow-[0_0_0_3px_rgba(255,61,106,.08)]";
 
 interface TrimPreviewProps {
   src: string;
@@ -151,14 +151,14 @@ function TrimTimeFields({ startSec, endSec, duration, onStartChange, onEndChange
   const clipDuration = Math.max(0, endSec - startSec);
 
   return (
-    <div className="mt-3 rounded-[13px] border border-white/[.07] bg-white/[.025] p-3">
+    <div className="mt-3 rounded-[13px] border border-c-border bg-surface-2 p-3">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">Trim</span>
-        <span className="text-[11px] font-semibold text-zinc-500">{clipDuration.toFixed(1)}s clip</span>
+        <span className="text-[11px] font-bold uppercase tracking-wide text-c-text-muted">Trim</span>
+        <span className="text-[11px] font-semibold text-c-text-muted">{clipDuration.toFixed(1)}s clip</span>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-semibold text-zinc-500">Start clip</span>
+          <span className="text-[11px] font-semibold text-c-text-muted">Start clip</span>
           <input
             type="number"
             inputMode="decimal"
@@ -170,11 +170,11 @@ function TrimTimeFields({ startSec, endSec, duration, onStartChange, onEndChange
               const next = normalizeTrimNumber(e.target.value);
               onStartChange(Math.min(next, Math.max(0, endSec - 0.1)));
             }}
-            className="rounded-[10px] border border-white/[.08] bg-[#0b0f17] px-3 py-2 text-[13px] font-semibold text-zinc-200 outline-none transition focus:border-[#ff3d6a]/50"
+            className="rounded-[10px] border border-c-border bg-surface-1 px-3 py-2 text-[13px] font-semibold text-c-text outline-none transition focus:border-[#ff3d6a]/50"
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-semibold text-zinc-500">End clip</span>
+          <span className="text-[11px] font-semibold text-c-text-muted">End clip</span>
           <input
             type="number"
             inputMode="decimal"
@@ -186,10 +186,10 @@ function TrimTimeFields({ startSec, endSec, duration, onStartChange, onEndChange
               const next = normalizeTrimNumber(e.target.value);
               onEndChange(durationMax ? Math.min(durationMax, Math.max(startSec + 0.1, next)) : Math.max(startSec + 0.1, next));
             }}
-            className="rounded-[10px] border border-white/[.08] bg-[#0b0f17] px-3 py-2 text-[13px] font-semibold text-zinc-200 outline-none transition focus:border-[#ff3d6a]/50"
+            className="rounded-[10px] border border-c-border bg-surface-1 px-3 py-2 text-[13px] font-semibold text-c-text outline-none transition focus:border-[#ff3d6a]/50"
           />
         </label>
-        <div className="rounded-[10px] border border-white/[.06] bg-black/20 px-3 py-2 text-[11px] font-semibold text-zinc-500">
+        <div className="rounded-[10px] border border-c-border bg-surface-1 px-3 py-2 text-[11px] font-semibold text-c-text-muted">
           Clip length
         </div>
       </div>
@@ -201,7 +201,7 @@ function VideoTrimPreview({ src, startSec, endSec, duration, onDurationLoaded, o
   const videoRef = useRef<HTMLVideoElement>(null);
 
   return (
-    <div className="mt-3 overflow-hidden rounded-[14px] border border-white/[.08] bg-black">
+    <div className="mt-3 overflow-hidden rounded-[14px] border border-c-border bg-black">
       <video
         ref={videoRef}
         src={src}
@@ -240,7 +240,7 @@ function StatusBadge({ status }: { status: string }) {
     failed:     { bg: "bg-red-500/[.12]",     text: "text-red-400",     label: "Failed" },
     error:      { bg: "bg-red-500/[.12]",     text: "text-red-400",     label: "Error" },
   };
-  const s = map[status] ?? { bg: "bg-white/[.06]", text: "text-zinc-400", label: status };
+  const s = map[status] ?? { bg: "bg-surface-2", text: "text-c-text-secondary", label: status };
   return (
     <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide", s.bg, s.text)}>
       {s.label}
@@ -298,7 +298,7 @@ function RankingCard({ v }: { v: VideoResponse }) {
   if (segCount != null) tags.push("#segments");
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-[18px] border border-white/[.08] bg-[#0e0f11] transition hover:border-white/[.16]">
+    <div className="group flex flex-col overflow-hidden rounded-[18px] border border-c-border bg-surface-1 transition hover:border-c-border-hover">
       {/* Thumbnail / player */}
       <div className="relative aspect-video w-full overflow-hidden bg-zinc-900">
         {clip?.storage_url ? (
@@ -370,42 +370,42 @@ function RankingCard({ v }: { v: VideoResponse }) {
       {/* Body */}
       <div className="flex flex-1 flex-col gap-2 p-4">
         {/* Title */}
-        <p className="text-[15px] font-bold leading-snug text-white line-clamp-2">
+        <p className="text-[15px] font-bold leading-snug text-c-text line-clamp-2">
           {v.title || "Untitled Ranking"}
         </p>
 
         {/* Description */}
         {description && (
-          <p className="text-[12px] leading-5 text-zinc-500 line-clamp-2">{description}</p>
+          <p className="text-[12px] leading-5 text-c-text-muted line-clamp-2">{description}</p>
         )}
 
         {/* Meta chips row */}
         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
           <StatusBadge status={v.status} />
           {segCount != null && (
-            <span className="rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[11px] font-medium text-zinc-400">
+            <span className="rounded-full border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] font-medium text-c-text-muted">
               {segCount} clips
             </span>
           )}
-          <span className="rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[11px] font-medium text-zinc-400">
+          <span className="rounded-full border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] font-medium text-c-text-muted">
             {createdAt}
           </span>
-          <span className="rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-1 text-[11px] font-medium text-zinc-400">
+          <span className="rounded-full border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] font-medium text-c-text-muted">
             9:16
           </span>
         </div>
 
         {/* Order range */}
         {order && (
-          <div className="flex items-center gap-2 text-[11px] text-zinc-600">
+          <div className="flex items-center gap-2 text-[11px] text-c-text-muted">
             <span className="font-semibold">{order === "countdown" ? "5→1 countdown" : "1→5 ascending"}</span>
           </div>
         )}
 
         {/* Progress bar */}
-        <div className="h-[3px] w-full overflow-hidden rounded-full bg-white/[.06]">
+        <div className="h-[3px] w-full overflow-hidden rounded-full bg-surface-2">
           <div
-            className={cn("h-full rounded-full transition-all duration-500", isReady ? "bg-emerald-500" : isError ? "bg-red-500" : "bg-zinc-600")}
+            className={cn("h-full rounded-full transition-all duration-500", isReady ? "bg-emerald-500" : isError ? "bg-red-500" : "bg-c-text-muted")}
             style={{ width: isReady ? "100%" : isError ? "30%" : "0%" }}
           />
         </div>
@@ -413,12 +413,12 @@ function RankingCard({ v }: { v: VideoResponse }) {
         {/* Hashtags */}
         <div className="flex flex-wrap gap-1.5 pt-0.5">
           {tags.slice(0, 3).map((t) => (
-            <span key={t} className="rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-0.5 text-[10px] text-zinc-500">
+            <span key={t} className="rounded-full border border-c-border bg-surface-2 px-2.5 py-0.5 text-[10px] text-c-text-muted">
               {t}
             </span>
           ))}
           {tags.length > 3 && (
-            <span className="rounded-full border border-white/[.07] bg-white/[.03] px-2.5 py-0.5 text-[10px] text-zinc-500">
+            <span className="rounded-full border border-c-border bg-surface-2 px-2.5 py-0.5 text-[10px] text-c-text-muted">
               +{tags.length - 3}
             </span>
           )}
@@ -465,8 +465,8 @@ function RankingList({ onNew }: RankingListProps) {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-white">Video Rankings</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">{total} ranking{total !== 1 ? "s" : ""} created</p>
+          <h1 className="font-display text-2xl font-bold text-c-text">Video Rankings</h1>
+          <p className="mt-1 text-[13px] text-c-text-muted">{total} ranking{total !== 1 ? "s" : ""} created</p>
         </div>
         <button
           onClick={onNew}
@@ -485,21 +485,21 @@ function RankingList({ onNew }: RankingListProps) {
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="overflow-hidden rounded-[18px] border border-white/[.06] bg-[#111113] animate-pulse">
-              <div className="aspect-video w-full bg-white/[.04]" />
+            <div key={i} className="overflow-hidden rounded-[18px] border border-c-border bg-surface-1 animate-pulse">
+              <div className="aspect-video w-full bg-surface-2" />
               <div className="flex flex-col gap-2.5 p-4">
-                <div className="h-4 w-3/4 rounded-md bg-white/[.05]" />
-                <div className="h-3 w-1/2 rounded-md bg-white/[.03]" />
-                <div className="h-1 w-full rounded-full bg-white/[.04]" />
+                <div className="h-4 w-3/4 rounded-md bg-surface-2" />
+                <div className="h-3 w-1/2 rounded-md bg-surface-2" />
+                <div className="h-1 w-full rounded-full bg-surface-2" />
               </div>
             </div>
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-4 rounded-[20px] border border-dashed border-white/[.1] bg-white/[.01] py-20 text-center">
+        <div className="flex flex-col items-center justify-center gap-4 rounded-[20px] border border-dashed border-c-border bg-surface-1 py-20 text-center">
           <span className="text-4xl">🏆</span>
-          <p className="text-sm font-semibold text-zinc-400">No ranking videos yet</p>
-          <p className="text-[12px] text-zinc-600">Create your first ranked countdown video</p>
+          <p className="text-sm font-semibold text-c-text-secondary">No ranking videos yet</p>
+          <p className="text-[12px] text-c-text-muted">Create your first ranked countdown video</p>
           <button
             onClick={onNew}
             className="mt-2 rounded-[11px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white transition hover:bg-[#e8304f]"
@@ -519,17 +519,17 @@ function RankingList({ onNew }: RankingListProps) {
               <button
                 onClick={() => load(page - 1)}
                 disabled={page <= 1}
-                className="rounded-[9px] border border-white/[.08] px-3 py-1.5 text-[12px] font-semibold text-zinc-400 transition hover:text-white disabled:opacity-30"
+                className="rounded-[9px] border border-c-border px-3 py-1.5 text-[12px] font-semibold text-c-text-muted transition hover:text-c-text disabled:opacity-30"
               >
                 ← Prev
               </button>
-              <span className="text-[12px] font-semibold text-zinc-500">
+              <span className="text-[12px] font-semibold text-c-text-muted">
                 Page {page} of {totalPages}
               </span>
               <button
                 onClick={() => load(page + 1)}
                 disabled={page >= totalPages}
-                className="rounded-[9px] border border-white/[.08] px-3 py-1.5 text-[12px] font-semibold text-zinc-400 transition hover:text-white disabled:opacity-30"
+                className="rounded-[9px] border border-c-border px-3 py-1.5 text-[12px] font-semibold text-c-text-muted transition hover:text-c-text disabled:opacity-30"
               >
                 Next →
               </button>
@@ -612,13 +612,13 @@ function TemplatePicker({
             "flex flex-col items-center gap-1.5 rounded-[12px] border p-2.5 transition",
             selected === tpl.id
               ? "border-[#ff3d6a] bg-[#ff3d6a]/[.08]"
-              : "border-white/[.08] hover:border-white/20"
+              : "border-c-border hover:border-c-border-hover"
           )}
         >
           <MiniPreview config={tpl.config} />
           <div className="text-center">
-            <p className="text-[11px] font-bold text-zinc-200">{tpl.name}</p>
-            <p className="text-[9.5px] text-zinc-500">{tpl.desc}</p>
+            <p className="text-[11px] font-bold text-c-text">{tpl.name}</p>
+            <p className="text-[9.5px] text-c-text-muted">{tpl.desc}</p>
           </div>
         </button>
       ))}
@@ -635,10 +635,10 @@ function ColorCustomizer({
 }) {
   const field = (label: string, key: keyof TemplateConfig, value: string) => (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[11px] text-zinc-500 min-w-0 flex-1">{label}</span>
+      <span className="text-[11px] text-c-text-muted min-w-0 flex-1">{label}</span>
       <div className="flex items-center gap-1.5 shrink-0">
         <div
-          className="h-5 w-5 rounded-[4px] border border-white/[.1] cursor-pointer"
+          className="h-5 w-5 rounded-[4px] border border-c-border cursor-pointer"
           style={{ background: value }}
           onClick={() => {
             const el = document.getElementById(`color-${key}`);
@@ -652,24 +652,24 @@ function ColorCustomizer({
           className="sr-only"
           onChange={(e) => onChange({ ...config, [key]: e.target.value })}
         />
-        <span className="font-mono text-[10px] text-zinc-500 w-14">{value}</span>
+        <span className="font-mono text-[10px] text-c-text-muted w-14">{value}</span>
       </div>
     </div>
   );
 
   return (
     <div className="mt-4 flex flex-col gap-2.5">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Customize</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-c-text-muted">Customize</span>
       {field("Background", "bgColor", config.bgColor)}
       {field("Title", "titleColor", config.titleColor)}
       {field("Accent", "accentColor", config.accentColor)}
       <div>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Number colors</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-c-text-muted">Number colors</span>
         <div className="mt-1.5 flex gap-1.5 flex-wrap">
           {config.numberColors.map((c, i) => (
             <div key={i} className="flex flex-col items-center gap-0.5">
               <div
-                className="h-5 w-5 rounded-full border border-white/[.1] cursor-pointer"
+                className="h-5 w-5 rounded-full border border-c-border cursor-pointer"
                 style={{ background: c }}
                 onClick={() => {
                   const el = document.getElementById(`color-num-${i}`);
@@ -687,7 +687,7 @@ function ColorCustomizer({
                   onChange({ ...config, numberColors: next });
                 }}
               />
-              <span className="text-[8px] text-zinc-600">#{i + 1}</span>
+              <span className="text-[8px] text-c-text-muted">#{i + 1}</span>
             </div>
           ))}
         </div>
@@ -944,8 +944,8 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
 
     return (
       <div className={cn(
-        "rounded-[16px] border bg-white/[.02] transition",
-        expanded ? "border-white/[.12]" : "border-white/[.07]"
+        "rounded-[16px] border bg-surface-1 transition",
+        expanded ? "border-c-border-hover" : "border-c-border"
       )}>
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <button
@@ -957,17 +957,17 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
               #{rankLabel}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-bold text-white">{s.segmentTitle || `Video ${idx + 1}`}</span>
-              <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
+              <span className="block truncate text-sm font-bold text-c-text">{s.segmentTitle || `Video ${idx + 1}`}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-c-text-muted">
                 {s.inputType === "upload" ? s.file?.name || "Upload file" : s.url || "URL source"} · {s.startSec}s-{s.endSec}s
               </span>
             </span>
           </button>
           <div className="flex shrink-0 items-center gap-1">
             <button onClick={() => moveSeg(idx, -1)} disabled={idx === 0}
-              className="grid h-7 w-7 place-items-center rounded-lg border border-white/[.08] text-zinc-400 transition hover:text-white disabled:opacity-30">↑</button>
+              className="grid h-7 w-7 place-items-center rounded-lg border border-c-border text-c-text-muted transition hover:text-c-text disabled:opacity-30">↑</button>
             <button onClick={() => moveSeg(idx, 1)} disabled={idx === segments.length - 1}
-              className="grid h-7 w-7 place-items-center rounded-lg border border-white/[.08] text-zinc-400 transition hover:text-white disabled:opacity-30">↓</button>
+              className="grid h-7 w-7 place-items-center rounded-lg border border-c-border text-c-text-muted transition hover:text-c-text disabled:opacity-30">↓</button>
             {segments.length > 2 && (
               <button onClick={() => removeSeg(s.id)}
                 className="grid h-7 w-7 place-items-center rounded-lg border border-red-400/20 text-red-400 transition hover:bg-red-400/[.08]">x</button>
@@ -976,12 +976,12 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
         </div>
 
         {expanded && (
-          <div className="border-t border-white/[.07] px-4 pb-4 pt-3">
-            <div className="mb-3 grid grid-cols-2 gap-1 rounded-[12px] border border-white/[.07] bg-white/[.02] p-1">
+          <div className="border-t border-c-border px-4 pb-4 pt-3">
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded-[12px] border border-c-border bg-surface-2 p-1">
               {(["url", "upload"] as InputType[]).map((t) => (
                 <button key={t} onClick={() => updateSeg(s.id, { inputType: t })}
                   className={cn("rounded-[9px] py-2 text-xs font-bold capitalize transition",
-                    s.inputType === t ? "bg-[#ff3d6a] text-white" : "text-zinc-400 hover:text-zinc-200")}>
+                    s.inputType === t ? "bg-[#ff3d6a] text-white" : "text-c-text-muted hover:text-c-text")}>
                   {t === "url" ? "URL" : "Upload file"}
                 </button>
               ))}
@@ -997,7 +997,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
                     placeholder="https://youtube.com/watch?v=... or TikTok URL"
                     className={inputCls} />
                   {platform && (
-                    <span className="shrink-0 rounded-lg border border-white/[.08] bg-white/[.04] px-2.5 py-2 text-[11px] font-semibold text-zinc-300">
+                    <span className="shrink-0 rounded-lg border border-c-border bg-surface-2 px-2.5 py-2 text-[11px] font-semibold text-c-text-secondary">
                       {platform}
                     </span>
                   )}
@@ -1012,7 +1012,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
                   />
                 )}
                 {s.previewLoading && (
-                  <div className="mt-3 rounded-[13px] border border-white/[.07] bg-white/[.025] px-3 py-3 text-[12px] font-semibold text-zinc-400">
+                  <div className="mt-3 rounded-[13px] border border-c-border bg-surface-2 px-3 py-3 text-[12px] font-semibold text-c-text-secondary">
                     Preparing low-res video preview...
                   </div>
                 )}
@@ -1029,15 +1029,15 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
             ) : (
               <>
                 <label className={cn("flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[14px] border-2 border-dashed p-6 text-center transition",
-                  s.file ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.04]" : "border-white/[.09] bg-white/[.015] hover:border-white/20")}>
+                  s.file ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.04]" : "border-c-border bg-surface-2 hover:border-c-border-hover")}>
                   <input type="file" accept="video/*" className="hidden"
                     onChange={(e) => handleFileChange(s.id, e.target.files?.[0] ?? null)} />
-                  <span className="text-[13px] font-semibold text-zinc-300">
+                  <span className="text-[13px] font-semibold text-c-text-secondary">
                     {s.file ? s.file.name : "Drop or browse a video"}
                   </span>
                 </label>
                 {s.uploading && (
-                  <p className="mt-2 text-[11px] text-zinc-500">Preparing low-res preview...</p>
+                  <p className="mt-2 text-[11px] text-c-text-muted">Preparing low-res preview...</p>
                 )}
                 {s.uploadError && (
                   <p className="mt-2 text-[11px] text-red-400">{s.uploadError}</p>
@@ -1060,7 +1060,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
 
             <div className="mt-3">
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] font-semibold text-zinc-500">Clip label (shown next to number)</span>
+                <span className="text-[11px] font-semibold text-c-text-muted">Clip label (shown next to number)</span>
                 <input value={s.segmentTitle}
                   onChange={(e) => updateSeg(s.id, { segmentTitle: e.target.value })}
                   placeholder={`e.g. "absolutely insane"`}
@@ -1079,12 +1079,12 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
       <div className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-white">Source clips</h2>
-            <p className="mt-1 text-[13px] text-zinc-500">Add clips in the order they should appear in the ranking.</p>
+            <h2 className="text-lg font-bold text-c-text">Source clips</h2>
+            <p className="mt-1 text-[13px] text-c-text-muted">Add clips in the order they should appear in the ranking.</p>
           </div>
           <button
             onClick={addSeg}
-            className="rounded-[11px] border border-white/[.1] bg-white/[.05] px-3 py-2 text-[12px] font-bold text-zinc-200 transition hover:bg-white/[.08]"
+            className="rounded-[11px] border border-c-border bg-surface-1 px-3 py-2 text-[12px] font-bold text-c-text transition hover:bg-surface-2"
           >
             + Add Video ({segments.length} total)
           </button>
@@ -1103,23 +1103,23 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
     return (
       <div className="space-y-5">
         <div>
-          <h2 className="text-lg font-bold text-white">Style ranking</h2>
-          <p className="mt-1 text-[13px] text-zinc-500">Set the title, visual template, colors, and ranking order.</p>
+          <h2 className="text-lg font-bold text-c-text">Style ranking</h2>
+          <p className="mt-1 text-[13px] text-c-text-muted">Set the title, visual template, colors, and ranking order.</p>
         </div>
 
-        <div className="rounded-[16px] border border-white/[.08] bg-white/[.02] p-5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Title</span>
+        <div className="rounded-[16px] border border-c-border bg-surface-1 p-5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-c-text-muted">Title</span>
           <div className="mt-2 flex items-center gap-2">
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Top 5 ..." className={inputCls} />
             <button onClick={handleSuggest} disabled={suggestLoading}
-              className="shrink-0 rounded-[11px] border border-white/[.1] bg-white/[.06] px-3 py-3 text-[13px] font-bold text-zinc-200 transition hover:bg-white/[.10] disabled:opacity-40">
+              className="shrink-0 rounded-[11px] border border-c-border bg-surface-2 px-3 py-3 text-[13px] font-bold text-c-text transition hover:bg-surface-3 disabled:opacity-40">
               {suggestLoading ? "..." : "AI"}
             </button>
           </div>
         </div>
 
-        <div className="rounded-[16px] border border-white/[.08] bg-white/[.02] p-5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Template</span>
+        <div className="rounded-[16px] border border-c-border bg-surface-1 p-5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-c-text-muted">Template</span>
           <div className="mt-3">
             <TemplatePicker
               selected={templateId}
@@ -1129,17 +1129,17 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
           <ColorCustomizer config={templateConfig} onChange={setTemplateConfig} />
         </div>
 
-        <div className="rounded-[16px] border border-white/[.08] bg-white/[.02] p-5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Order</span>
+        <div className="rounded-[16px] border border-c-border bg-surface-1 p-5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-c-text-muted">Order</span>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button onClick={() => setOrder("countdown")}
               className={cn("rounded-[10px] border py-2 text-xs font-bold transition",
-                order === "countdown" ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-white" : "border-white/[.08] text-zinc-400 hover:text-zinc-200")}>
+                order === "countdown" ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-c-text" : "border-c-border text-c-text-muted hover:text-c-text")}>
               5 to 1 Countdown
             </button>
             <button onClick={() => setOrder("ascending")}
               className={cn("rounded-[10px] border py-2 text-xs font-bold transition",
-                order === "ascending" ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-white" : "border-white/[.08] text-zinc-400 hover:text-zinc-200")}>
+                order === "ascending" ? "border-[#ff3d6a] bg-[#ff3d6a]/[.12] text-c-text" : "border-c-border text-c-text-muted hover:text-c-text")}>
               1 to 5 Ascending
             </button>
           </div>
@@ -1154,25 +1154,25 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
     return (
       <div className="space-y-5">
         <div>
-          <h2 className="text-lg font-bold text-white">Review ranking</h2>
-          <p className="mt-1 text-[13px] text-zinc-500">Check the final setup before generating the ranking video.</p>
+          <h2 className="text-lg font-bold text-c-text">Review ranking</h2>
+          <p className="mt-1 text-[13px] text-c-text-muted">Check the final setup before generating the ranking video.</p>
         </div>
 
-        <div className="rounded-[16px] border border-white/[.08] bg-white/[.02] p-5">
+        <div className="rounded-[16px] border border-c-border bg-surface-1 p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Title</span>
-              <p className="mt-1 text-sm font-bold text-white">{title || "Top Ranking"}</p>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-c-text-muted">Title</span>
+              <p className="mt-1 text-sm font-bold text-c-text">{title || "Top Ranking"}</p>
             </div>
             <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Style</span>
-              <p className="mt-1 text-sm font-bold text-white">{selectedTemplate?.name ?? templateId} · {order === "countdown" ? "Countdown" : "Ascending"}</p>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-c-text-muted">Style</span>
+              <p className="mt-1 text-sm font-bold text-c-text">{selectedTemplate?.name ?? templateId} · {order === "countdown" ? "Countdown" : "Ascending"}</p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-[16px] border border-white/[.08] bg-white/[.02] p-5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Clips</span>
+        <div className="rounded-[16px] border border-c-border bg-surface-1 p-5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-c-text-muted">Clips</span>
           <div className="mt-3 grid gap-2">
             {segments.map((s, idx) => {
               const rankLabel = order === "countdown" ? segments.length - idx : idx + 1;
@@ -1180,20 +1180,20 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
                 <button
                   key={s.id}
                   onClick={() => { setBuilderStep("sources"); setExpandedSegmentId(s.id); }}
-                  className="flex items-center justify-between gap-3 rounded-[11px] border border-white/[.07] bg-[#0b0f17] px-3 py-2.5 text-left transition hover:border-white/[.14]"
+                  className="flex items-center justify-between gap-3 rounded-[11px] border border-c-border bg-surface-2 px-3 py-2.5 text-left transition hover:border-c-border-hover"
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-bold text-white" style={{ background: accent }}>
                       #{rankLabel}
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[13px] font-bold text-white">{s.segmentTitle || `Video ${idx + 1}`}</span>
-                      <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
+                      <span className="block truncate text-[13px] font-bold text-c-text">{s.segmentTitle || `Video ${idx + 1}`}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-c-text-muted">
                         {s.inputType === "upload" ? s.file?.name || "Upload file" : s.url || "Missing URL"} · {s.startSec}s-{s.endSec}s
                       </span>
                     </span>
                   </span>
-                  <span className="text-[11px] font-semibold text-zinc-500">Edit</span>
+                  <span className="text-[11px] font-semibold text-c-text-muted">Edit</span>
                 </button>
               );
             })}
@@ -1205,10 +1205,10 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
 
   function BuilderRail() {
     return (
-      <div className="rounded-[16px] border border-white/[.08] bg-white/[.02] p-4">
+      <div className="rounded-[16px] border border-c-border bg-surface-1 p-4">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Preview</span>
-          <span className="rounded-full border border-white/[.08] bg-white/[.03] px-2 py-0.5 text-[10px] font-bold text-zinc-500">9:16</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-c-text-muted">Preview</span>
+          <span className="rounded-full border border-c-border bg-surface-2 px-2 py-0.5 text-[10px] font-bold text-c-text-muted">9:16</span>
         </div>
         <div className="mt-4 flex justify-center">
           <RankingPhonePreview title={title} segments={segments} order={order} templateConfig={templateConfig} />
@@ -1224,7 +1224,7 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
           <button
             onClick={goToPreviousStep}
             disabled={!canGoBackStep}
-            className="rounded-[10px] border border-white/[.08] px-3 py-2 text-[12px] font-bold text-zinc-300 transition hover:bg-white/[.05] disabled:opacity-35"
+            className="rounded-[10px] border border-c-border px-3 py-2 text-[12px] font-bold text-c-text-secondary transition hover:bg-surface-2 disabled:opacity-35"
           >
             Back
           </button>
@@ -1255,21 +1255,21 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="grid h-9 w-9 place-items-center rounded-[9px] border border-white/[.08] text-zinc-400 transition hover:bg-white/[.04] hover:text-white"
+            className="grid h-9 w-9 place-items-center rounded-[9px] border border-c-border text-c-text-muted transition hover:bg-surface-2 hover:text-c-text"
             aria-label="Back to rankings"
           >
             ←
           </button>
           <div>
-            <h1 className="font-display text-2xl font-bold text-white">New Video Ranking</h1>
-            <p className="mt-0.5 text-[13px] text-zinc-500">Create a ranked countdown video from 2 or more clips</p>
+            <h1 className="font-display text-2xl font-bold text-c-text">New Video Ranking</h1>
+            <p className="mt-0.5 text-[13px] text-c-text-muted">Create a ranked countdown video from 2 or more clips</p>
           </div>
         </div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[190px_minmax(0,1fr)_300px]">
         <aside className="lg:sticky lg:top-20 lg:self-start">
-          <div className="grid gap-2 rounded-[16px] border border-white/[.08] bg-white/[.02] p-2">
+          <div className="grid gap-2 rounded-[16px] border border-c-border bg-surface-1 p-2">
             {BUILDER_STEPS.map((step, index) => {
               const active = step.id === builderStep;
               const complete = index < currentStepIndex;
@@ -1279,18 +1279,18 @@ function CreateView({ onBack, onJobCreated }: CreateViewProps) {
                   onClick={() => setBuilderStep(step.id)}
                   className={cn(
                     "flex items-start gap-3 rounded-[11px] px-3 py-3 text-left transition",
-                    active ? "bg-[#ff3d6a]/12 text-white ring-1 ring-[#ff3d6a]/25" : "text-zinc-400 hover:bg-white/[.04] hover:text-zinc-200"
+                    active ? "bg-[#ff3d6a]/12 text-[#ff5f86] ring-1 ring-[#ff3d6a]/25" : "text-c-text-muted hover:bg-surface-2 hover:text-c-text-secondary"
                   )}
                 >
                   <span className={cn(
                     "grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold",
-                    active || complete ? "bg-[#ff3d6a] text-white" : "bg-white/[.06] text-zinc-500"
+                    active || complete ? "bg-[#ff3d6a] text-white" : "bg-surface-2 text-c-text-muted"
                   )}>
                     {index + 1}
                   </span>
                   <span className="min-w-0">
                     <span className="block text-[13px] font-bold">{step.label}</span>
-                    <span className="mt-0.5 block text-[11px] leading-4 text-zinc-500">{step.description}</span>
+                    <span className="mt-0.5 block text-[11px] leading-4 text-c-text-muted">{step.description}</span>
                   </span>
                 </button>
               );

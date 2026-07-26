@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ClipApiResponse, ScheduledPost } from "@/lib/api";
@@ -22,7 +22,7 @@ const PLATFORM_CFG: Record<string, { color: string; icon: string; label: string 
   linkedin: { color: "#0A66C2", icon: "in", label: "LinkedIn" },
 };
 
-export type ClipCardAction = "publish" | "trim" | "edit" | "transcript" | "download" | "preview" | "regenerate" | "upscale";
+export type ClipCardAction = "publish" | "trim" | "edit" | "transcript" | "download" | "regenerate" | "upscale";
 
 type ActionConfig = {
   id: ClipCardAction;
@@ -65,11 +65,9 @@ export function UniversalClipCard({
   onClipChange?: (clip: ClipApiResponse) => void;
 }) {
   const [localClip, setLocalClip] = useState(clip);
-  const [playing, setPlaying] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   async function handleRetryUpload() {
     setRetrying(true);
@@ -114,22 +112,9 @@ export function UniversalClipCard({
     }, new Map<string, ScheduledPost>()).values()
   ), [posts]);
 
-  function togglePlay(e?: React.MouseEvent) {
-    e?.stopPropagation();
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play();
-      setPlaying(true);
-    } else {
-      videoRef.current.pause();
-      setPlaying(false);
-    }
-  }
-
   function runAction(action: ActionConfig, e: React.MouseEvent) {
     e.stopPropagation();
     setMenuOpen(false);
-    if (action.id === "preview") { togglePlay(e); return; }
     if (action.id === "transcript") { setShowTranscript((v) => !v); action.onClick?.(localClip); return; }
     action.onClick?.(localClip);
   }
@@ -153,7 +138,7 @@ export function UniversalClipCard({
     >
       <div className="relative aspect-[1/0.7] overflow-hidden bg-black">
         {hasVideo ? (
-          <video ref={videoRef} src={localClip.storage_url!} poster={localClip.thumbnail_url ?? undefined} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
+          <video src={localClip.storage_url!} poster={localClip.thumbnail_url ?? undefined} className="absolute inset-0 h-full w-full object-cover" playsInline muted preload="metadata" />
         ) : localClip.thumbnail_url ? (
           <img src={localClip.thumbnail_url} alt={title} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
         ) : (
@@ -203,9 +188,9 @@ export function UniversalClipCard({
         )}
 
         {hasVideo && (
-          <button onClick={togglePlay} className="absolute inset-0 grid place-items-center">
-            {!playing && <div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-lg backdrop-blur transition group-hover:scale-105">▶</div>}
-          </button>
+          <div className="pointer-events-none absolute inset-0 grid place-items-center">
+            <div className="grid h-11 w-11 place-items-center rounded-full bg-black/50 text-white shadow-lg backdrop-blur transition group-hover:scale-105">▶</div>
+          </div>
         )}
 
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">

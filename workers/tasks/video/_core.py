@@ -159,6 +159,11 @@ CAPTION_STYLE_CFG = {
     "beast":       ((255, 255, 255, 255), (255, 45, 45, 255),   0.40, 70, (0, 0, 0, 0)),
     "neon":        ((255, 255, 255, 255), (0, 229, 255, 255),   0.45, 62, (0, 0, 0, 140)),
     "karaoke":     ((255, 255, 255, 255), (245, 197, 24, 255),  1.0,  56, (0, 0, 0, 150)),
+    "bounce":      ((255, 255, 255, 255), (245, 197, 24, 255),  1.0,  56, (0, 0, 0, 0)),
+    "glow":        ((255, 255, 255, 255), (0, 229, 255, 255),   1.0,  58, (0, 0, 0, 0)),
+    "shadow":      ((255, 255, 255, 255), (255, 61, 106, 255),  1.0,  66, (0, 0, 0, 0)),
+    "highlighter": ((255, 255, 255, 255), (250, 204, 21, 255),  1.0,  56, (0, 0, 0, 140)),
+    "rainbow":     ((255, 255, 255, 255), (245, 197, 24, 255),  1.0,  58, (0, 0, 0, 0)),
     "classic":     ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  52, (0, 0, 0, 140)),
     "impact":      ((255, 255, 255, 255), (255, 255, 255, 255), 1.0,  72, (0, 0, 0, 0)),
     "minimal":     ((200, 200, 200, 255), (255, 255, 255, 255), 0.8,  44, (0, 0, 0, 0)),
@@ -193,7 +198,9 @@ STYLE_FAMILY = {
 }
 
 # Styles rendered word-by-word (need word-level caption timeline)
-CAPCUT_STYLES = {s for s, f in STYLE_FAMILY.items() if f in ("pill", "reveal", "pop", "karaoke")}
+CAPCUT_STYLES = {s for s, f in STYLE_FAMILY.items() if f in ("pill", "reveal", "pop", "karaoke")} | {
+    "bounce", "glow", "highlighter", "rainbow",
+}
 # Word-pill styles drawn with the larger highlight font
 BOLD_PILL_STYLES = {"capcut-bold", "hormozi", "beast", "banger", "money"}
 # Pill styles drawn in ALL CAPS (their signature look)

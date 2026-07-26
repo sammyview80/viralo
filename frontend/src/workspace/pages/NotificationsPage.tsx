@@ -51,7 +51,7 @@ const TYPE_CFG: Record<string, TypeCfg> = {
   quota_warning:     { icon: <Icons.Alert />,    accent: "text-amber-400",   bg: "bg-amber-500/15",   label: "Quota warning",    filterLabel: "System" },
 };
 const DEFAULT_CFG: TypeCfg = {
-  icon: <Icons.Bell />, accent: "text-zinc-400", bg: "bg-white/[.06]", label: "Notification", filterLabel: "Other",
+  icon: <Icons.Bell />, accent: "text-c-text-secondary", bg: "bg-surface-2", label: "Notification", filterLabel: "Other",
 };
 
 type FilterKey = "all" | "unread" | "Videos" | "Posts" | "Channels" | "System";
@@ -128,8 +128,8 @@ function NotifRow({
   return (
     <div className={cn(
       "group relative flex items-start gap-4 px-5 py-4 transition-colors",
-      "hover:bg-white/[.025] cursor-pointer",
-      isUnread && "bg-white/[.018]",
+      "hover:bg-surface-2 cursor-pointer",
+      isUnread && "bg-surface-1",
       selected && "bg-[#ff3d6a]/[.06]",
     )}>
       {/* Unread stripe */}
@@ -147,7 +147,7 @@ function NotifRow({
           "mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition",
           selected
             ? "border-[#ff3d6a] bg-[#ff3d6a] text-white"
-            : "border-white/[.12] bg-transparent text-transparent group-hover:border-white/[.25]"
+            : "border-c-border bg-transparent text-transparent group-hover:border-c-border-hover"
         )}
         aria-label="Select notification"
       >
@@ -168,16 +168,16 @@ function NotifRow({
       <div className="min-w-0 flex-1" onClick={handleClick}>
         <div className="flex items-center gap-2 mb-1">
           <span className={cn("text-[10.5px] font-bold uppercase tracking-[.1em]", c.accent)}>{c.label}</span>
-          <span className="text-[11px] text-zinc-600">{timeAgo(n.created_at)}</span>
+          <span className="text-[11px] text-c-text-muted">{timeAgo(n.created_at)}</span>
           {isUnread && (
             <span className="ml-1 h-[5px] w-[5px] rounded-full bg-[#ff3d6a] shadow-[0_0_5px_rgba(255,61,106,.8)]" />
           )}
         </div>
-        <p className={cn("text-[13.5px] font-semibold leading-[1.4]", isUnread ? "text-zinc-100" : "text-zinc-400")}>
+        <p className={cn("text-[13.5px] font-semibold leading-[1.4]", isUnread ? "text-c-text" : "text-c-text-secondary")}>
           {n.title}
         </p>
         {n.body && (
-          <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-[1.5] text-zinc-500">{n.body}</p>
+          <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-[1.5] text-c-text-muted">{n.body}</p>
         )}
         {n.action_url && (
           <span className="mt-1.5 inline-flex items-center gap-1 text-[11.5px] font-medium text-[#ff5f86] opacity-0 transition group-hover:opacity-100">
@@ -192,7 +192,7 @@ function NotifRow({
           <button
             onClick={(e) => { e.stopPropagation(); markRead(n.id); }}
             title="Mark as read"
-            className="flex size-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/[.08] hover:text-zinc-200 transition"
+            className="flex size-7 items-center justify-center rounded-lg text-c-text-muted hover:bg-surface-2 hover:text-c-text transition"
           >
             <Icons.CheckAll />
           </button>
@@ -200,7 +200,7 @@ function NotifRow({
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(n.id); }}
           title="Delete"
-          className="flex size-7 items-center justify-center rounded-lg text-zinc-600 hover:bg-red-500/10 hover:text-red-400 transition"
+          className="flex size-7 items-center justify-center rounded-lg text-c-text-muted hover:bg-red-500/10 hover:text-red-400 transition"
         >
           <Icons.Trash />
         </button>
@@ -224,11 +224,11 @@ function EmptyState({ filter }: { filter: FilterKey }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="mb-5 flex size-16 items-center justify-center rounded-[20px] border border-white/[.07] bg-white/[.03] text-zinc-600">
+      <div className="mb-5 flex size-16 items-center justify-center rounded-[20px] border border-c-border bg-surface-1 text-c-text-muted">
         <Icons.Bell />
       </div>
-      <p className="text-[15px] font-semibold text-zinc-300">{m.title}</p>
-      <p className="mt-1.5 max-w-[280px] text-[13px] leading-[1.6] text-zinc-600">{m.body}</p>
+      <p className="text-[15px] font-semibold text-c-text-secondary">{m.title}</p>
+      <p className="mt-1.5 max-w-[280px] text-[13px] leading-[1.6] text-c-text-muted">{m.body}</p>
     </div>
   );
 }
@@ -326,17 +326,17 @@ export function NotificationsPage() {
         {/* Header */}
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <h1 className="font-display text-[22px] font-bold tracking-[-0.01em] text-white">
+            <h1 className="font-display text-[22px] font-bold tracking-[-0.01em] text-c-text">
               Notifications
             </h1>
-            <p className="mt-0.5 text-[13px] text-zinc-500">
+            <p className="mt-0.5 text-[13px] text-c-text-muted">
               {total > 0 ? `${total} total${unreadTotal > 0 ? ` · ${unreadTotal} unread` : ""}` : "Activity from your videos, posts, and workflows"}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => load(1, true)}
-              className="flex h-8 items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-transparent px-3 text-[12px] font-medium text-zinc-400 transition hover:border-white/[.14] hover:text-zinc-200"
+              className="flex h-8 items-center gap-1.5 rounded-[8px] border border-c-border bg-transparent px-3 text-[12px] font-medium text-c-text-muted transition hover:border-c-border-hover hover:text-c-text"
             >
               <Icons.Refresh />
               Refresh
@@ -344,7 +344,7 @@ export function NotificationsPage() {
             {unreadTotal > 0 && (
               <button
                 onClick={handleMarkAllRead}
-                className="flex h-8 items-center gap-1.5 rounded-[8px] border border-white/[.08] bg-transparent px-3 text-[12px] font-medium text-zinc-400 transition hover:border-white/[.14] hover:text-zinc-200"
+                className="flex h-8 items-center gap-1.5 rounded-[8px] border border-c-border bg-transparent px-3 text-[12px] font-medium text-c-text-muted transition hover:border-c-border-hover hover:text-c-text"
               >
                 <Icons.CheckAll />
                 Mark all read
@@ -365,14 +365,14 @@ export function NotificationsPage() {
                   "flex shrink-0 items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12.5px] font-semibold transition",
                   filter === f.key
                     ? "bg-[#ff3d6a]/[.12] text-[#ff5f86] shadow-[inset_0_0_0_1px_rgba(255,61,106,.25)]"
-                    : "text-zinc-500 hover:bg-white/[.05] hover:text-zinc-300"
+                    : "text-c-text-muted hover:bg-surface-2 hover:text-c-text-secondary"
                 )}
               >
                 {f.label}
                 {count > 0 && (
                   <span className={cn(
                     "flex h-[16px] min-w-[16px] items-center justify-center rounded-full px-1 text-[9.5px] font-bold",
-                    filter === f.key ? "bg-[#ff3d6a]/20 text-[#ff5f86]" : "bg-white/[.07] text-zinc-500"
+                    filter === f.key ? "bg-[#ff3d6a]/20 text-[#ff5f86]" : "bg-surface-2 text-c-text-muted"
                   )}>
                     {count}
                   </span>
@@ -383,12 +383,12 @@ export function NotificationsPage() {
         </div>
 
         {/* Main card */}
-        <div className="overflow-hidden rounded-[16px] border border-white/[.08] bg-[#0e1420]">
+        <div className="overflow-hidden rounded-[16px] border border-c-border bg-surface-1">
 
           {/* Bulk action bar */}
           {displayed.length > 0 && (
             <div className={cn(
-              "flex items-center justify-between border-b border-white/[.07] px-5 py-2.5 transition-all",
+              "flex items-center justify-between border-b border-c-border px-5 py-2.5 transition-all",
               selected.size > 0 ? "bg-[#ff3d6a]/[.04]" : "bg-transparent"
             )}>
               <div className="flex items-center gap-3">
@@ -398,7 +398,7 @@ export function NotificationsPage() {
                     "flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition",
                     allSelected
                       ? "border-[#ff3d6a] bg-[#ff3d6a] text-white"
-                      : "border-white/[.15] text-transparent hover:border-white/[.3]"
+                      : "border-c-border text-transparent hover:border-c-border-hover"
                   )}
                   aria-label="Select all"
                 >
@@ -407,11 +407,11 @@ export function NotificationsPage() {
                   </svg>
                 </button>
                 {selected.size > 0 ? (
-                  <span className="text-[12px] font-medium text-zinc-300">
+                  <span className="text-[12px] font-medium text-c-text-secondary">
                     {selected.size} selected
                   </span>
                 ) : (
-                  <span className="text-[12px] text-zinc-600">
+                  <span className="text-[12px] text-c-text-muted">
                     {displayed.length} notification{displayed.length !== 1 ? "s" : ""}
                   </span>
                 )}
@@ -421,7 +421,7 @@ export function NotificationsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleMarkSelectedRead}
-                    className="flex h-7 items-center gap-1.5 rounded-[7px] border border-white/[.09] bg-white/[.04] px-2.5 text-[11.5px] font-medium text-zinc-300 transition hover:bg-white/[.08] hover:text-white"
+                    className="flex h-7 items-center gap-1.5 rounded-[7px] border border-c-border bg-surface-2 px-2.5 text-[11.5px] font-medium text-c-text-secondary transition hover:bg-surface-3 hover:text-c-text"
                   >
                     <Icons.Check />
                     Mark read
@@ -440,15 +440,15 @@ export function NotificationsPage() {
 
           {/* Content */}
           {loading ? (
-            <div className="divide-y divide-white/[.04]">
+            <div className="divide-y divide-c-border">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="flex items-start gap-4 px-5 py-4">
-                  <div className="mt-0.5 size-[18px] animate-pulse rounded-[5px] bg-white/[.06]" />
-                  <div className="mt-0.5 size-9 animate-pulse rounded-[10px] bg-white/[.06]" />
+                  <div className="mt-0.5 size-[18px] animate-pulse rounded-[5px] bg-surface-2" />
+                  <div className="mt-0.5 size-9 animate-pulse rounded-[10px] bg-surface-2" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-2.5 w-24 animate-pulse rounded-full bg-white/[.06]" />
-                    <div className="h-3 w-3/4 animate-pulse rounded-full bg-white/[.05]" />
-                    <div className="h-2.5 w-1/2 animate-pulse rounded-full bg-white/[.04]" />
+                    <div className="h-2.5 w-24 animate-pulse rounded-full bg-surface-2" />
+                    <div className="h-3 w-3/4 animate-pulse rounded-full bg-surface-2" />
+                    <div className="h-2.5 w-1/2 animate-pulse rounded-full bg-surface-2" />
                   </div>
                 </div>
               ))}
@@ -460,15 +460,15 @@ export function NotificationsPage() {
               {groups.map((group) => (
                 <div key={group.label}>
                   {/* Date group header */}
-                  <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/[.04] bg-[#0b101a]/95 px-5 py-2 backdrop-blur-sm">
-                    <span className="text-[11px] font-bold uppercase tracking-[.1em] text-zinc-600">
+                  <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-c-border bg-surface-1/95 px-5 py-2 backdrop-blur-sm">
+                    <span className="text-[11px] font-bold uppercase tracking-[.1em] text-c-text-muted">
                       {group.label}
                     </span>
-                    <div className="h-px flex-1 bg-white/[.04]" />
-                    <span className="text-[10.5px] text-zinc-700">{group.items.length}</span>
+                    <div className="h-px flex-1 bg-c-border" />
+                    <span className="text-[10.5px] text-c-text-muted">{group.items.length}</span>
                   </div>
 
-                  <div className="divide-y divide-white/[.04]">
+                  <div className="divide-y divide-c-border">
                     {group.items.map((n) => (
                       <NotifRow
                         key={n.id}
@@ -484,16 +484,16 @@ export function NotificationsPage() {
 
               {/* Load more */}
               {hasMore && (
-                <div className="border-t border-white/[.07] px-5 py-3.5">
+                <div className="border-t border-c-border px-5 py-3.5">
                   <button
                     onClick={() => load(page + 1)}
                     disabled={loadingMore}
-                    className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-white/[.07] py-2.5 text-[12.5px] font-medium text-zinc-500 transition hover:border-white/[.13] hover:text-zinc-300 disabled:opacity-40"
+                    className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-c-border py-2.5 text-[12.5px] font-medium text-c-text-muted transition hover:border-c-border-hover hover:text-c-text-secondary disabled:opacity-40"
                   >
                     {loadingMore ? (
-                      <span className="h-3.5 w-3.5 animate-spin rounded-full border border-zinc-600 border-t-zinc-300" />
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border border-c-border border-t-c-text-secondary" />
                     ) : (
-                      <>Load more <span className="text-zinc-600">({total - items.length} remaining)</span></>
+                      <>Load more <span className="text-c-text-muted">({total - items.length} remaining)</span></>
                     )}
                   </button>
                 </div>

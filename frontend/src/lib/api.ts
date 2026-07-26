@@ -353,7 +353,8 @@ export interface CaptionStyleInfo {
   id: string;
   label: string;
   desc: string;
-  family: "pill" | "reveal" | "pop" | "karaoke" | "outline" | "minimal";
+  family: "pill" | "reveal" | "pop" | "karaoke" | "outline" | "minimal"
+    | "bounce" | "glow" | "shadow" | "highlighter" | "rainbow";
   highlight: string;
   uppercase: boolean;
 }

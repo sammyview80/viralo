@@ -406,6 +406,102 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                                    radius=12, fill=bg_color)
             draw.text((x, ly), ln, font=font_main, fill=text_color)
 
+    def _line_layout(words: list, font, gap: int = 12):
+        """Common word-row measure: returns (font, sizes, x_start, row_height)."""
+        font = fit_font(" ".join(words), font, int(width * 0.88) - gap * (len(words) - 1))
+        sizes = []
+        for w in words:
+            bb = draw.textbbox((0, 0), w, font=font)
+            sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
+        total_w = sum(s[0] for s in sizes) + gap * (len(words) - 1)
+        th = max((s[1] for s in sizes), default=font_size)
+        return font, sizes, (width - total_w) // 2, th
+
+    def draw_bounce_line(words: list, active_idx: int, y: int):
+        """Active word 'pops' — drawn bigger in the highlight color (CapCut bounce look)."""
+        GAP = 12
+        font = fit_font(" ".join(words), font_main, int(width * 0.78) - GAP * (len(words) - 1))
+        big = _load_font_cached(int(getattr(font, "size", font_size) * 1.35))
+        sizes = []
+        for i, w in enumerate(words):
+            bb = draw.textbbox((0, 0), w, font=big if i == active_idx else font)
+            sizes.append((bb[2] - bb[0], bb[3] - bb[1]))
+        total_w = sum(s[0] for s in sizes) + GAP * (len(words) - 1)
+        max_h = max((s[1] for s in sizes), default=font_size)
+        x = (width - total_w) // 2
+        for i, (w, (tw, th)) in enumerate(zip(words, sizes)):
+            f = big if i == active_idx else font
+            color = highlight_color if i == active_idx else text_color
+            wy = y + (max_h - th)  # bottom-align: the big word pops upward
+            for dx in range(-3, 4):
+                for dy in range(-3, 4):
+                    if dx or dy:
+                        draw.text((x + dx, wy + dy), w, font=f, fill=(0, 0, 0, 255))
+            draw.text((x, wy), w, font=f, fill=color)
+            x += tw + GAP
+
+    def draw_glow_line(words: list, active_idx: int, y: int):
+        """Neon glow: soft halo in the highlight color. The halo is drawn on its own
+        layer so overlapping strokes don't stack to a solid block, then pasted onto
+        the frame at ~45% via an alpha mask (in-place — works on RGB frames too)."""
+        from PIL import Image as _PILImage, ImageDraw as _PILDraw
+        GAP = 12
+        font, sizes, x0, _ = _line_layout(words, font_main, GAP)
+        halo_layer = _PILImage.new("RGBA", img.size, (0, 0, 0, 0))
+        hdraw = _PILDraw.Draw(halo_layer)
+        x = x0
+        for w, (tw, _h) in zip(words, sizes):
+            for r in (6, 4, 2):
+                for dx in (-r, 0, r):
+                    for dy in (-r, 0, r):
+                        if dx or dy:
+                            hdraw.text((x + dx, y + dy), w, font=font, fill=(*highlight_color[:3], 255))
+            x += tw + GAP
+        from PIL import ImageFilter as _PILFilter
+        mask = halo_layer.getchannel("A").filter(_PILFilter.GaussianBlur(5))
+        mask = mask.point(lambda a: int(a * 0.55))
+        solid = _PILImage.new(img.mode, img.size, tuple(highlight_color[:3]))
+        img.paste(solid, (0, 0), mask=mask)
+        x = x0
+        for i, (w, (tw, _h)) in enumerate(zip(words, sizes)):
+            draw.text((x + 1, y + 1), w, font=font, fill=(0, 0, 0, 140))
+            draw.text((x, y), w, font=font, fill=highlight_color if i == active_idx else text_color)
+            x += tw + GAP
+
+    def draw_highlighter_line(words: list, active_idx: int, y: int):
+        """Marker swipe: the spoken word gets a highlighter bar, rest of the line stays plain."""
+        GAP = 12
+        font, sizes, x, _ = _line_layout(words, font_main, GAP)
+        lum = 0.299 * highlight_color[0] + 0.587 * highlight_color[1] + 0.114 * highlight_color[2]
+        marker_txt = (0, 0, 0, 255) if lum > 140 else (255, 255, 255, 255)
+        for i, (w, (tw, th)) in enumerate(zip(words, sizes)):
+            if i == active_idx:
+                draw.rounded_rectangle([x - 6, y - 4, x + tw + 6, y + th + 6],
+                                       radius=6, fill=(*highlight_color[:3], 235))
+                draw.text((x, y), w, font=font, fill=marker_txt)
+            else:
+                draw.text((x + 2, y + 2), w, font=font, fill=(0, 0, 0, 170))
+                draw.text((x, y), w, font=font, fill=text_color)
+            x += tw + GAP
+
+    _RAINBOW = [(255, 82, 82, 255), (255, 165, 40, 255), (250, 220, 50, 255),
+                (85, 230, 120, 255), (70, 200, 255, 255), (190, 130, 255, 255)]
+
+    def draw_rainbow_line(words: list, active_idx: int, y: int):
+        """Every word a different bright color; the spoken word gets an underline bar."""
+        GAP = 12
+        font, sizes, x, _ = _line_layout(words, font_main, GAP)
+        for i, (w, (tw, th)) in enumerate(zip(words, sizes)):
+            color = _RAINBOW[i % len(_RAINBOW)]
+            for dx in range(-3, 4):
+                for dy in range(-3, 4):
+                    if dx or dy:
+                        draw.text((x + dx, y + dy), w, font=font, fill=(0, 0, 0, 255))
+            draw.text((x, y), w, font=font, fill=color)
+            if i == active_idx:
+                draw.rounded_rectangle([x, y + th + 6, x + tw, y + th + 11], radius=2, fill=color)
+            x += tw + GAP
+
     if family == "outline":
         ctx_text = entry[0] if isinstance(entry[0], str) else " ".join(entry[0])
         if style in UPPERCASE_STYLES:
@@ -414,6 +510,35 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         draw_centered_outline(ctx_text, y_base, font_main, ctx_color,
                               stroke_width=6 if font_size >= 64 else 4,
                               bg=bg_color if bg_color[3] > 0 else None)
+
+    elif style == "shadow":
+        # Hard offset drop-shadow caps — bold Reels/poster look
+        ctx_text = (entry[0] if isinstance(entry[0], str) else " ".join(entry[0])).upper()
+        font = fit_font(ctx_text, font_main, int(width * 0.90))
+        bb = draw.textbbox((0, 0), ctx_text, font=font)
+        tw = bb[2] - bb[0]
+        x = (width - tw) // 2
+        draw.text((x + 6, y_base + 6), ctx_text, font=font, fill=highlight_color)
+        for dx in (-2, 2):
+            for dy in (-2, 2):
+                draw.text((x + dx, y_base + dy), ctx_text, font=font, fill=(0, 0, 0, 220))
+        draw.text((x, y_base), ctx_text, font=font, fill=text_color)
+
+    elif style == "bounce" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_bounce_line(words, active_idx, y_base)
+
+    elif style == "glow" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_glow_line(words, active_idx, y_base)
+
+    elif style == "highlighter" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_highlighter_line(words, active_idx, y_base)
+
+    elif style == "rainbow" and isinstance(entry[0], list):
+        words, active_idx = entry
+        draw_rainbow_line(words, active_idx, y_base)
 
     elif family == "reveal" and isinstance(entry[0], list):
         words, active_idx = entry

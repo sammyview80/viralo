@@ -33,7 +33,7 @@ export function DeleteModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-[380px] overflow-hidden rounded-[18px] border border-white/[.12] bg-[#0e1420] shadow-[0_32px_80px_rgba(0,0,0,.7)]"
+        className="w-full max-w-[380px] overflow-hidden rounded-[18px] border border-c-border bg-surface-2 shadow-[0_32px_80px_rgba(0,0,0,.7)]"
         onClick={(e) => e.stopPropagation()}
         style={{ animation: "fadeUp .18s cubic-bezier(.22,.8,.4,1)" }}
       >
@@ -46,15 +46,15 @@ export function DeleteModal({
               <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
             </svg>
           </div>
-          <h3 className="font-display text-[16px] font-bold text-white">Delete video?</h3>
-          <p className="mt-1.5 text-[13px] leading-[1.55] text-zinc-400">
-            <span className="font-semibold text-zinc-200">"{video.title ?? "Untitled"}"</span> and all its generated clips will be permanently deleted. This cannot be undone.
+          <h3 className="font-display text-[16px] font-bold text-c-text">Delete video?</h3>
+          <p className="mt-1.5 text-[13px] leading-[1.55] text-c-text-muted">
+            <span className="font-semibold text-c-text-secondary">"{video.title ?? "Untitled"}"</span> and all its generated clips will be permanently deleted. This cannot be undone.
           </p>
         </div>
-        <div className="flex gap-2 border-t border-white/[.07] px-6 py-4">
+        <div className="flex gap-2 border-t border-c-border px-6 py-4">
           <button
             onClick={onCancel}
-            className="flex-1 rounded-[9px] border border-white/[.08] bg-white/[.04] py-2 text-[13px] font-semibold text-zinc-300 transition hover:bg-white/[.08] hover:text-white"
+            className="flex-1 rounded-[9px] border border-c-border bg-surface-3 py-2 text-[13px] font-semibold text-c-text-secondary transition hover:text-c-text"
           >
             Cancel
           </button>
@@ -110,22 +110,22 @@ export function ZipDownloadModal({ clips, videoTitle, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-[340px] rounded-[16px] border border-white/[.10] bg-[#0f1520] p-6 shadow-[0_24px_60px_rgba(0,0,0,.7)]"
+      <div className="w-[340px] rounded-[16px] border border-c-border bg-surface-2 p-6 shadow-[0_24px_60px_rgba(0,0,0,.7)]"
         onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <span className="text-[14px] font-semibold text-white">
+          <span className="text-[14px] font-semibold text-c-text">
             {phase === "zipping" && "Preparing ZIP…"}
             {phase === "done" && "Done!"}
             {phase === "error" && "Error"}
           </span>
           {(phase === "done" || phase === "error") && (
-            <button onClick={onClose} className="text-[12px] text-zinc-500 hover:text-zinc-300">Close</button>
+            <button onClick={onClose} className="text-[12px] text-c-text-muted hover:text-c-text-secondary">Close</button>
           )}
         </div>
 
         {phase === "zipping" && (
-          <div className="flex items-center gap-2.5 text-[12px] text-zinc-400">
-            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+          <div className="flex items-center gap-2.5 text-[12px] text-c-text-secondary">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-c-border border-t-c-text-secondary" />
             Server is fetching and zipping {clips.filter((c) => c.storage_url).length} clips…
           </div>
         )}
@@ -140,7 +140,7 @@ export function ZipDownloadModal({ clips, videoTitle, onClose }: {
 
         {phase === "zipping" && (
           <button onClick={() => { cancelledRef.current = true; onClose(); }}
-            className="mt-4 text-[11.5px] text-zinc-600 hover:text-zinc-400">
+            className="mt-4 text-[11.5px] text-c-text-muted hover:text-c-text-secondary">
             Cancel
           </button>
         )}
@@ -192,13 +192,13 @@ export function DownloadMenu({ clip, onClose }: { clip: ClipApiResponse; onClose
   ];
 
   return (
-    <div ref={ref} className="absolute bottom-[calc(100%+6px)] right-0 z-50 w-48 overflow-hidden rounded-[11px] border border-white/[.10] bg-[#141926] shadow-[0_16px_40px_rgba(0,0,0,.5)]"
+    <div ref={ref} className="absolute bottom-[calc(100%+6px)] right-0 z-50 w-48 overflow-hidden rounded-[11px] border border-c-border bg-surface-3 shadow-[0_16px_40px_rgba(0,0,0,.5)]"
       onClick={(e) => e.stopPropagation()}>
       {items.map((item, i) => {
-        const cls = `flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] transition ${item.disabled ? "cursor-not-allowed opacity-40 text-zinc-500" : "text-zinc-300 hover:bg-white/[.05] hover:text-white"}`;
+        const cls = `flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[12.5px] transition ${item.disabled ? "cursor-not-allowed opacity-40 text-c-text-muted" : "text-c-text-secondary hover:bg-surface-glass hover:text-c-text"}`;
         return (
           <div key={item.label}>
-            {i === 3 && <div className="mx-3 border-t border-white/[.07]" />}
+            {i === 3 && <div className="mx-3 border-t border-c-border" />}
             <button onClick={item.disabled ? undefined : item.onClick} disabled={item.disabled} className={cls}>
               <span>{item.icon}</span>{item.label}
             </button>
@@ -259,7 +259,7 @@ export function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMes
 
   return (
     <div className="mx-auto mt-10 max-w-[540px]" style={{ animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}>
-      <div className="overflow-hidden rounded-[18px] border border-red-500/20 bg-[#0e1420]">
+      <div className="overflow-hidden rounded-[18px] border border-red-500/20 bg-surface-2">
         <div className="h-[3px] w-full bg-gradient-to-r from-red-500/80 via-red-400/60 to-transparent" />
 
         <div className="p-6">
@@ -275,8 +275,8 @@ export function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMes
                 <span className="text-[13px] font-bold text-red-300">{kind.label}</span>
                 <span className="rounded-full border border-red-400/20 bg-red-400/10 px-2 py-0.5 text-[10px] font-semibold text-red-400 uppercase tracking-wide">Failed</span>
               </div>
-              <p className="text-[13px] font-medium text-zinc-200 leading-snug mb-2">{kind.msg}</p>
-              <p className="text-[12px] text-zinc-500 leading-relaxed">{kind.hint}</p>
+              <p className="text-[13px] font-medium text-c-text leading-snug mb-2">{kind.msg}</p>
+              <p className="text-[12px] text-c-text-muted leading-relaxed">{kind.hint}</p>
             </div>
           </div>
 
@@ -313,7 +313,7 @@ export function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMes
 
             <button
               onClick={() => setExpanded(v => !v)}
-              className="flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-white/[.08] bg-white/[.03] px-3.5 py-2.5 text-[12px] text-zinc-400 transition hover:border-white/[.12] hover:bg-white/[.06] hover:text-zinc-200"
+              className="flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-c-border bg-surface-3 px-3.5 py-2.5 text-[12px] text-c-text-muted transition hover:border-c-border-hover hover:text-c-text"
             >
               <svg className={cn("h-3.5 w-3.5 transition-transform duration-150", expanded && "rotate-180")} viewBox="0 0 16 16" fill="currentColor">
                 <path d="M8 10.94L2.53 5.47a.75.75 0 011.06-1.06L8 8.88l4.41-4.47a.75.75 0 111.06 1.06L8 10.94z"/>
@@ -323,14 +323,14 @@ export function FailedErrorCard({ errorMessage, videoId, onRetried }: { errorMes
           </div>
 
           {expanded && (
-            <div className="mt-4 overflow-hidden rounded-[10px] border border-white/[.07] bg-black/40">
-              <div className="flex items-center gap-2 border-b border-white/[.06] px-3 py-2">
+            <div className="mt-4 overflow-hidden rounded-[10px] border border-c-border bg-surface-2">
+              <div className="flex items-center gap-2 border-b border-c-border px-3 py-2">
                 <span className="h-2 w-2 rounded-full bg-red-400/70" />
                 <span className="h-2 w-2 rounded-full bg-yellow-400/40" />
-                <span className="h-2 w-2 rounded-full bg-white/10" />
-                <span className="ml-2 text-[10.5px] font-mono text-zinc-600">error.log</span>
+                <span className="h-2 w-2 rounded-full bg-c-border" />
+                <span className="ml-2 text-[10.5px] font-mono text-c-text-muted">error.log</span>
               </div>
-              <pre className="max-h-[200px] overflow-auto p-4 text-[10.5px] font-mono leading-relaxed text-zinc-500 whitespace-pre-wrap">
+              <pre className="max-h-[200px] overflow-auto p-4 text-[10.5px] font-mono leading-relaxed text-c-text-secondary whitespace-pre-wrap">
                 {errorMessage}
               </pre>
             </div>
@@ -530,7 +530,7 @@ export function ResultsView({
           />
         : video.status === "failed"
           ? <FailedErrorCard errorMessage={video.error_message ?? "Processing failed. No additional details available."} videoId={video.id} onRetried={() => onBack()} />
-          : <div className="py-16 text-center text-zinc-500">No clips generated yet.</div>}
+          : <div className="py-16 text-center text-c-text-muted">No clips generated yet.</div>}
 
       {bulkModal && (
         <BulkPublishModal
@@ -551,26 +551,26 @@ export function ResultsView({
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6"
           style={{ background: "rgba(4,7,15,.8)", backdropFilter: "blur(6px)", animation: "fadeUp .15s ease" }}
           onClick={(e) => e.target === e.currentTarget && setRegenModal(false)}>
-          <div className="w-full max-w-[460px] overflow-hidden rounded-[18px] border border-white/[.12] bg-[#0e1420] p-4 shadow-[0_40px_100px_rgba(0,0,0,.7)] sm:rounded-[20px] sm:p-6"
+          <div className="w-full max-w-[460px] overflow-hidden rounded-[18px] border border-c-border bg-surface-1 p-4 shadow-[0_40px_100px_rgba(0,0,0,.7)] sm:rounded-[20px] sm:p-6"
             style={{ animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}
             onClick={(e) => e.stopPropagation()}>
             <div className="mb-5 flex items-center gap-3">
               <div className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a]">✦</div>
               <div>
-                <h3 className="font-display text-[16px] font-bold">Regenerate clips</h3>
-                <p className="text-[12px] text-zinc-500">Choose what to optimize in the new batch</p>
+                <h3 className="font-display text-[16px] font-bold text-c-text">Regenerate clips</h3>
+                <p className="text-[12px] text-c-text-muted">Choose what to optimize in the new batch</p>
               </div>
-              <button onClick={() => setRegenModal(false)} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-white/[.08] text-[13px] text-zinc-500 hover:text-white">✕</button>
+              <button onClick={() => setRegenModal(false)} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-c-border text-[13px] text-c-text-muted hover:text-c-text">✕</button>
             </div>
 
-            <div className="mb-2 text-[10.5px] font-bold uppercase tracking-[.1em] text-zinc-600">Optimization options</div>
+            <div className="mb-2 text-[10.5px] font-bold uppercase tracking-[.1em] text-c-text-muted">Optimization options</div>
             <div className="mb-5 flex flex-wrap gap-2">
               {REGEN_OPTS.map((o) => (
                 <button key={o.id} onClick={() => toggleOpt(o.id)}
                   className={cn("rounded-[8px] border px-3 py-1.5 text-[12px] font-semibold transition",
                     regenOpts.includes(o.id)
                       ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-[#ff3d6a]"
-                      : "border-white/[.07] bg-white/[.03] text-zinc-400 hover:border-white/[.12] hover:text-zinc-200"
+                      : "border-c-border bg-surface-2 text-c-text-secondary hover:border-c-border-hover hover:text-c-text"
                   )}>
                   {o.label}
                 </button>
@@ -579,7 +579,7 @@ export function ResultsView({
 
             <div className="flex gap-2.5">
               <button onClick={() => setRegenModal(false)}
-                className="rounded-[9px] border border-white/[.08] bg-white/[.03] px-4 py-2 text-[13px] font-semibold text-zinc-300 transition hover:text-white">
+                className="rounded-[9px] border border-c-border bg-surface-2 px-4 py-2 text-[13px] font-semibold text-c-text-secondary transition hover:text-c-text">
                 Cancel
               </button>
               <button onClick={() => setRegenModal(false)}

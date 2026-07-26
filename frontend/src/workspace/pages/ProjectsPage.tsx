@@ -68,7 +68,7 @@ function DeleteModal({ video, onConfirm, onCancel }: { video: VideoResponse; onC
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-[20px] border border-c-border [background:rgb(var(--surface-1))] p-6 shadow-[0_28px_90px_rgba(0,0,0,.45)]">
         <div className="mb-3 grid h-11 w-11 place-items-center rounded-[14px] border border-red-400/20 bg-red-400/10 text-red-300">⌫</div>
-        <h3 className="font-display text-xl font-bold text-white">Delete project?</h3>
+        <h3 className="font-display text-xl font-bold text-c-text">Delete project?</h3>
         <p className="mt-2 text-sm leading-6 text-c-text-muted">
           This removes "{video.title || "Untitled"}" from project history. Generated clips for this video may no longer be accessible.
         </p>
@@ -352,7 +352,7 @@ export function ProjectsPage() {
                       onClick={() => setTab(t)}
                       className={cn(
                         "relative py-3.5 text-[14px] font-bold tracking-tight transition-all focus:outline-none flex items-center gap-2",
-                        active ? "text-white" : "text-c-text-muted hover:text-c-text-secondary"
+                        active ? "text-c-text" : "text-c-text-muted hover:text-c-text-secondary"
                       )}
                     >
                       {t === "clipping" ? (
@@ -389,7 +389,7 @@ export function ProjectsPage() {
 
                 <div className="flex rounded-[9px] border border-c-border [background:rgb(var(--surface-2))] p-0.5">
                   {(["grid", "list"] as const).map((v) => (
-                    <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-[11px] font-semibold capitalize transition", viewMode === v ? "[background:rgb(var(--surface-3))] text-white" : "text-c-text-muted hover:text-c-text-secondary")}>{v}</button>
+                    <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-[11px] font-semibold capitalize transition", viewMode === v ? "[background:rgb(var(--surface-3))] text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>{v}</button>
                   ))}
                 </div>
 
@@ -450,7 +450,7 @@ export function ProjectsPage() {
               ) : displayFiltered.length === 0 ? (
                 <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[20px] border border-dashed border-c-border [background:rgb(var(--surface-1))] p-8 text-center">
                   <div className="grid h-14 w-14 place-items-center rounded-[18px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-2xl text-[#ff7a9a]">↥</div>
-                  <h3 className="mt-4 font-display text-xl font-bold text-white">{history.length === 0 ? "No projects yet" : "No projects match"}</h3>
+                  <h3 className="mt-4 font-display text-xl font-bold text-c-text">{history.length === 0 ? "No projects yet" : "No projects match"}</h3>
                   <p className="mt-2 max-w-md text-sm leading-6 text-c-text-muted">{history.length === 0 ? tab === "ranking" ? "Create your first ranked countdown video from the Rankings page." : "Upload a video or import from YouTube to create your first clipping project." : "Try a different search term or clear the search field."}</p>
                   <button onClick={() => navigate("/studio")} className="mt-5 rounded-[12px] bg-[#ff3d6a] px-5 py-2.5 text-sm font-bold text-white">Start upload</button>
                 </div>
@@ -466,7 +466,7 @@ export function ProjectsPage() {
                     const pct = progressFor(video);
                     return (
                       <div className={cn(
-                        "group overflow-hidden rounded-[20px] border bg-[#111827]",
+                        "group overflow-hidden rounded-[20px] border bg-surface-1",
                         active ? "border-[#ff3d6a]/55 shadow-[0_0_0_1px_rgba(255,61,106,.12)]" : "border-c-border",
                         isDeleting ? "pointer-events-none opacity-50" : ""
                       )}>
@@ -475,7 +475,7 @@ export function ProjectsPage() {
                         </button>
                         <div className="p-4">
                           <div className="flex items-start gap-3">
-                            <h3 className="min-w-0 flex-1 line-clamp-2 font-display text-[18px] font-bold leading-tight tracking-[-.02em] text-white">{video.title || "Untitled"}</h3>
+                            <h3 className="min-w-0 flex-1 line-clamp-2 font-display text-[18px] font-bold leading-tight tracking-[-.02em] text-c-text">{video.title || "Untitled"}</h3>
                             <StatusBadge video={video} />
                           </div>
                           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -510,7 +510,7 @@ export function ProjectsPage() {
                       return (
                         <div
                           className={cn(
-                            "group relative border-l-[3px] border-t border-white/[.04] transition",
+                            "group relative border-l-[3px] border-t border-c-border transition",
                             active ? "border-l-[#ff3d6a]/70 bg-[#ff3d6a]/[.035]" : "border-l-transparent hover:[background:rgb(var(--surface-2))]",
                             isDeleting ? "pointer-events-none opacity-50" : "",
                           )}
@@ -522,14 +522,14 @@ export function ProjectsPage() {
                             <ProjectThumb video={video} className="h-14 w-20 shrink-0 rounded-[10px]" />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <p className="truncate text-[14px] font-semibold text-white">{video.title || "Untitled"}</p>
+                                <p className="truncate text-[14px] font-semibold text-c-text">{video.title || "Untitled"}</p>
                                 <StatusBadge video={video} />
                               </div>
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-c-text-muted">
                                 <span>{video.source_type === "youtube" || video.source_type === "youtube_url" ? "YouTube" : "Upload"}</span>
-                                <span className="text-zinc-700">·</span>
+                                <span className="text-c-text-muted">·</span>
                                 <span>{formatDuration(video.duration_sec)}</span>
-                                <span className="text-zinc-700">·</span>
+                                <span className="text-c-text-muted">·</span>
                                 <span>{formatShortDate(video.created_at)}</span>
                               </div>
                               <div className="mt-2 flex items-center gap-2">
@@ -569,7 +569,7 @@ export function ProjectsPage() {
 
             {/* Details sidebar */}
             {selected && (
-              <aside className="hidden border-l border-c-border bg-[#0e1420] xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
+              <aside className="hidden border-l border-c-border bg-surface-2 xl:flex xl:flex-col" style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)", overflowY: "auto" }}>
                 <div className="p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <span className="text-xs font-semibold text-c-text-muted">Project details</span>
@@ -582,7 +582,7 @@ export function ProjectsPage() {
 
                   <div className="mt-5 flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="font-display text-[22px] font-bold leading-tight tracking-[-.03em] text-white">{selected.title || "Untitled"}</h2>
+                      <h2 className="font-display text-[22px] font-bold leading-tight tracking-[-.03em] text-c-text">{selected.title || "Untitled"}</h2>
                       <p className="mt-1.5 text-sm text-c-text-muted">{selected.source_type === "youtube" || selected.source_type === "youtube_url" ? "YouTube import" : "Uploaded video"}</p>
                     </div>
                     <StatusBadge video={selected} />
@@ -598,7 +598,7 @@ export function ProjectsPage() {
                     ].map(({ label, value }) => (
                       <div key={label} className="rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] p-3.5">
                         <div className="text-[10px] font-bold uppercase tracking-[.2em] text-c-text-muted">{label}</div>
-                        <div className="mt-1.5 text-base font-bold capitalize text-white">{value}</div>
+                        <div className="mt-1.5 text-base font-bold capitalize text-c-text">{value}</div>
                       </div>
                     ))}
                   </div>
@@ -651,7 +651,7 @@ export function ProjectsPage() {
                   )}
 
                   {/* Actions */}
-                  <div className="sticky bottom-0 -mx-5 mt-5 border-t border-c-border bg-[#0e1420]/95 p-5 backdrop-blur">
+                  <div className="sticky bottom-0 -mx-5 mt-5 border-t border-c-border bg-surface-2/95 p-5 backdrop-blur">
                     <button onClick={() => navigate(`/projects/${selected.id}`)} className="h-12 w-full rounded-[12px] bg-[#ff3d6a] text-sm font-bold text-white shadow-[0_14px_34px_rgba(255,61,106,.22)] transition hover:bg-[#e8304f]">Show clips</button>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <button onClick={() => navigate(`/projects/${selected.id}`)} className="h-11 rounded-[12px] border border-c-border [background:rgb(var(--surface-2))] text-sm font-bold text-c-text-secondary transition hover:[background:rgb(var(--surface-3))] hover:text-c-text">Edit project</button>
