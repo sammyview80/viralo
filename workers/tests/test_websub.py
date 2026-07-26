@@ -169,7 +169,14 @@ def test_process_notification_no_subscriptions(mock_session_cls):
 def test_process_notification_triggers_pipeline(mock_session_cls):
     """Active subscription triggers video pipeline job."""
     tenant_id = uuid.uuid4()
-    sub_row = (uuid.uuid4(), tenant_id, False, {}, "Test Channel")
+    user_id = str(uuid.uuid4())
+    sub_row = (
+        uuid.uuid4(),
+        tenant_id,
+        False,
+        {"notification_user_id": user_id},
+        "Test Channel",
+    )
 
     session = MagicMock()
     fetch_results = [
@@ -186,7 +193,8 @@ def test_process_notification_triggers_pipeline(mock_session_cls):
     cm.__exit__ = MagicMock(return_value=False)
     mock_session_cls.return_value = cm
 
-    with patch("workers.tasks.websub.celery_app.send_task") as mock_send_task:
+    with patch("workers.tasks.websub.celery_app.send_task") as mock_send_task, \
+         patch("workers.tasks.notification.send_notification.delay") as mock_notify:
         from workers.tasks.websub import process_websub_notification
         result = process_websub_notification(
             "UCtest123456789012345678", "vid789", "https://youtube.com/watch?v=vid789"
@@ -205,6 +213,7 @@ def test_process_notification_triggers_pipeline(mock_session_cls):
     assert video_calls[0].kwargs["task_id"] == result["jobs"][0]["job_id"]
     cfg = video_calls[0].kwargs["args"][3]
     assert cfg["auto_publish"] is False
+    assert mock_notify.call_args.kwargs["user_id"] == user_id
 
 
 # ---------------------------------------------------------------------------

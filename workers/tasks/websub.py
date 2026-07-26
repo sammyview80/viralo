@@ -258,7 +258,7 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
             ch_label = channel_name or channel_id
             send_notification.delay(
                 str(tenant_id),
-                user_id=None,
+                user_id=ap_cfg.get("notification_user_id"),
                 type="channel_video",
                 title=f"New video from {ch_label}",
                 body="A new video is being processed and clips will be ready soon.",

@@ -108,6 +108,7 @@ def test_db_insert_contains_correct_fields():
 
     call_params = mock_session.execute.call_args[0][1]
     assert call_params["tenant_id"] == tid
+    assert call_params["user_id"] == uid
     assert call_params["type"] == "post_published"
     assert call_params["title"] == "Post is live!"
 

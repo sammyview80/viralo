@@ -288,10 +288,14 @@ async def add_channel(
     # Resolve handle/URL → real UCxxxxxx channel_id
     channel_id, resolved_name = await _resolve_channel_id(req.channel_id)
     channel_name = req.channel_name or resolved_name
+    auto_publish_config = {
+        **req.auto_publish_config,
+        "notification_user_id": current_user.sub,
+    }
 
     subscribe_channel.apply_async(
         args=[channel_id, tenant_id, channel_name, req.channel_url or f"https://www.youtube.com/channel/{channel_id}",
-              req.auto_publish, req.auto_publish_config],
+              req.auto_publish, auto_publish_config],
         queue="viralo.post.publish",
     )
     return {"channel_id": channel_id, "channel_name": channel_name, "status": "subscribing"}
@@ -317,7 +321,10 @@ async def update_channel(
         params["ap"] = req.auto_publish
     if req.auto_publish_config is not None:
         sets.append("auto_publish_config = :cfg")
-        params["cfg"] = _json.dumps(req.auto_publish_config)
+        params["cfg"] = _json.dumps({
+            **req.auto_publish_config,
+            "notification_user_id": current_user.sub,
+        })
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
     sets.append("updated_at = now()")

@@ -1,3 +1,4 @@
+import json
 import sys
 import uuid
 from contextlib import contextmanager
@@ -301,6 +302,26 @@ def test_video_notification_targets_uploading_user():
         )
 
     assert notification_module.send_notification.delay.call_args.kwargs["user_id"] == user_id
+
+
+@pytest.mark.asyncio
+async def test_channel_notification_owner_is_stamped_server_side():
+    from platform_svc.routers import websub
+    from shared.schemas.auth import TokenPayload
+
+    token = TokenPayload(sub=str(uuid.uuid4()), tenant_id=str(uuid.uuid4()),
+                         email="u@example.com", plan="free", type="access")
+    db = AsyncMock()
+    await websub.update_channel(
+        "UCtest123456789012345678",
+        websub.UpdateChannelRequest(
+            auto_publish_config={"notification_user_id": str(uuid.uuid4())}
+        ),
+        db,
+        token,
+    )
+    params = db.execute.await_args.args[1]
+    assert json.loads(params["cfg"])["notification_user_id"] == token.sub
 
 
 def test_publish_exception_after_external_call_fails_closed(tmp_path, monkeypatch):
