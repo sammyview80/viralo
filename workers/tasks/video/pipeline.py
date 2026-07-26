@@ -219,6 +219,8 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
                 caption, hashtags, platform_kwargs = _auto_publish_content(
                     title, metadata, platform, caption_template
                 )
+                if ap_cfg.get("notification_user_id"):
+                    platform_kwargs["notification_user_id"] = ap_cfg["notification_user_id"]
                 db.execute(
                     text("""
                         INSERT INTO scheduled_posts
