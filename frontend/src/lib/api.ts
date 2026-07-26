@@ -344,6 +344,7 @@ export interface ClipConfig {
     social_account_ids: string[];
     publish_per_day: number;
     publish_interval_hours?: number;
+    publish_start_at?: string;
     caption_template?: string;
   } | null;
 }
