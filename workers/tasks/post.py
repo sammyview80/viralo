@@ -90,6 +90,7 @@ def _try_insert_notification(
     notification_type: str = "post",
     action_url: str | None = None,
     live_url: str | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Best-effort notification via full pipeline (DB + Redis SSE + email + push)."""
     try:
@@ -99,7 +100,7 @@ def _try_insert_notification(
             metadata["live_url"] = live_url
         send_notification.delay(
             tenant_id,
-            user_id=None,
+            user_id=user_id,
             type=notification_type,
             title=title,
             body=body,
@@ -190,6 +191,7 @@ def publish_post(self, tenant_id: str, post_id: str):
     clip_id = None   # guard: except block references this before tuple unpack
     platform = "social"
     publish_attempted = False
+    notification_user_id = None
     try:
         # ── 1. Load post + social account ─────────────────────────────────────
         with _get_session(tenant_id) as session:
@@ -246,6 +248,7 @@ def publish_post(self, tenant_id: str, post_id: str):
         ) = row
 
         platform_kwargs = platform_kwargs_raw or {}
+        notification_user_id = platform_kwargs.pop("notification_user_id", None)
         hashtags = hashtags or []
         retry_count = retry_count or 0
 
@@ -378,6 +381,7 @@ def publish_post(self, tenant_id: str, post_id: str):
                 notification_type="post_published",
                 action_url=live_url or f"/workspace/scheduler?post={post_id}",
                 live_url=live_url,
+                user_id=notification_user_id,
             )
 
 
@@ -407,6 +411,7 @@ def publish_post(self, tenant_id: str, post_id: str):
                 tenant_id, post_id, platform, retry_count,
                 error=result.error or "Publisher returned failure",
                 clip_id=str(clip_id) if clip_id else None,
+                user_id=notification_user_id,
             )
 
     except Exception as exc:
@@ -472,6 +477,7 @@ def publish_post(self, tenant_id: str, post_id: str):
                 tenant_id, post_id, platform_name, current_retries + 1,
                 error=str(exc)[:1000], already_incremented=True,
                 clip_id=str(clip_id) if clip_id else None,
+                user_id=notification_user_id,
             )
 
     finally:
@@ -490,6 +496,7 @@ def _handle_publish_failure(
     error: str,
     already_incremented: bool = False,
     clip_id: str | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Increment retry_count and mark failed if >= 3, insert notification."""
     new_count = retry_count if already_incremented else retry_count + 1
@@ -516,4 +523,5 @@ def _handle_publish_failure(
             post_id=post_id,
             notification_type="post_failed",
             action_url=failed_url,
+            user_id=user_id,
         )
