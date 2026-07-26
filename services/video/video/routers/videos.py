@@ -464,6 +464,10 @@ async def upload_video(
 
     video_id = uuid.uuid4()
     tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
+    task_config = clip_config.model_dump()
+    task_config["notification_user_id"] = token.sub
+    if task_config.get("auto_publish_config"):
+        task_config["auto_publish_config"]["notification_user_id"] = token.sub
 
     tmp_dir = Path(f"/tmp/viralo-video/{video_id}")
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -499,7 +503,7 @@ async def upload_video(
         title=title,
         source_type="uploaded",
         status="queued",
-        clip_config=clip_config.model_dump(),
+        clip_config=task_config,
         original_storage_key=original_storage_key,
     )
     db.add(video)
@@ -514,7 +518,7 @@ async def upload_video(
     celery_app = _get_celery()
     task = celery_app.send_task(
         "workers.tasks.video.process_uploaded_video",
-        args=[str(tenant_id), str(video_id), tmp_path, clip_config.model_dump()],
+        args=[str(tenant_id), str(video_id), tmp_path, task_config],
     )
     await db.execute(update(Video).where(Video.id == video_id).values(celery_task_id=task.id))
     await db.commit()
@@ -537,6 +541,10 @@ async def import_youtube(
     video_id = uuid.uuid4()
     tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
     clip_config = body.config
+    task_config = clip_config.model_dump()
+    task_config["notification_user_id"] = token.sub
+    if task_config.get("auto_publish_config"):
+        task_config["auto_publish_config"]["notification_user_id"] = token.sub
 
     video = Video(
         id=video_id,
@@ -545,7 +553,7 @@ async def import_youtube(
         source_type="youtube_url",
         source_url=body.url,
         status="queued",
-        clip_config=clip_config.model_dump(),
+        clip_config=task_config,
     )
     db.add(video)
     await db.commit()
@@ -553,7 +561,7 @@ async def import_youtube(
     celery_app = _get_celery()
     task = celery_app.send_task(
         "workers.tasks.video.process_youtube_video",
-        args=[str(tenant_id), str(video_id), body.url, clip_config.model_dump()],
+        args=[str(tenant_id), str(video_id), body.url, task_config],
     )
     await db.execute(update(Video).where(Video.id == video_id).values(celery_task_id=task.id))
     await db.commit()
@@ -1008,13 +1016,18 @@ async def delete_video(
     temp_dir = Path(os.getenv("VIDEO_TEMP_DIR", "/tmp/viralo-video")) / str(video_id)
     shutil.rmtree(temp_dir, ignore_errors=True)
 
-    # Nullify clip_id on scheduled posts to avoid FK violation when deleting clips
+    # Nullify clip_id on scheduled posts, and delete captions, to avoid FK
+    # violations when deleting clips (captions.clip_id has no ON DELETE CASCADE).
     clip_ids = [str(c.id) for c in clips]
     if clip_ids:
         from sqlalchemy import text as sa_text
         # Use ANY(:arr) with parameterized array — no string interpolation
         await db.execute(
             sa_text("UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(CAST(:ids AS uuid[]))"),
+            {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
+        )
+        await db.execute(
+            sa_text("DELETE FROM captions WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(CAST(:ids AS uuid[]))"),
             {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
         )
 
