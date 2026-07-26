@@ -10,7 +10,6 @@ export const nav: Array<{
   group: "Create" | "Measure" | "Account";
 }> = [
   { key: "studio",       label: "Studio",       href: "/studio",       icon: "Video",    badge: "AI",  group: "Create" },
-  { key: "series",       label: "Series",        href: "/series",       icon: "Sparkle",  badge: "NEW", group: "Create" },
   { key: "clips",        label: "Clips",         href: "/clips",        icon: "Film",                   group: "Create" },
   { key: "projects",     label: "Projects",      href: "/projects",     icon: "Rocket",                 group: "Create" },
   { key: "brainstorm",   label: "Brainstorm",    href: "/brainstorm",   icon: "Brain",    badge: "3",   group: "Create" },
