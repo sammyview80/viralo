@@ -158,7 +158,7 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
         href={video.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex gap-3 rounded-xl border border-c-border bg-surface-1 p-3
+        className="flex h-24 gap-3 rounded-xl border border-c-border bg-surface-1 p-3 sm:h-[124px]
                    shadow-sm transition hover:-translate-y-0.5 hover:border-c-border-hover
                    hover:bg-surface-2 hover:shadow-md"
       >
@@ -192,7 +192,7 @@ function VideoCard({ video, rank, searchQuery }: { video: VideoMeta; rank?: numb
         </div>
 
         {/* Info */}
-        <div className="min-w-0 flex-1 py-0.5 pr-24 sm:pr-40">
+        <div className="min-w-0 flex-1 overflow-hidden py-0.5 pr-24 sm:pr-40">
           <p className="line-clamp-2 text-sm font-medium leading-snug text-c-text
                         transition group-hover/card:text-[#ff3d6a]">
             {video.title}
@@ -315,7 +315,7 @@ function PlatformTabs({ active, onChange, counts }: {
 
 function SkeletonCard() {
   return (
-    <div className="flex gap-3 rounded-xl border border-c-border bg-surface-1 p-3">
+    <div className="flex h-24 gap-3 rounded-xl border border-c-border bg-surface-1 p-3 sm:h-[124px]">
       <div className="aspect-video w-32 shrink-0 animate-pulse rounded-lg bg-surface-2 sm:w-44" />
       <div className="min-w-0 flex-1 space-y-2 py-1">
         <div className="h-3.5 w-3/5 animate-pulse rounded bg-surface-2" />

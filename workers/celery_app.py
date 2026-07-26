@@ -63,6 +63,7 @@ celery_app.conf.update(
         "workers.tasks.series.*": {"queue": "viralo.video.generate"},
         "workers.tasks.agent.*": {"queue": "viralo.agent.run"},
         "workers.tasks.workflow.*": {"queue": "viralo.workflow.execute"},
+        "workers.tasks.websub.*": {"queue": "viralo.post.publish"},
         "workers.tasks.post.*": {"queue": "viralo.post.publish"},
         "workers.tasks.analytics.*": {"queue": "viralo.analytics.ingest"},
         "workers.tasks.notification.*": {"queue": "viralo.notifications"},

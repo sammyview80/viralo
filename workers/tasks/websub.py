@@ -37,7 +37,7 @@ def _topic_url(channel_id: str) -> str:
 
 def _callback_url(channel_id: str) -> str:
     base = os.getenv("PUBLIC_BASE_URL", "https://app.viralo.io")
-    return f"{base}/api/v1/websub/callback/{channel_id}"
+    return f"{base}/api/v1/platform/websub/callback/{channel_id}"
 
 
 def _subscribe(channel_id: str, mode: str = "subscribe") -> bool:
@@ -203,7 +203,6 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
         return {"skipped": True, "reason": "no active subscriptions"}
 
     # Trigger video pipeline for each tenant subscribed to this channel
-    from workers.tasks.video import process_youtube_video
     from workers.tasks.notification import send_notification
     jobs = []
     for sub in subs:
@@ -228,17 +227,26 @@ def process_websub_notification(channel_id: str, video_id: str, video_url: str, 
             vdb.execute(text("SET LOCAL app.current_tenant = :tid"), {"tid": str(tenant_id)})
             vdb.execute(
                 text("""
-                    INSERT INTO videos (id, tenant_id, source_type, source_url, status, created_at, updated_at)
-                    VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), 'youtube_url', :url, 'queued', now(), now())
+                    INSERT INTO videos
+                        (id, tenant_id, source_type, source_url, status, clip_config, created_at, updated_at)
+                    VALUES
+                        (CAST(:id AS uuid), CAST(:tid AS uuid), 'youtube_url', :url, 'queued',
+                         CAST(:cfg AS jsonb), now(), now())
                     ON CONFLICT (id) DO NOTHING
                 """),
-                {"id": job_id, "tid": str(tenant_id), "url": video_url},
+                {
+                    "id": job_id,
+                    "tid": str(tenant_id),
+                    "url": video_url,
+                    "cfg": json.dumps(cfg),
+                },
             )
             vdb.commit()
 
-        process_youtube_video.apply_async(
+        celery_app.send_task(
+            "workers.tasks.video.process_youtube_video",
             args=[str(tenant_id), job_id, video_url, cfg],
-            queue="viralo.video.generate",
+            queue="viralo.video.pipeline",
         )
         # Update delivery with job_id
         with Session(engine) as db:

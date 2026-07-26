@@ -42,7 +42,7 @@ services:
   platform-service:
     build:
       target: development
-    command: uvicorn platform.main:app --host 0.0.0.0 --port 8006 --reload
+    command: uvicorn platform_svc.main:app --host 0.0.0.0 --port 8006 --reload
     volumes:
       - ./services/platform:/app/services/platform
       - ./shared:/app/shared
@@ -110,4 +110,3 @@ services:
       - /app/node_modules
     ports:
       - "5173:5173"
-

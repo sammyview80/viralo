@@ -10,7 +10,6 @@ Covers:
 import hashlib
 import hmac
 import os
-import sys
 import uuid
 from unittest.mock import MagicMock, patch
 
@@ -53,6 +52,23 @@ def test_verify_malformed_header():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def test_websub_tasks_route_to_consumed_queue():
+    from workers.celery_app import celery_app
+
+    assert celery_app.conf.task_routes["workers.tasks.websub.*"] == {
+        "queue": "viralo.post.publish",
+    }
+
+
+def test_callback_url_uses_mounted_platform_route():
+    from workers.tasks.websub import _callback_url
+
+    with patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://example.com"}):
+        assert _callback_url("UCtest") == (
+            "https://example.com/api/v1/platform/websub/callback/UCtest"
+        )
+
 
 def _session_cm(fetchone_return=None, fetchall_return=None):
     """Return (context_manager, session_mock) for `with Session(engine) as db`."""
@@ -163,11 +179,7 @@ def test_process_notification_triggers_pipeline(mock_session_cls):
     cm.__exit__ = MagicMock(return_value=False)
     mock_session_cls.return_value = cm
 
-    mock_task = MagicMock()
-    # video.py uses Python 3.10+ syntax; stub the module before the local import fires
-    mock_video_mod = MagicMock()
-    mock_video_mod.process_youtube_video = mock_task
-    with patch.dict(sys.modules, {"workers.tasks.video": mock_video_mod}):
+    with patch("workers.tasks.websub.celery_app.send_task") as mock_send_task:
         from workers.tasks.websub import process_websub_notification
         result = process_websub_notification(
             "UCtest123456789012345678", "vid789", "https://youtube.com/watch?v=vid789"
@@ -175,7 +187,16 @@ def test_process_notification_triggers_pipeline(mock_session_cls):
 
     assert result["triggered"] == 1
     assert result["jobs"][0]["tenant_id"] == str(tenant_id)
-    mock_task.apply_async.assert_called_once()
+    video_calls = [
+        call for call in mock_send_task.call_args_list
+        if call.args == ("workers.tasks.video.process_youtube_video",)
+    ]
+    assert len(video_calls) == 1
+    task_name, = video_calls[0].args
+    assert task_name == "workers.tasks.video.process_youtube_video"
+    assert video_calls[0].kwargs["queue"] == "viralo.video.pipeline"
+    cfg = video_calls[0].kwargs["args"][3]
+    assert cfg["auto_publish"] is False
 
 
 # ---------------------------------------------------------------------------

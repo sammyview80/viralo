@@ -507,6 +507,7 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
         channel_name: channel.channel_name ?? undefined,
         channel_url: channel.channel_url ?? undefined,
         auto_publish: channel.auto_publish,
+        auto_publish_config: channel.auto_publish_config ?? undefined,
       });
       onRefresh();
     } finally { setRenewing(false); }
