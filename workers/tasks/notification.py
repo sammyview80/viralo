@@ -137,9 +137,9 @@ def send_notification(
             },
         )
 
-    channel = f"notifications:{tenant_id}"
     payload = json.dumps({
         "id": notif_id,
+        "user_id": user_id,
         "type": type,
         "title": title,
         "body": body,
@@ -147,10 +147,12 @@ def send_notification(
         "metadata": metadata,
         "created_at": created_at.isoformat(),
     })
-    try:
-        redis_client.publish(channel, payload)
-    except Exception:
-        logger.exception("send_notification: failed to publish to Redis channel %s", channel)
+    if user_id:
+        channel = f"notifications:{tenant_id}:{user_id}"
+        try:
+            redis_client.publish(channel, payload)
+        except Exception:
+            logger.exception("send_notification: failed to publish to Redis channel %s", channel)
 
     with engine.connect() as conn:
         tenant_row = conn.execute(
@@ -176,7 +178,7 @@ def send_notification(
         except Exception:
             logger.exception("send_notification: email delivery failed for tenant %s", tenant_id)
 
-    if push_enabled and VAPID_PRIVATE_KEY:
+    if push_enabled and VAPID_PRIVATE_KEY and user_id:
         try:
             with engine.connect() as conn:
                 subs = conn.execute(
@@ -184,7 +186,7 @@ def send_notification(
                         SELECT id, endpoint, p256dh, auth
                         FROM push_subscriptions
                         WHERE tenant_id = CAST(:tid AS uuid)
-                        AND (:uid IS NULL OR user_id = CAST(:uid AS uuid))
+                          AND user_id = CAST(:uid AS uuid)
                     """),
                     {"tid": tenant_id, "uid": user_id},
                 ).fetchall()
