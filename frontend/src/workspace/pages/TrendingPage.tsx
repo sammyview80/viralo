@@ -316,11 +316,19 @@ function PlatformTabs({ active, onChange, counts }: {
 function SkeletonCard() {
   return (
     <div className="flex gap-3 rounded-xl border border-c-border bg-surface-1 p-3">
-      <div className="size-20 shrink-0 animate-pulse rounded-lg bg-surface-2 sm:size-24" />
-      <div className="flex-1 space-y-2 py-1">
-        <div className="h-3 w-3/4 animate-pulse rounded bg-surface-2" />
-        <div className="h-3 w-1/2 animate-pulse rounded bg-surface-2" />
-        <div className="h-5 w-20 animate-pulse rounded-full bg-surface-2" />
+      <div className="aspect-video w-32 shrink-0 animate-pulse rounded-lg bg-surface-2 sm:w-44" />
+      <div className="min-w-0 flex-1 space-y-2 py-1">
+        <div className="h-3.5 w-3/5 animate-pulse rounded bg-surface-2" />
+        <div className="h-3 w-1/3 animate-pulse rounded bg-surface-2" />
+        <div className="flex gap-2 pt-1">
+          <div className="h-5 w-20 animate-pulse rounded-full bg-surface-2" />
+          <div className="h-5 w-16 animate-pulse rounded bg-surface-2" />
+        </div>
+        <div className="h-3 w-2/5 animate-pulse rounded bg-surface-2" />
+      </div>
+      <div className="hidden gap-2 sm:flex">
+        <div className="h-8 w-16 animate-pulse rounded-full bg-surface-2" />
+        <div className="h-8 w-20 animate-pulse rounded-full bg-surface-2" />
       </div>
     </div>
   );
@@ -650,7 +658,22 @@ export function TrendingPage() {
         {loading && (
           <div className="space-y-3">
             <p className="text-xs text-c-text-muted">Scanning YouTube, TikTok, and the web for "{query}"…</p>
-            {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]" aria-hidden>
+              <div className="min-w-0 space-y-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="h-10 w-80 max-w-full animate-pulse rounded-xl bg-surface-1" />
+                  <div className="h-3 w-24 animate-pulse rounded bg-surface-2" />
+                </div>
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
+                </div>
+              </div>
+              <div className="min-w-0 space-y-4">
+                <div className="h-64 animate-pulse rounded-xl border border-c-border bg-surface-1" />
+                <div className="h-44 animate-pulse rounded-xl border border-c-border bg-surface-1" />
+                <div className="h-36 animate-pulse rounded-xl border border-c-border bg-surface-1" />
+              </div>
+            </div>
           </div>
         )}
 
