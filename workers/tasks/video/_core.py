@@ -97,10 +97,22 @@ def _get_video_title_from_db(tenant_id: str, video_id: str) -> str:
 def _notify_video(tenant_id: str, video_id: str, notif_type: str, title: str, body: str) -> None:
     """Best-effort notification — never raises, never blocks the pipeline."""
     try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT clip_config->>'notification_user_id'
+                    FROM videos
+                    WHERE id = CAST(:vid AS uuid) AND tenant_id = CAST(:tid AS uuid)
+                """),
+                {"vid": video_id, "tid": tenant_id},
+            ).fetchone()
+        user_id = row[0] if row else None
+        if not user_id:
+            return
         from workers.tasks.notification import send_notification
         send_notification.delay(
             tenant_id,
-            user_id=None,
+            user_id=user_id,
             type=notif_type,
             title=title,
             body=body,
