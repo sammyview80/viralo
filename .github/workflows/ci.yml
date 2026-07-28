@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  frontend-ci:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Notify Discord (success)
+        if: success()
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg title "✅ CI Passed" \
+            --arg repo "${{ github.repository }}" \
+            --arg ref "${{ github.ref_name }}" \
+            --arg actor "${{ github.actor }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{
+              embeds: [
+                {
+                  title: $title,
+                  color: 3066993,
+                  fields: [
+                    { name: "Repository", value: $repo, inline: true },
+                    { name: "Branch/Ref", value: $ref, inline: true },
+                    { name: "Actor", value: $actor, inline: true },
+                    { name: "Commit", value: $sha[0:7], inline: true },
+                    { name: "Run", value: $url, inline: false }
+                  ]
+                }
+              ]
+            }')
+          curl --fail-with-body -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
+
+      - name: Notify Discord (failure)
+        if: failure()
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg title "❌ CI Failed" \
+            --arg repo "${{ github.repository }}" \
+            --arg ref "${{ github.ref_name }}" \
+            --arg actor "${{ github.actor }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{
+              embeds: [
+                {
+                  title: $title,
+                  color: 15158332,
+                  fields: [
+                    { name: "Repository", value: $repo, inline: true },
+                    { name: "Branch/Ref", value: $ref, inline: true },
+                    { name: "Actor", value: $actor, inline: true },
+                    { name: "Commit", value: $sha[0:7], inline: true },
+                    { name: "Run", value: $url, inline: false }
+                  ]
+                }
+              ]
+            }')
+          curl --fail-with-body -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
