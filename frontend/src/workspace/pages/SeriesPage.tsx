@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { navigate } from "@/lib/router";
 import { seriesApi, type Series, type SeriesOptions, type SeriesVideo } from "@/lib/api";
-import { FALLBACK_OPTIONS } from "./SeriesCreatePage";
+import { FALLBACK_OPTIONS } from "./series-create/constants";
 
 function SeriesCard({ s, options, onChanged, onDeleted }: {
   s: Series; options: SeriesOptions;

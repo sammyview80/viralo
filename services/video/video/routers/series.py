@@ -50,6 +50,18 @@ MUSIC_TRACKS = [
     {"id": "dramatic", "label": "Dramatic — tense build"},
     {"id": "chill", "label": "Chill — laid back"},
 ]
+LANGUAGES = [
+    {"id": "en", "label": "English"},
+    {"id": "es", "label": "Spanish"},
+    {"id": "fr", "label": "French"},
+    {"id": "de", "label": "German"},
+    {"id": "it", "label": "Italian"},
+    {"id": "pt", "label": "Portuguese"},
+    {"id": "ja", "label": "Japanese"},
+    {"id": "ko", "label": "Korean"},
+    {"id": "hi", "label": "Hindi"},
+    {"id": "zh", "label": "Chinese"},
+]
 
 
 class SeriesCreate(BaseModel):
@@ -118,7 +130,7 @@ def _row_to_dict(row) -> dict:
 @router.get("/series/options")
 async def series_options(token: TokenPayload = Depends(get_current_user)):
     """Option catalogs for the create-series wizard."""
-    return {"niches": NICHE_PRESETS, "voices": VOICES, "art_styles": ART_STYLES,
+    return {"niches": NICHE_PRESETS, "languages": LANGUAGES, "voices": VOICES, "art_styles": ART_STYLES,
             "music_tracks": MUSIC_TRACKS,
             "cadences": [{"id": "daily", "label": "Every day"},
                          {"id": "3x_week", "label": "3× per week"},

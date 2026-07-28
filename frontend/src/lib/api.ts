@@ -534,6 +534,7 @@ export type SeriesCreate = Omit<Series, "id" | "is_active" | "next_run_at" | "la
 export interface SeriesOption { id: string; label: string }
 export interface SeriesOptions {
   niches: SeriesOption[];
+  languages?: SeriesOption[];
   voices: SeriesOption[];
   art_styles: SeriesOption[];
   music_tracks: SeriesOption[];
