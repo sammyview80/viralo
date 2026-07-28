@@ -1,4 +1,4 @@
-# Ruflo — Claude Code Configuration
+# Ruflo — Claude Code Configurations
 
 ## Rules
 
