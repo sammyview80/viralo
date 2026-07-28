@@ -7,7 +7,36 @@ interface AuthState {
   ready: boolean;
 }
 
-const { setState, useStore } = createStore<AuthState>({ user: null, loading: false, ready: false });
+const { setState, getState, useStore } = createStore<AuthState>({ user: null, loading: false, ready: false });
+
+export { getState };
+
+/* ─── Refresh in-memory user (e.g. after onboarding issues a new token) ─── */
+export async function refreshUser() {
+  const user = await api.me();
+  setState({ user });
+  return user;
+}
+
+/* ─── Store a new token then hand off navigation.
+   SPA navigate is only safe once in-memory user state reflects the new
+   token — otherwise route guards read stale state and bounce back.
+   On refresh failure, fall back to a hard navigation so the next page
+   load re-hydrates from the new token instead of trusting stale state. ─── */
+export async function applyTokenAndRedirect(
+  accessToken: string,
+  dest: string,
+  spaNavigate: (dest: string) => void,
+  hardNavigate: (dest: string) => void = (d) => { window.location.href = d; },
+) {
+  token.set(accessToken);
+  try {
+    await refreshUser();
+    spaNavigate(dest);
+  } catch {
+    hardNavigate(dest);
+  }
+}
 
 /* ─── Hydration — called once on app boot ─── */
 export async function hydrate() {

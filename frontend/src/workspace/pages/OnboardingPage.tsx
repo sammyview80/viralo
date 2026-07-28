@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { onboarding, token, billingApi, type PlanInfo } from "@/lib/api";
+import { onboarding, billingApi, type PlanInfo } from "@/lib/api";
 import { navigate } from "@/lib/router";
+import { applyTokenAndRedirect } from "@/stores/auth";
 import { ViraloLogo } from "@/components/ViraloLogo";
 
 /* ─── Constants ─── */
@@ -41,11 +42,27 @@ function getSubdomain() {
   return localStorage.getItem("viralo_reg_subdomain") ?? "";
 }
 
-/* ─── After finalize: store new token (has tenant_id) then redirect ─── */
-function applyFinalizeToken(accessToken: string, dest: string) {
-  token.set(accessToken);
+/* ─── After finalize: store new token (has tenant_id), refresh auth state, then redirect ─── */
+async function applyFinalizeToken(accessToken: string, dest: string) {
   localStorage.removeItem("viralo_reg_subdomain");
-  navigate(dest);
+  await applyTokenAndRedirect(accessToken, dest, navigate);
+}
+
+/* ─── Final Submit entry point (Step 5 plan pick) ─── */
+export async function submitFinalize(planName: string, dest: string) {
+  await onboarding.plan("free");
+  const res = await onboarding.finalize();
+  await applyFinalizeToken(res.access_token, dest);
+}
+
+/* ─── Global Skip entry point ─── */
+export async function submitSkip() {
+  const subdomain = getSubdomain();
+  if (subdomain) {
+    try { await onboarding.niche("general", subdomain); } catch {}
+  }
+  const res = await onboarding.skip();
+  await applyFinalizeToken(res.access_token, "/");
 }
 
 /* ─── Confetti ─── */
@@ -369,9 +386,7 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
     if (loadingPlan) return;
     setError(""); setLoadingPlan(planName);
     try {
-      await onboarding.plan("free");
-      const res = await onboarding.finalize();
-      applyFinalizeToken(res.access_token, dest);
+      await submitFinalize(planName, dest);
     } catch (e: any) {
       setError(e?.message ?? "Failed to finalize. Try again.");
       setLoadingPlan(null);
@@ -451,23 +466,20 @@ function S5Plan({ onComplete }: { onComplete: (dest: string) => void }) {
 export function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [skipping, setSkipping] = useState(false);
+  const [skipError, setSkipError] = useState("");
 
   const next = () => setStep((s) => s + 1);
 
   async function handleSkipAll() {
     setSkipping(true);
+    setSkipError("");
     try {
-      // Ensure niche step buffered (required before skip)
-      const subdomain = getSubdomain();
-      if (subdomain) {
-        try { await onboarding.niche("general", subdomain); } catch {}
-      }
-      const res = await onboarding.skip();
-      applyFinalizeToken(res.access_token, "/");
-    } catch (err) {
-      // Always clear spinner and navigate — backend now auto-generates subdomain on skip
+      await submitSkip();
+    } catch (err: any) {
+      // skip()/finalize failed — no valid token applied, so don't navigate
+      // (route guard would just bounce back to onboarding on stale state).
       setSkipping(false);
-      navigate("/");
+      setSkipError(err?.message ?? "Failed to skip. Try again.");
     }
   }
 
@@ -485,6 +497,12 @@ export function OnboardingPage() {
           {step === 4 && <S4Goal onNext={next} />}
           {step === 5 && <S5Plan onComplete={(dest) => { navigate(dest); }} />}
         </div>
+
+        {skipError && (
+          <div className="px-7 pb-6">
+            <Err msg={skipError} />
+          </div>
+        )}
       </div>
 
       {/* Global skip overlay spinner */}
