@@ -484,16 +484,22 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
 
               {/* ── Caption template carousel ── */}
               {tab === "9:16 template" ? (
-                <div className="relative">
-                  <div ref={carouselRef} className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="relative -mx-5 px-5 sm:mx-0 sm:px-0">
+                  <div
+                    ref={carouselRef}
+                    className="flex snap-x snap-proximity gap-3 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
                     {CAPTION_STYLES.map((s) => (
-                      <CaptionCard key={String(s.id)} s={s} selected={template === (s.id ?? "auto")} onSelect={() => setTemplate(s.id ?? "auto")} />
+                      <div key={String(s.id)} className="snap-start">
+                        <CaptionCard s={s} selected={template === (s.id ?? "auto")} onSelect={() => setTemplate(s.id ?? "auto")} />
+                      </div>
                     ))}
                   </div>
+                  <div className="pointer-events-none absolute right-0 top-0 h-[200px] w-10 bg-gradient-to-l from-surface-0 to-transparent sm:hidden" />
                   <button
                     type="button"
                     onClick={() => carouselRef.current?.scrollBy({ left: 280, behavior: "smooth" })}
-                    className="absolute right-1 top-[92px] grid h-8 w-8 place-items-center rounded-full border border-c-border bg-surface-0 text-c-text shadow-lg transition hover:bg-surface-3"
+                    className="absolute right-1 top-[92px] hidden h-8 w-8 place-items-center rounded-full border border-c-border bg-surface-0 text-c-text shadow-lg transition hover:bg-surface-3 sm:grid"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M9 18l6-6-6-6"/></svg>
                   </button>
