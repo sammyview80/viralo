@@ -455,7 +455,7 @@ export function ProcessingView({
       )}
 
       {/* ── TWO-COLUMN MAIN ───────────────────────── */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "260px 1fr" }}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[260px_1fr]">
 
         {/* LEFT: VERTICAL STEPPER */}
         <div className="rounded-[18px] border border-c-border bg-surface-1 p-5">
