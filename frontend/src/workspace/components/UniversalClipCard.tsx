@@ -202,13 +202,13 @@ export function UniversalClipCard({
       <div className={cn("space-y-3", p)}>
         <div className="space-y-1.5">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text">{title}</h3>
+            <h3 title={title} className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text">{title}</h3>
             <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-c-border bg-surface-3 px-2 py-1">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: scoreColor }} />
               <span className="font-mono text-[11px] font-bold" style={{ color: scoreColor }}>{score}</span>
             </div>
           </div>
-          {description && <p className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted">{description}</p>}
+          {description && <p title={description} className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted">{description}</p>}
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted">
@@ -238,8 +238,8 @@ export function UniversalClipCard({
             )}
             {showTags && tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {tags.slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-surface-3 px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
-                {tags.length > 2 && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 2}</span>}
+                {tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-surface-3 px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
+                {tags.length > 4 && <span title={tags.slice(4).map((t) => `#${t}`).join(" ")} className="rounded-full bg-surface-2 px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 4}</span>}
               </div>
             )}
           </div>
