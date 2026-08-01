@@ -16,6 +16,7 @@ export const nav: Array<{
   { key: "workflows",    label: "Workflows",     href: "/workflows",    icon: "Branch",                 group: "Create" },
   { key: "ranking",      label: "Video Ranking", href: "/ranking",      icon: "Chart",                  group: "Create" },
   { key: "scheduler",    label: "Scheduler",     href: "/scheduler",    icon: "Calendar",               group: "Create" },
+  { key: "analytics",    label: "Analytics",     href: "/analytics",    icon: "Chart",                  group: "Measure" },
   { key: "trending",     label: "Trending",      href: "/trending",     icon: "Flame",    badge: "🔥",  group: "Measure" },
   { key: "integrations", label: "Integrations",  href: "/integrations", icon: "Globe",                  group: "Account" },
   { key: "channels",     label: "Channels",      href: "/channels",     icon: "Video",                  group: "Account" },
