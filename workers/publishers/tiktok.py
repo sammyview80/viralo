@@ -87,8 +87,13 @@ class TikTokPublisher(BasePublisher):
             file_size = Path(video_path).stat().st_size
             chunk_size, chunk_count = _calculate_upload_plan(file_size)
 
-            tag_str = " ".join(f"#{h.lstrip('#')}" for h in hashtags[:5] if h)
-            base = caption.strip()[:150] if caption else ""
+            tags = [f"#{h.lstrip('#')}" for h in hashtags[:5] if h]
+            tag_str = " ".join(tags)
+            while len(tag_str) > 150 and tags:
+                tags.pop()
+                tag_str = " ".join(tags)
+            base_budget = 150 - (len(tag_str) + 1 if tag_str else 0)
+            base = caption.strip()[:max(base_budget, 0)] if caption else ""
             title = (f"{base} {tag_str}".strip() or "New video")[:150]
 
             resolved_privacy, privacy_warning = self._get_allowed_privacy(access_token, privacy)
