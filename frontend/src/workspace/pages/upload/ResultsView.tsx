@@ -368,7 +368,7 @@ export function ResultsView({
   const clearSel = () => setSelected(new Set());
 
   useEffect(() => {
-    platformApi.listPosts({ per_page: 200 })
+    platformApi.listPosts({ per_page: 100 })
       .then((r) => setPosts(Array.isArray(r.items) ? r.items : []))
       .catch(() => {});
   }, []);
