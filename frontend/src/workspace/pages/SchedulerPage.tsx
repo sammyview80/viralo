@@ -1203,17 +1203,17 @@ export function SchedulerPage() {
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[12px] border border-c-border bg-surface-2">
         {/* Header */}
         <div className="flex flex-col items-stretch gap-3 border-b border-c-border bg-surface-1 p-3 sm:p-4 lg:flex-row lg:flex-wrap lg:items-center">
-          <h1 className="hidden font-display text-[19px] font-bold tracking-[-.01em] sm:block">Scheduler</h1>
+          <h1 className="font-display text-[16px] font-bold tracking-[-.01em] sm:text-[19px]">Scheduler</h1>
           {totalPostsThisMonth > 0 && (
-            <span className="hidden rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-xs font-semibold text-c-text-muted sm:inline">
+            <span className="rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-[10px] font-semibold text-c-text-muted sm:text-xs">
               {totalPostsThisMonth}
             </span>
           )}
           {/* Tab toggle */}
-          <div className="hidden grid-cols-2 rounded-[9px] border border-c-border bg-surface-3 p-0.5 sm:flex">
+          <div className="flex grid-cols-2 rounded-[9px] border border-c-border bg-surface-3 p-0.5 sm:flex">
             {(["calendar", "posts"] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}
-                className={cn("rounded-[7px] px-3 py-1 text-xs font-semibold capitalize transition",
+                className={cn("rounded-[7px] px-2.5 py-1 text-[10px] font-semibold capitalize transition sm:px-3 sm:text-xs",
                   activeTab === t ? "bg-surface-glass text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>
                 {t === "calendar" ? "Calendar" : "All Posts"}
               </button>
