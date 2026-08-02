@@ -1231,6 +1231,7 @@ export function SchedulerPage() {
 
         {activeTab === "posts" && (
           <PostsListView
+            key={monthKey}
             posts={calendarData.flatMap((cd) => cd.posts)}
             onSelect={setSelectedPost}
             onCancelled={(id) => setCalendarData((prev) =>
