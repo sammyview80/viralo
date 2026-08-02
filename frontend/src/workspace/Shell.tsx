@@ -332,7 +332,7 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
   const isPro = isAtLeast("pro");
 
   return (
-    <div className="relative min-h-screen" style={shellStyle}>
+    <div className="relative min-h-dvh" style={shellStyle}>
       <CommandPalette />
       <ToastContainer />
       <Sidebar active={active} collapsed={collapsed} onCollapse={() => setCollapsed((c) => !c)} isPro={isPro} />
@@ -414,9 +414,14 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
       {/* Page content */}
       <main
         className={cn(
-          "relative z-[1] flex h-[calc(100vh-3.5rem)] min-h-0 flex-col transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
-          fullBleed ? "overflow-y-auto pb-24 lg:pb-0" : "overflow-y-auto px-3 pb-24 pt-5 sm:px-4 sm:pt-6 lg:pb-6"
+          "relative z-[1] flex min-h-0 flex-col transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
+          fullBleed ? "overflow-y-auto" : "overflow-y-auto px-3 pt-5 sm:px-4 sm:pt-6 lg:pb-6"
         )}
+        style={{
+          // Use dvh for dynamic viewport (handles mobile browser chrome). 
+          // Subtract header (3.5rem=56px) + bottom nav clearance.
+          height: "calc(100dvh - 3.5rem - max(env(safe-area-inset-bottom, 16px), 64px))",
+        }}
       >
         {fullBleed
           ? <div className="flex h-full min-h-0 w-full flex-1 flex-col">{children}</div>
