@@ -203,6 +203,18 @@ class VideoResponse(BaseModel):
         return value
 
 
+class ScheduledPostSummary(BaseModel):
+    id: uuid.UUID
+    clip_id: uuid.UUID
+    platform: str
+    status: str
+    scheduled_at: Any
+    posted_at: Any | None = None
+    created_at: Any
+    last_error: str | None = None
+    model_config = {"from_attributes": True}
+
+
 class ClipResponse(BaseModel):
     id: uuid.UUID
     video_id: uuid.UUID
@@ -221,6 +233,7 @@ class ClipResponse(BaseModel):
     upload_error: str | None = None
     upscaled_storage_url: str | None = None
     created_at: Any
+    scheduled_posts: list[ScheduledPostSummary] = Field(default_factory=list)
     model_config = {"from_attributes": True}
 
     _sign_media = field_validator(
