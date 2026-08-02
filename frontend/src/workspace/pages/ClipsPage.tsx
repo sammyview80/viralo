@@ -146,7 +146,7 @@ const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay 
           <div className="space-y-2 border-t border-c-border pt-3">
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {postedPlatforms.slice(0, 2).map((p) => {
+                {postedPlatforms.map((p) => {
                   const pcfg = CARD_PLAT_CFG[p.platform?.toLowerCase() ?? ""] ?? { color: "#ff3d6a", icon: "↗" };
                   const isLive = p.status === "posted";
                   const isQ = ["scheduled","pending","processing"].includes(p.status);
@@ -678,7 +678,7 @@ export function ClipsPage() {
       try {
         const [clipsResp, postsResp] = await Promise.allSettled([
           videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined, sort === "score_desc" ? "score" : undefined),
-          platformApi.listPosts({ per_page: 20 }),
+          platformApi.listPosts({ per_page: 100 }),
         ]);
         if (clipsResp.status === "fulfilled") {
           const allClips = Array.isArray(clipsResp.value.items) ? clipsResp.value.items : [];
