@@ -11,6 +11,7 @@
 - NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.Codex/settings.json` has `attribution.commit` set (#2078). The Codex Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
 - Keep files under 500 lines
 - Validate input at system boundaries
+- **ALL coding tasks MUST use `cursor-codex-pipeline` skill** — never let Hermes write/edit code directly
 
 ## Agent Comms (SendMessage-First Coordination)
 
