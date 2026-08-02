@@ -99,6 +99,11 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* Mobile: ensure inputs scroll into view above keyboard + bottom nav */
+  input, textarea, select {
+    scroll-margin-bottom: 6rem;
+  }
+
   *::-webkit-scrollbar {
     height: 10px;
     width: 10px;
