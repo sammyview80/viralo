@@ -1019,7 +1019,7 @@ async def delete_video(
 
     # Nullify clip_id on scheduled posts, and delete captions, to avoid FK
     # violations when deleting clips (captions.clip_id has no ON DELETE CASCADE).
-    clip_ids = [uuid.UUID(c) for c in clips]
+    clip_ids = [str(c.id) for c in clips]
     if clip_ids:
         from sqlalchemy import text as sa_text
         # Use ANY(:arr) with parameterized array — no string interpolation
@@ -1205,7 +1205,7 @@ async def list_clips(
     if clips:
         from sqlalchemy import text as sa_text
 
-        clip_ids = [uuid.UUID(c) for c in clips]
+        clip_ids = [str(c.id) for c in clips]
         rows = (
             await db.execute(
                 sa_text(
