@@ -1019,17 +1019,17 @@ async def delete_video(
 
     # Nullify clip_id on scheduled posts, and delete captions, to avoid FK
     # violations when deleting clips (captions.clip_id has no ON DELETE CASCADE).
-    clip_ids = [str(c.id) for c in clips]
+    clip_ids = [uuid.UUID(c) for c in clips]
     if clip_ids:
         from sqlalchemy import text as sa_text
         # Use ANY(:arr) with parameterized array — no string interpolation
         await db.execute(
-            sa_text("UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(CAST(:ids AS uuid[]))"),
-            {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
+            sa_text("UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(:ids)"),
+            {"tid": str(token.tenant_id), "ids": clip_ids},
         )
         await db.execute(
-            sa_text("DELETE FROM captions WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(CAST(:ids AS uuid[]))"),
-            {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
+            sa_text("DELETE FROM captions WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(:ids)"),
+            {"tid": str(token.tenant_id), "ids": clip_ids},
         )
 
     # Revoke running/queued Celery task before deleting
@@ -1205,7 +1205,7 @@ async def list_clips(
     if clips:
         from sqlalchemy import text as sa_text
 
-        clip_ids = [str(c.id) for c in clips]
+        clip_ids = [uuid.UUID(c) for c in clips]
         rows = (
             await db.execute(
                 sa_text(
@@ -1213,12 +1213,12 @@ async def list_clips(
                     SELECT id, clip_id, platform, status, scheduled_at, posted_at, created_at, last_error
                     FROM scheduled_posts
                     WHERE tenant_id = CAST(:tid AS uuid)
-                      AND clip_id = ANY(CAST(:ids AS uuid[]))
+                      AND clip_id = ANY(:ids)
                       AND status != 'deleted'
                     ORDER BY created_at DESC
                     """
                 ),
-                {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
+                {"tid": str(token.tenant_id), "ids": clip_ids},
             )
         ).mappings().all()
         for row in rows:
