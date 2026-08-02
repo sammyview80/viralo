@@ -224,7 +224,7 @@ export function UniversalClipCard({
           <div className="space-y-2 border-t border-c-border pt-3">
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {postedPlatforms.slice(0, 2).map((post) => {
+                {postedPlatforms.map((post) => {
                   const pcfg = PLATFORM_CFG[post.platform?.toLowerCase() ?? ""] ?? { color: "#ff3d6a", icon: "↗", label: post.platform ?? "Post" };
                   const isLive = post.status === "posted";
                   const isQ = ["scheduled", "pending", "processing"].includes(post.status);
