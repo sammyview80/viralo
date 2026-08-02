@@ -124,6 +124,9 @@ export function UniversalClipCard({
   }
 
   const primaryAction = actions.find((a) => a.primary) ?? actions.find((a) => a.id === "publish");
+  const displayPrimary = primaryAction?.id === "publish"
+    ? { ...primaryAction, label: isPosted ? "Live" : isScheduled ? "Queued" : (primaryAction.label ?? "Publish"), icon: isPosted ? "✓" : isScheduled ? "⏱" : (primaryAction.icon ?? defaultIcon("publish")) }
+    : primaryAction;
   const secondaryActions = actions.filter((a) => a !== primaryAction);
 
   return (
@@ -253,9 +256,9 @@ export function UniversalClipCard({
 
         {actions.length > 0 && (
           <div className="flex items-center gap-2 border-t border-c-border pt-3">
-            {primaryAction && (
-              <button onClick={(e) => runAction(primaryAction, e)} disabled={primaryAction.disabled} className="flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.22)] transition hover:bg-[#ff527a] disabled:opacity-50">
-                <span>{primaryAction.icon ?? defaultIcon(primaryAction.id)}</span>{primaryAction.label ?? primaryAction.id}
+            {displayPrimary && (
+              <button onClick={(e) => runAction(displayPrimary, e)} disabled={displayPrimary.disabled} className="flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.22)] transition hover:bg-[#ff527a] disabled:opacity-50">
+                <span>{displayPrimary.icon ?? defaultIcon(displayPrimary.id)}</span>{displayPrimary.label ?? displayPrimary.id}
               </button>
             )}
             {secondaryActions.slice(0, 2).map((action) => (

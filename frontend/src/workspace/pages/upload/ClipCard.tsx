@@ -578,9 +578,6 @@ export function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted
   void DropdownMenuItem;
   void DropdownMenuTrigger;
 
-  const publishLabel = isPosted ? "Live ✓" : isScheduled ? "Queued ⏱" : "Publish";
-  const publishIcon = isPosted ? "✓" : isScheduled ? "⏱" : "↗";
-
   const actions: Array<{
     id: ClipCardAction;
     label?: string;
@@ -589,7 +586,7 @@ export function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted
     disabled?: boolean;
     onClick?: (clip: ClipApiResponse) => void;
   }> = [
-    { id: "publish", label: publishLabel, icon: publishIcon, primary: true, onClick: () => setShowPublish(true) },
+    { id: "publish", primary: true, onClick: () => setShowPublish(true) },
     { id: "trim", label: "Trim", icon: "✂", onClick: () => setShowEditor(true) },
     { id: "edit", label: "Edit", icon: "✎", onClick: () => setShowEditor(true) },
     ...(localClip.caption_srt ? [{ id: "transcript" as ClipCardAction, label: "Transcript", icon: "☷" }] : []),
