@@ -68,6 +68,10 @@ celery_app.conf.update(
         "workers.tasks.analytics.*": {"queue": "viralo.analytics.ingest"},
         "workers.tasks.notification.*": {"queue": "viralo.notifications"},
     },
+
+    # RabbitMQ queue args: dead-letter exchange for posts that exhaust retries
+    task_queue_max_priority=10,
+    task_default_priority=5,
 )
 
 celery_app.conf.beat_schedule = {

@@ -397,7 +397,29 @@ services:
     build:
       context: .
       dockerfile: services/platform/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.post.publish,viralo.analytics.ingest --concurrency=10 --loglevel=info
+    command: bash -c "python docker/rabbitmq/init-dlq.py && celery -A workers.celery_app worker -Q viralo.post.publish --concurrency=1 --prefetch-multiplier=1 --loglevel=info"
+    mem_limit: 1g
+    memswap_limit: 1g
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  celery-analytics:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: services/platform/Dockerfile
+    command: celery -A workers.celery_app worker -Q viralo.analytics.ingest --concurrency=4 --loglevel=info
     mem_limit: 512m
     memswap_limit: 512m
     depends_on:

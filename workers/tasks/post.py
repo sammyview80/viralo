@@ -149,7 +149,7 @@ def process_due_posts():
                     WHERE status IN ('pending', 'scheduled')
                       AND scheduled_at <= NOW()
                     ORDER BY scheduled_at ASC
-                    LIMIT 500
+                    LIMIT 1
                     FOR UPDATE SKIP LOCKED
                 )
                 RETURNING id, tenant_id
