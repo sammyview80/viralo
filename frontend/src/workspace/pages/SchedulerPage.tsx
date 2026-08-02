@@ -212,7 +212,7 @@ function DayDrawer({
   const isToday = new Date(date + "T12:00:00").toDateString() === new Date().toDateString();
 
   const modalCls = expanded
-    ? "fixed inset-0 z-10 flex flex-col bg-surface-0 shadow-2xl"
+    ? "fixed inset-x-0 top-0 bottom-[max(env(safe-area-inset-bottom),4rem)] z-10 flex flex-col bg-surface-0 shadow-2xl sm:bottom-0"
     : cn(
         "relative z-10 flex flex-col w-full max-w-4xl rounded-t-[20px] sm:rounded-[18px]",
         "border border-c-border bg-surface-0 shadow-2xl overflow-hidden transition-all duration-200"
@@ -226,7 +226,7 @@ function DayDrawer({
     <div
       className={cn(
         "fixed inset-0 z-50 flex overflow-hidden",
-        expanded ? "" : "items-end sm:items-center justify-center"
+        expanded ? "" : "items-end justify-center pb-[max(env(safe-area-inset-bottom),4rem)] sm:items-center sm:pb-0"
       )}
       onClick={onClose}
     >
@@ -301,15 +301,15 @@ function DayDrawer({
           <div className="flex flex-1 overflow-y-auto" ref={gridScrollRef}>
 
             {/* Time gutter — height matches dynamic hour heights */}
-            <div className="w-[52px] shrink-0 select-none bg-surface-0">
+            <div className="w-10 shrink-0 select-none bg-surface-0 lg:w-[52px]">
               {HOURS.map((h) => (
                 <div
                   key={h}
                   style={{ height: HOUR_HEIGHT }}
-                  className="flex items-start justify-end pr-3 pt-1.5"
+                  className="flex items-start justify-end pr-2 pt-1 lg:pr-3 lg:pt-1.5"
                 >
                   <span className={cn(
-                    "text-[9px] font-semibold tabular-nums whitespace-nowrap",
+                    "text-[8px] font-semibold tabular-nums whitespace-nowrap lg:text-[9px]",
                     isToday && h === new Date().getHours() ? "text-[#ff3d6a]" : "text-c-text-muted"
                   )}>
                     {fmtHour(h)}
@@ -392,7 +392,7 @@ function DayDrawer({
                         }}
                         title={`${post.caption || "No caption"} · ${post.status}`}
                         className={cn(
-                          "absolute rounded-[6px] border-l-[3px] border border-c-border px-2 text-left overflow-hidden",
+                          "absolute rounded-[6px] border-l-[3px] border border-c-border px-1.5 text-left overflow-hidden lg:px-2",
                           "transition-all duration-150 cursor-pointer hover:z-30",
                           "hover:brightness-110 hover:shadow-[0_4px_16px_rgba(0,0,0,.5)]",
                           ACCENT_BAR[post.status] ?? "border-l-zinc-600",
@@ -408,15 +408,15 @@ function DayDrawer({
                         ) : (
                           <>
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <span className={cn("shrink-0 h-2 w-2 rounded-full", PLATFORM_DOT[post.platform] ?? "bg-zinc-500")} />
-                              <p className={cn("truncate text-[12px] font-semibold leading-tight flex-1", ACCENT_TEXT[post.status] ?? "text-zinc-300")}>
+                              <span className={cn("shrink-0 h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2", PLATFORM_DOT[post.platform] ?? "bg-zinc-500")} />
+                              <p className={cn("truncate text-[11px] font-semibold leading-tight flex-1 lg:text-[12px]", ACCENT_TEXT[post.status] ?? "text-zinc-300")}>
                                 {post.caption || PLATFORM_LABELS[post.platform] || post.platform}
                               </p>
-                              <span className={cn("shrink-0 text-[10px] font-bold mr-1", ACCENT_TEXT[post.status])}>
+                              <span className={cn("shrink-0 text-[9px] font-bold mr-1 lg:text-[10px]", ACCENT_TEXT[post.status])}>
                                 {STATUS_ICON[post.status]}
                               </span>
                             </div>
-                            <p className="text-[11px] text-c-text-muted truncate">
+                            <p className="text-[10px] text-c-text-muted truncate lg:text-[11px]">
                               {PLATFORM_LABELS[post.platform] ?? post.platform} · {time}
                               {isPosted && post.posted_at && (
                                 <span className="text-emerald-400 ml-1">
@@ -1203,14 +1203,14 @@ export function SchedulerPage() {
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[12px] border border-c-border bg-surface-2">
         {/* Header */}
         <div className="flex flex-col items-stretch gap-3 border-b border-c-border bg-surface-1 p-3 sm:p-4 lg:flex-row lg:flex-wrap lg:items-center">
-          <h1 className="font-display text-[19px] font-bold tracking-[-.01em]">Scheduler</h1>
+          <h1 className="hidden font-display text-[19px] font-bold tracking-[-.01em] sm:block">Scheduler</h1>
           {totalPostsThisMonth > 0 && (
-            <span className="rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-xs font-semibold text-c-text-muted">
+            <span className="hidden rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-xs font-semibold text-c-text-muted sm:inline">
               {totalPostsThisMonth}
             </span>
           )}
           {/* Tab toggle */}
-          <div className="grid grid-cols-2 rounded-[9px] border border-c-border bg-surface-3 p-0.5 sm:flex">
+          <div className="hidden grid-cols-2 rounded-[9px] border border-c-border bg-surface-3 p-0.5 sm:flex">
             {(["calendar", "posts"] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}
                 className={cn("rounded-[7px] px-3 py-1 text-xs font-semibold capitalize transition",
@@ -1219,10 +1219,10 @@ export function SchedulerPage() {
               </button>
             ))}
           </div>
-          <div className="flex items-center justify-between gap-2 sm:justify-start">
-            <button onClick={prevMonth} className="rounded-lg border border-c-border bg-surface-3 px-2.5 py-1.5 text-sm text-c-text-secondary hover:text-c-text transition">‹</button>
+          <div className="flex items-center justify-between gap-1 sm:gap-2 sm:justify-start">
+            <button onClick={prevMonth} className="rounded-md border border-c-border bg-surface-3 px-2 py-1 text-xs text-c-text-secondary hover:text-c-text transition sm:rounded-lg sm:px-2.5 sm:py-1.5 sm:text-sm">‹</button>
             <span className="min-w-0 flex-1 text-center text-sm font-semibold text-c-text sm:min-w-[150px] sm:flex-none">{monthName} {year}</span>
-            <button onClick={nextMonth} className="rounded-lg border border-c-border bg-surface-3 px-2.5 py-1.5 text-sm text-c-text-secondary hover:text-c-text transition">›</button>
+            <button onClick={nextMonth} className="rounded-md border border-c-border bg-surface-3 px-2 py-1 text-xs text-c-text-secondary hover:text-c-text transition sm:rounded-lg sm:px-2.5 sm:py-1.5 sm:text-sm">›</button>
           </div>
           <Button size="sm" className="bg-[#ff3d6a] text-white hover:bg-[#e8304f] lg:ml-auto" onClick={() => setShowModal(true)}>
             + Schedule Post
@@ -1319,11 +1319,11 @@ export function SchedulerPage() {
           {/* Calendar area */}
           <div className="flex-1 min-w-0 overflow-auto p-4">
             {/* Day-of-week headers */}
-            <div className="mb-1 grid grid-cols-7 gap-1">
+            <div className="mb-1 grid min-w-[392px] grid-cols-7 gap-1 lg:min-w-0">
               {DAYS.map((d) => (
                 <div
                   key={d}
-                  className="py-1.5 text-center text-[10px] font-semibold uppercase tracking-[.08em] text-c-text-muted"
+                  className="py-1 text-center text-[9px] font-semibold uppercase tracking-[.08em] text-c-text-muted lg:py-1.5 lg:text-[10px]"
                 >
                   {d}
                 </div>
@@ -1331,13 +1331,13 @@ export function SchedulerPage() {
             </div>
 
             {loading ? (
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid min-w-[392px] grid-cols-7 gap-1 lg:min-w-0">
                 {Array.from({ length: totalCells }).map((_, i) => (
                   <div key={i} className="h-28 animate-pulse rounded-[10px] bg-surface-glass" />
                 ))}
               </div>
             ) : (
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid min-w-[392px] grid-cols-7 gap-1 lg:min-w-0">
                 {cells.map((cell, i) => {
                   const isToday = cell.ymd === todayYMD;
                   const posts = (cell.ymd ? postsByDay[cell.ymd] : null) ?? [];
@@ -1345,7 +1345,7 @@ export function SchedulerPage() {
                     <div
                       key={i}
                       className={cn(
-                        "min-h-28 rounded-[10px] border p-1.5 transition",
+                        "min-w-14 min-h-24 rounded-[10px] border p-1 transition lg:min-w-0 lg:min-h-28 lg:p-1.5",
                         cell.day === null
                           ? "border-transparent bg-transparent"
                           : isToday
@@ -1360,7 +1360,7 @@ export function SchedulerPage() {
                           <div className="mb-1 flex items-center justify-between">
                             <div
                               className={cn(
-                                "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
+                                "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold lg:h-6 lg:w-6 lg:text-[11px]",
                                 isToday ? "bg-[#ff3d6a] text-white" : "text-c-text-muted"
                               )}
                             >
@@ -1488,4 +1488,3 @@ export function SchedulerPage() {
     </>
   );
 }
-
