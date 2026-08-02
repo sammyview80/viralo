@@ -336,7 +336,7 @@ export function ProjectsPage() {
     <>
       {deleteTarget && <DeleteModal video={deleteTarget} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
 
-      <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden [background:rgb(var(--surface-0))]">
+      <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto [background:rgb(var(--surface-0))]">
         {/* Header */}
         <div className="flex flex-col border-b border-c-border">
           {/* Tabs + Filtering + New upload */}
