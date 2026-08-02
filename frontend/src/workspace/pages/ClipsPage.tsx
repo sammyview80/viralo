@@ -134,6 +134,7 @@ const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay 
 
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted">
           <Badge variant={clip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(clip.status) ? "warn" : clip.status === "upload_failed" ? "error" : clip.status === "processing" ? "warn" : "muted"}>{clip.status === "pending_upload" ? "queued" : clip.status === "upload_failed" ? "failed" : clip.status}</Badge>
+          {!isPosted && !isScheduled && <span className="rounded-full border border-c-border bg-surface-3 px-2 py-1 text-c-text-muted">Not posted</span>}
           <span className="rounded-full bg-surface-3 px-2 py-1">{tags.length} tags</span>
           <span className="rounded-full bg-surface-3 px-2 py-1">{new Date(clip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
           {clipStart && clipEnd && <span className="rounded-full bg-surface-3 px-2 py-1 font-mono">{clipStart}–{clipEnd}</span>}
@@ -967,6 +968,7 @@ export function ClipsPage() {
                             <Badge variant={clip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(clip.status) ? "warn" : clip.status === "upload_failed" ? "error" : clip.status === "processing" ? "warn" : "muted"}>{clip.status === "pending_upload" ? "queued" : clip.status === "upload_failed" ? "failed" : clip.status}</Badge>
                             {isPosted && <span className="rounded-full bg-amber-500/20 px-1.5 py-px text-[9px] font-bold text-amber-400">Live</span>}
                             {!isPosted && isScheduled && <span className="rounded-full bg-blue-500/15 px-1.5 py-px text-[9px] font-bold text-blue-400">Queued</span>}
+                            {!isPosted && !isScheduled && <span className="rounded-full border border-c-border bg-surface-3 px-1.5 py-px text-[9px] font-medium text-c-text-muted">Not posted</span>}
                           </div>
                         </div>
 
@@ -1189,31 +1191,34 @@ export function ClipsPage() {
                     );
                   })()}
 
-                  {clipPosts.length > 0 && (
-                    <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
-                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-c-text-muted">Published / scheduled</p>
-                      <div className="space-y-1.5">
-                        {clipPosts.map((p) => {
-                          const pcfg = PLAT_CFG[p.platform?.toLowerCase() ?? ""] ?? {color:"#ff3d6a",icon:"↗"};
-                          const isLive = p.status==="posted", isQ=["scheduled","pending","processing"].includes(p.status), isFail=p.status==="failed";
-                          return (
-                            <div key={p.id} className="flex items-center gap-2 rounded-[9px] border px-2.5 py-2" style={{borderColor:isLive?"rgba(52,211,153,.2)":isQ?"rgba(96,165,250,.18)":isFail?"rgba(248,113,113,.18)":"rgba(255,255,255,.06)",background:isLive?"rgba(52,211,153,.05)":isQ?"rgba(96,165,250,.04)":"rgba(255,255,255,.015)"}}>
-                              <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white" style={{background:pcfg.color}}>{pcfg.icon}</div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[12px] font-bold capitalize" style={{color:pcfg.color}}>{p.platform}</span>
-                                  {isLive&&<span className="rounded-full bg-amber-500/20 px-1.5 py-px text-[8px] font-bold text-amber-400">✓ Live</span>}
-                                  {isQ&&<span className="rounded-full bg-blue-500/15 px-1.5 py-px text-[8px] font-bold text-blue-400">Queued</span>}
-                                  {isFail&&<span className="rounded-full bg-red-500/15 px-1.5 py-px text-[8px] font-bold text-red-400">Failed</span>}
-                                </div>
-                                <p className="truncate text-[10px] text-c-text-muted">{isLive&&p.posted_at?new Date(p.posted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isQ?new Date(p.scheduled_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isFail?(p.last_error??"—"):new Date(p.created_at).toLocaleString([],{month:"short",day:"numeric"})}</p>
+                  <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[.13em] text-c-text-muted">Published / scheduled</p>
+                    <div className="space-y-1.5">
+                      {clipPosts.length > 0 ? clipPosts.map((p) => {
+                        const pcfg = PLAT_CFG[p.platform?.toLowerCase() ?? ""] ?? {color:"#ff3d6a",icon:"↗"};
+                        const isLive = p.status==="posted", isQ=["scheduled","pending","processing"].includes(p.status), isFail=p.status==="failed";
+                        return (
+                          <div key={p.id} className="flex items-center gap-2 rounded-[9px] border px-2.5 py-2" style={{borderColor:isLive?"rgba(52,211,153,.2)":isQ?"rgba(96,165,250,.18)":isFail?"rgba(248,113,113,.18)":"rgba(255,255,255,.06)",background:isLive?"rgba(52,211,153,.05)":isQ?"rgba(96,165,250,.04)":"rgba(255,255,255,.015)"}}>
+                            <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white" style={{background:pcfg.color}}>{pcfg.icon}</div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[12px] font-bold capitalize" style={{color:pcfg.color}}>{p.platform}</span>
+                                {isLive&&<span className="rounded-full bg-amber-500/20 px-1.5 py-px text-[8px] font-bold text-amber-400">✓ Live</span>}
+                                {isQ&&<span className="rounded-full bg-blue-500/15 px-1.5 py-px text-[8px] font-bold text-blue-400">Queued</span>}
+                                {isFail&&<span className="rounded-full bg-red-500/15 px-1.5 py-px text-[8px] font-bold text-red-400">Failed</span>}
                               </div>
+                              <p className="truncate text-[10px] text-c-text-muted">{isLive&&p.posted_at?new Date(p.posted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isQ?new Date(p.scheduled_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):isFail?(p.last_error??"—"):new Date(p.created_at).toLocaleString([],{month:"short",day:"numeric"})}</p>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  )}
+                          </div>
+                        );
+                      }) : (
+                        <div className="flex items-center justify-between gap-2 rounded-[9px] border px-2.5 py-2 opacity-60" style={{ borderColor: "rgba(255,255,255,.06)", background: "rgba(255,255,255,.015)" }}>
+                          <p className="text-[11px] text-c-text-muted">Not published yet</p>
+                          <button type="button" onClick={() => setPublishOpen(true)} className="text-[10px] font-semibold text-c-text-muted transition hover:text-c-text-secondary">↗ Publish</button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
 
                   <section className="rounded-[12px] border border-c-border bg-surface-1 p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
