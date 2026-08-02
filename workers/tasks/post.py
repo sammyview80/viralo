@@ -116,29 +116,28 @@ def _try_insert_notification(
 @celery_app.task(name="workers.tasks.post.process_due_posts")
 def process_due_posts():
     """Celery Beat task — find pending posts due for publishing and enqueue them."""
-    # Recover posts stuck in 'processing' for >10 min (worker crash / container restart)
+    # Recover posts stuck in 'publishing' for >10 min (worker crash / container restart)
+    # Auto-retry if under max retries, otherwise mark as failed
     with engine.connect() as conn:
-        conn.execute(
+        publishing_rows = conn.execute(
             text("""
                 UPDATE scheduled_posts
-                SET status = 'scheduled', scheduled_at = NOW(), updated_at = NOW()
-                WHERE status = 'processing'
-                  AND updated_at < NOW() - interval '10 minutes'
-            """)
-        )
-        recovered = conn.execute(
-            text("""
-                UPDATE scheduled_posts
-                SET status = 'failed',
-                    last_error = 'Publish outcome unknown after worker interruption; reconcile before retry',
+                SET status = CASE
+                        WHEN COALESCE(retry_count, 0) < 3 THEN 'scheduled'
+                        ELSE 'failed'
+                    END,
+                    last_error = CASE
+                        WHEN COALESCE(retry_count, 0) < 3 THEN ''
+                        ELSE 'Publish outcome unknown after worker interruption; reconcile before retry'
+                    END,
                     updated_at = NOW()
                 WHERE status = 'publishing'
                   AND updated_at < NOW() - interval '10 minutes'
             """)
         ).rowcount
         conn.commit()
-    if recovered:
-        logger.info("process_due_posts: recovered %d stale processing posts", recovered)
+    if publishing_rows:
+        logger.info("process_due_posts: recovered %d stale publishing posts (auto-retry if retries < 3)", publishing_rows)
 
     with engine.connect() as conn:
         rows = conn.execute(
@@ -418,20 +417,19 @@ def publish_post(self, tenant_id: str, post_id: str):
         logger.exception("publish_post: exception for post %s", post_id)
 
         if publish_attempted:
+            # Publish was attempted but outcome unknown — use retry logic
             with _get_session(tenant_id) as session:
-                session.execute(
-                    text("""
-                        UPDATE scheduled_posts
-                        SET status = 'failed',
-                            last_error = :err,
-                            updated_at = NOW()
-                        WHERE id = CAST(:pid AS uuid)
-                    """),
-                    {
-                        "err": ("Publish outcome unknown; reconcile before retry: " + str(exc))[:1000],
-                        "pid": post_id,
-                    },
-                )
+                r = session.execute(
+                    text("SELECT retry_count FROM scheduled_posts WHERE id = CAST(:pid AS uuid)"),
+                    {"pid": post_id},
+                ).fetchone()
+                current_retries = (r[0] or 0) if r else 0
+            _handle_publish_failure(
+                tenant_id, post_id, platform, current_retries,
+                error="Publish outcome unknown: " + str(exc)[:200],
+                clip_id=str(clip_id) if clip_id else None,
+                user_id=notification_user_id,
+            )
             return
 
         # Load current retry_count from DB
