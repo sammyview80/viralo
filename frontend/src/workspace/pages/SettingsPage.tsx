@@ -75,14 +75,14 @@ function FieldRow({
 }) {
   return (
     <div className={cn(
-      "flex items-center justify-between gap-6 px-5 py-4",
+      "flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-5",
       border && "border-b border-c-border last:border-0"
     )}>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-c-text">{label}</p>
         {hint && <p className="mt-0.5 text-[12px] text-c-text-muted">{hint}</p>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="shrink-0 w-full sm:w-auto">{children}</div>
     </div>
   );
 }
@@ -120,14 +120,17 @@ function OutlineBtn({ children, onClick, disabled }: {
   );
 }
 
-function PrimaryBtn({ children, onClick, disabled }: {
-  children: React.ReactNode; onClick?: () => void; disabled?: boolean;
+function PrimaryBtn({ children, onClick, disabled, className }: {
+  children: React.ReactNode; onClick?: () => void; disabled?: boolean; className?: string;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="h-8 cursor-pointer rounded-[8px] bg-[#ff3d6a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#e8304f] active:scale-[.98] disabled:opacity-40"
+      className={cn(
+        "h-8 cursor-pointer rounded-[8px] bg-[#ff3d6a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#e8304f] active:scale-[.98] disabled:opacity-40",
+        className
+      )}
     >
       {children}
     </button>
@@ -198,7 +201,7 @@ function ProfileSection() {
             value={data.full_name ?? ""}
             onChange={v => setData(d => d && { ...d, full_name: v })}
             placeholder="Your name"
-            className="w-48"
+            className="w-full sm:w-48"
           />
         </FieldRow>
         <FieldRow label="Email" hint="Login email — cannot be changed here." border={false}>
@@ -231,14 +234,14 @@ function WorkspaceSection() {
     <div className="space-y-3">
       <Card>
         <FieldRow label="Workspace name" hint="Shown in the top bar and on exported content.">
-          <TextInput value={data.display_name} onChange={v => setData(d => d && { ...d, display_name: v })} className="w-48" />
+          <TextInput value={data.display_name} onChange={v => setData(d => d && { ...d, display_name: v })} className="w-full sm:w-48" />
         </FieldRow>
         <FieldRow label="Workspace URL" hint="Used for sharing links.">
-          <div className="flex h-8 items-center rounded-[8px] border border-c-border bg-surface-1 px-3 transition-colors focus-within:border-[#ff3d6a]/50">
+          <div className="flex h-8 w-full items-center rounded-[8px] border border-c-border bg-surface-1 px-3 transition-colors focus-within:border-[#ff3d6a]/50 sm:w-auto">
             <span className="text-[12px] text-c-text-muted select-none">viralo.co/</span>
             <input
               defaultValue={data.subdomain}
-              className="w-28 bg-transparent text-[13px] text-c-text focus:outline-none"
+              className="w-full bg-transparent text-[13px] text-c-text focus:outline-none sm:w-28"
             />
           </div>
         </FieldRow>
@@ -287,15 +290,15 @@ function BrandSection() {
     <div className="space-y-3">
       <Card>
         <FieldRow label="Primary color" hint="Used on exported clips, thumbnails, and overlays.">
-          <div className="flex items-center gap-2.5">
+          <div className="flex w-full items-center gap-2.5 sm:w-auto">
             <div className="h-7 w-7 rounded-[6px] border border-c-border" style={{ background: data.primary_color }} />
-            <TextInput mono value={data.primary_color} onChange={v => setData(d => d && { ...d, primary_color: v })} className="w-24" />
+            <TextInput mono value={data.primary_color} onChange={v => setData(d => d && { ...d, primary_color: v })} className="w-full sm:w-24" />
           </div>
         </FieldRow>
         <FieldRow label="Secondary color" hint="Used for backgrounds and secondary elements.">
-          <div className="flex items-center gap-2.5">
+          <div className="flex w-full items-center gap-2.5 sm:w-auto">
             <div className="h-7 w-7 rounded-[6px] border border-c-border" style={{ background: data.secondary_color }} />
-            <TextInput mono value={data.secondary_color} onChange={v => setData(d => d && { ...d, secondary_color: v })} className="w-24" />
+            <TextInput mono value={data.secondary_color} onChange={v => setData(d => d && { ...d, secondary_color: v })} className="w-full sm:w-24" />
           </div>
         </FieldRow>
         <FieldRow label="Default font" hint="Applied to text overlays in exported clips." border={false}>
@@ -333,7 +336,7 @@ function BillingSection() {
 
   return (
     <Card>
-      <div className="flex items-start justify-between gap-4 px-5 py-5">
+      <div className="flex items-start justify-between gap-4 px-4 py-4 sm:px-5 sm:py-5">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-c-text-muted mb-1">Current plan</p>
           {sub ? (
@@ -466,12 +469,12 @@ function ApiKeysSection() {
       )}
 
       <Card>
-        <div className="flex items-end gap-2 px-5 py-4 border-b border-c-border">
+        <div className="flex flex-col gap-2 px-4 py-4 border-b border-c-border sm:flex-row sm:items-end sm:gap-2 sm:px-5">
           <div className="flex-1">
             <p className="mb-1.5 text-[12px] text-c-text-muted">Key name</p>
             <TextInput placeholder="e.g. Production" value={newKeyName} onChange={setNewKeyName} className="w-full" />
           </div>
-          <PrimaryBtn onClick={create} disabled={creating || !newKeyName.trim()}>
+          <PrimaryBtn onClick={create} disabled={creating || !newKeyName.trim()} className="w-full sm:w-auto">
             {creating ? "Generating…" : "Generate key"}
           </PrimaryBtn>
         </div>
@@ -525,7 +528,7 @@ export function SettingsPage() {
   const section = SECTIONS.find(s => s.id === active)!;
 
   return (
-    <div className="flex min-h-[calc(100vh-116px)] overflow-hidden rounded-[12px] border border-c-border">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-c-border sm:flex-row sm:min-h-[calc(100dvh-116px)]">
 
       {/* Sidebar */}
       <nav className="hidden w-[200px] shrink-0 flex-col border-r border-c-border bg-surface-1 p-2 sm:flex">
@@ -550,14 +553,16 @@ export function SettingsPage() {
       </nav>
 
       {/* Mobile strip */}
-      <div className="sm:hidden border-b border-c-border bg-surface-1 flex overflow-x-auto gap-0.5 p-1.5">
+      <div className="sm:hidden w-full border-b border-c-border bg-surface-1 flex overflow-x-auto snap-x snap-mandatory gap-0.5 p-1.5">
         {SECTIONS.map(s => (
           <button
             key={s.id}
             onClick={() => setActive(s.id)}
             className={cn(
-              "shrink-0 cursor-pointer rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-colors",
-              active === s.id ? "bg-surface-glass text-c-text" : "text-c-text-muted hover:text-c-text"
+              "relative shrink-0 snap-start cursor-pointer rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-colors",
+              active === s.id
+                ? "bg-surface-glass text-c-text before:absolute before:left-1.5 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
+                : "text-c-text-muted hover:text-c-text"
             )}
           >
             {s.label}
@@ -568,7 +573,7 @@ export function SettingsPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto bg-surface-0">
         {/* Section header */}
-        <div className="border-b border-c-border px-7 py-5">
+        <div className="border-b border-c-border px-4 py-4 sm:px-7 sm:py-5">
           <div className="flex items-center gap-2.5 mb-0.5">
             <span className="text-[#ff3d6a]">{section.icon}</span>
             <h1 className="text-[15px] font-semibold text-c-text">{section.label}</h1>
@@ -577,7 +582,7 @@ export function SettingsPage() {
         </div>
 
         {/* Section body */}
-        <div className="px-7 py-6">
+        <div className="px-4 py-5 sm:px-7 sm:py-6">
           {CONTENT[active]}
         </div>
       </div>
