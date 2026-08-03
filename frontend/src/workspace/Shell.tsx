@@ -346,7 +346,7 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
           <div className="lg:hidden">
             <ViraloIcon size={28} />
           </div>
-          <span className="cursor-pointer" onClick={() => {}}>Viralo</span>
+          <a href="/" onClick={(e) => { e.preventDefault(); navigate("/"); }} className="cursor-pointer hover:text-c-text">Viralo</a>
           <Icons.ChevronR size={11} className="hidden sm:block" />
           <span className="font-medium text-c-text-secondary">{title}</span>
         </div>
@@ -366,6 +366,13 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={openCommandPalette}
+            aria-label="Search"
+            className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-c-border bg-surface-2 text-c-text-muted transition hover:border-c-border-hover hover:text-c-text sm:hidden"
+          >
+            <Icons.Search size={15} />
+          </button>
           <button
             onClick={toggleTheme}
             aria-label="Toggle theme"
@@ -415,7 +422,7 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
       <main
         className={cn(
           "relative z-[1] flex min-h-0 flex-col transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
-          fullBleed ? "overflow-y-auto" : "overflow-y-auto px-3 pt-5 sm:px-4 sm:pt-6 lg:pb-6"
+          fullBleed ? "overflow-y-auto" : "overflow-y-auto px-3 pb-4 pt-5 sm:px-4 sm:pt-6 sm:pb-5 lg:pb-6"
         )}
         style={{
           // Use dvh for dynamic viewport (handles mobile browser chrome). 
