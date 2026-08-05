@@ -274,39 +274,57 @@ def publish_post(self, tenant_id: str, post_id: str):
                     from workers.publishers.registry import get_publisher
                     publisher = get_publisher(platform)
                     new_tokens = publisher.refresh_token(refresh_token)
-                    new_access = new_tokens.get("access_token", "")
-                    new_refresh = new_tokens.get("refresh_token", refresh_token)
-                    new_expires_in = new_tokens.get("expires_in", 3600)
-                    new_expires_at = now_utc + timedelta(seconds=new_expires_in)
+                    if not isinstance(new_tokens, dict):
+                        raise ValueError(f"invalid refresh response type: {type(new_tokens).__name__}")
+                    new_access = (new_tokens.get("access_token") or "").strip()
+                    if new_access:
+                        new_refresh = new_tokens.get("refresh_token", refresh_token)
+                        new_expires_in = new_tokens.get("expires_in", 3600)
+                        new_expires_at = now_utc + timedelta(seconds=new_expires_in)
 
-                    with _get_session(tenant_id) as session:
-                        session.execute(
-                            text("""
-                                UPDATE social_accounts
-                                SET access_token_enc = :at,
-                                    refresh_token_enc = :rt,
-                                    token_expires_at = :exp,
-                                    updated_at = NOW()
-                                WHERE id = (
-                                    SELECT social_account_id FROM scheduled_posts
-                                    WHERE id = CAST(:pid AS uuid)
-                                )
-                            """),
-                            {
-                                "at": _encrypt_token(new_access),
-                                "rt": _encrypt_token(new_refresh),
-                                "exp": new_expires_at,
-                                "pid": post_id,
-                            },
-                        )
-                    access_token = new_access
-                    refresh_token = new_refresh
-                    logger.info("publish_post: refreshed token for post %s", post_id)
+                        with _get_session(tenant_id) as session:
+                            session.execute(
+                                text("""
+                                    UPDATE social_accounts
+                                    SET access_token_enc = :at,
+                                        refresh_token_enc = :rt,
+                                        token_expires_at = :exp,
+                                        updated_at = NOW()
+                                    WHERE id = (
+                                        SELECT social_account_id FROM scheduled_posts
+                                        WHERE id = CAST(:pid AS uuid)
+                                    )
+                                """),
+                                {
+                                    "at": _encrypt_token(new_access),
+                                    "rt": _encrypt_token(new_refresh),
+                                    "exp": new_expires_at,
+                                    "pid": post_id,
+                                },
+                            )
+                        access_token = new_access
+                        refresh_token = new_refresh
+                        logger.info("publish_post: refreshed token for post %s", post_id)
+                    elif new_tokens:
+                        raise ValueError("refresh response missing access_token")
+                    else:
+                        logger.info("publish_post: token refresh no-op for post %s (static token)", post_id)
                 except Exception as e:
-                    logger.warning("publish_post: token refresh failed for post %s: %s", post_id, e)
+                    err = str(e).strip()
+                    if not err:
+                        err = type(e).__name__
+                        resp = getattr(e, "response", None)
+                        if resp is not None:
+                            body = (getattr(resp, "text", None) or getattr(resp, "reason", None) or "").strip()
+                            if body:
+                                err = f"{type(e).__name__}: {body[:200]}"
+                    logger.warning(
+                        "publish_post: token refresh failed for post %s: %s",
+                        post_id, err or type(e).__name__, exc_info=True,
+                    )
                     _handle_publish_failure(
                         tenant_id, post_id, platform, retry_count,
-                        error=f"Token refresh failed — reconnect the social account: {str(e)[:200]}",
+                        error=f"Token refresh failed — reconnect the social account: {(err or type(e).__name__)[:200]}",
                         clip_id=str(clip_id) if clip_id else None,
                         user_id=notification_user_id,
                     )

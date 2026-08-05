@@ -9,6 +9,7 @@ import { Pagination } from "../components/Pagination";
 import { videoApi, platformApi, agentApi, token, API_BASES, type ClipApiResponse, type ScheduledPost, type ScheduledPostSummary, SocialAccount, type TagSuggestResponse } from "@/lib/api";
 import { VideoEditor } from "../components/VideoEditor";
 import { addToast } from "@/stores/notifications";
+import { datetimeLocalToUtcIso } from "@/lib/datetimeLocal";
 
 const VIDEO_SSE_BASE = API_BASES.video;
 
@@ -281,7 +282,7 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
       made_for_kids: false,
     } : undefined;
     setSubmitting(true); setError(null);
-    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: new Date(scheduledAt).toISOString(), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined, platform_kwargs }); setSuccess(true); setTimeout(onClose, 1500); }
+    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: datetimeLocalToUtcIso(scheduledAt), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined, platform_kwargs }); setSuccess(true); setTimeout(onClose, 1500); }
     catch (e) { setError(e instanceof Error ? e.message : "Something went wrong."); }
     finally { setSubmitting(false); }
   }

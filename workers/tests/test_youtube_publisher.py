@@ -53,3 +53,14 @@ def test_publish_classifies_errors(exc, expect_error, retry):
         assert result.error
         assert expect_error.lower() in result.error.lower()
         assert result.retry_after_seconds == retry
+
+
+def test_http_error_uses_api_message_when_exc_str_blank():
+    from workers.publishers.youtube import _youtube_error_result
+
+    exc = _http_error(400, "invalidTitle", "The video title is required.")
+    with patch.object(type(exc), "__str__", return_value=""):
+        result = _youtube_error_result(exc)
+
+    assert result.success is False
+    assert "video title is required" in result.error
