@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { ClipConfig } from "@/lib/api";
-import { DEFAULT_CONFIG } from "./constants";
+import { DEFAULT_CONFIG, buildStudioModalClipConfig } from "./constants";
 
 describe("clip config upload payload", () => {
   it("includes language and skip_caption in JSON payload", () => {
@@ -38,4 +38,16 @@ describe("clip config upload payload", () => {
     expect(payload.add_captions).toBe(false);
     expect(payload.skip_caption).toBe(true);
   });
+  it("studio modal payload sets skip_caption independently of add_captions", () => {
+    const cfg = buildStudioModalClipConfig({
+      ratio: "9:16",
+      captionStyle: "tiktok",
+      addCaptions: true,
+      skipCaption: true,
+    });
+    const payload = JSON.parse(JSON.stringify(cfg)) as ClipConfig;
+    expect(payload.add_captions).toBe(true);
+    expect(payload.skip_caption).toBe(true);
+  });
+
 });
