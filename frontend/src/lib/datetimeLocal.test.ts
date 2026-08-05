@@ -16,4 +16,14 @@ describe("datetimeLocal", () => {
     const local = new Date(2026, 0, 15, 9, 0, 0, 0);
     expect(back.getTime()).toBe(local.getTime());
   });
+
+  it("round-trips across DST spring-forward date", () => {
+    const local = "2026-03-08T10:30";
+    expect(utcIsoToDatetimeLocal(datetimeLocalToUtcIso(local))).toBe(local);
+  });
+
+  it("round-trips across DST fall-back date", () => {
+    const local = "2026-11-01T10:30";
+    expect(utcIsoToDatetimeLocal(datetimeLocalToUtcIso(local))).toBe(local);
+  });
 });

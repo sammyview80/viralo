@@ -22,14 +22,19 @@ def _youtube_error_result(exc: Exception) -> PublishResult:
     if isinstance(exc, HttpError):
         status = exc.resp.status if exc.resp else 0
         reason = ""
+        api_message = ""
         try:
             detail = json.loads(exc.content.decode()) if exc.content else {}
-            errors = detail.get("error", {}).get("errors", [])
+            error_obj = detail.get("error") or {}
+            errors = error_obj.get("errors") or []
             if errors:
-                reason = errors[0].get("reason", "")
+                reason = errors[0].get("reason", "") or ""
+                api_message = (errors[0].get("message") or reason or "").strip()
+            if not api_message:
+                api_message = (error_obj.get("message") or reason or "").strip()
         except Exception:
             pass
-        msg = (str(exc) or "").strip() or f"YouTube API error HTTP {status}"
+        msg = (str(exc) or "").strip() or api_message or f"YouTube API error HTTP {status}"
         low = msg.lower()
         if status == 401 or reason in ("authError", "invalidCredentials"):
             return PublishResult(success=False, error=f"YouTube auth failed — reconnect account: {msg[:400]}")
