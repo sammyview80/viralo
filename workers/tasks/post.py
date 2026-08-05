@@ -113,7 +113,7 @@ def _try_insert_notification(
 
 # ── Beat task: scan for due posts ─────────────────────────────────────────────
 
-@celery_app.task(name="workers.tasks.post.process_due_posts")
+@celery_app.task(name="workers.tasks.post.process_due_posts", queue="viralo.post.schedule")
 def process_due_posts():
     """Celery Beat task — find pending posts due for publishing and enqueue them."""
     # Recover posts stuck in 'publishing' for >10 min (worker crash / container restart)
@@ -261,7 +261,15 @@ def publish_post(self, tenant_id: str, post_id: str):
             if isinstance(token_expires_at, datetime) and token_expires_at.tzinfo is None:
                 token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
             expires_soon = token_expires_at <= (now_utc + timedelta(minutes=5))
-            if expires_soon and refresh_token:
+            if expires_soon:
+                if not refresh_token:
+                    _handle_publish_failure(
+                        tenant_id, post_id, platform, retry_count,
+                        error="Access token expired and no refresh token — reconnect the social account",
+                        clip_id=str(clip_id) if clip_id else None,
+                        user_id=notification_user_id,
+                    )
+                    return
                 try:
                     from workers.publishers.registry import get_publisher
                     publisher = get_publisher(platform)
@@ -296,6 +304,13 @@ def publish_post(self, tenant_id: str, post_id: str):
                     logger.info("publish_post: refreshed token for post %s", post_id)
                 except Exception as e:
                     logger.warning("publish_post: token refresh failed for post %s: %s", post_id, e)
+                    _handle_publish_failure(
+                        tenant_id, post_id, platform, retry_count,
+                        error=f"Token refresh failed — reconnect the social account: {str(e)[:200]}",
+                        clip_id=str(clip_id) if clip_id else None,
+                        user_id=notification_user_id,
+                    )
+                    return
 
         # ── 4. Download clip video to temp file ───────────────────────────────
         if not clip_storage_url:

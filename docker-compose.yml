@@ -441,7 +441,9 @@ services:
     build:
       context: .
       dockerfile: services/core/Dockerfile
-    command: celery -A workers.celery_app beat --loglevel=info --schedule=/var/lib/celery/celerybeat-schedule
+    command: >
+      sh -c "celery -A workers.celery_app worker -Q viralo.post.schedule --concurrency=1 --loglevel=info &
+             exec celery -A workers.celery_app beat --loglevel=info --schedule=/var/lib/celery/celerybeat-schedule"
     mem_limit: 512m
     memswap_limit: 512m
     volumes:

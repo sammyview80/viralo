@@ -7,9 +7,10 @@ from celery.schedules import crontab
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://viralo:viralo@rabbitmq:5672//")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-# Beat only schedules tasks — skip heavy worker modules (numpy/cv2/av) that
-# aren't installed in the core/beat image.
-_is_beat = "beat" in sys.argv
+# Core/beat image has no numpy/cv2/av. Skip heavy modules for beat AND for the
+# inline schedule worker (-Q viralo.post.schedule) that shares that image.
+_argv = " ".join(sys.argv)
+_is_light = "beat" in sys.argv or "viralo.post.schedule" in _argv
 
 _include = [
     "workers.tasks.post",
@@ -17,7 +18,7 @@ _include = [
     "workers.tasks.websub",
     "workers.tasks.gsheet",
 ]
-if not _is_beat:
+if not _is_light:
     _include += [
         "workers.tasks.video",
         "workers.tasks.agent",
@@ -64,7 +65,8 @@ celery_app.conf.update(
         "workers.tasks.agent.*": {"queue": "viralo.agent.run"},
         "workers.tasks.workflow.*": {"queue": "viralo.workflow.execute"},
         "workers.tasks.websub.*": {"queue": "viralo.post.publish"},
-        "workers.tasks.post.*": {"queue": "viralo.post.publish"},
+        "workers.tasks.post.process_due_posts": {"queue": "viralo.post.schedule"},
+        "workers.tasks.post.publish_post": {"queue": "viralo.post.publish"},
         "workers.tasks.analytics.*": {"queue": "viralo.analytics.ingest"},
         "workers.tasks.notification.*": {"queue": "viralo.notifications"},
     },

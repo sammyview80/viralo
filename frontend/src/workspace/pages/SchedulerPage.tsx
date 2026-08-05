@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { platformApi, type SocialAccount, type ScheduledPost, type CalendarDay } from "@/lib/api";
+import { datetimeLocalToUtcIso, defaultDatetimeLocalPlusMs } from "@/lib/datetimeLocal";
 import { Pagination } from "../components/Pagination";
 import { useSearchParams } from "@/lib/router";
 
@@ -655,10 +656,7 @@ function ScheduleModal({
 }) {
   const [clipId, setClipId] = useState("");
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [scheduledAt, setScheduledAt] = useState(() => {
-    const d = new Date(Date.now() + 60 * 60 * 1000);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  });
+  const [scheduledAt, setScheduledAt] = useState(() => defaultDatetimeLocalPlusMs(60 * 60 * 1000));
   const [caption, setCaption] = useState("");
   const [hashtagsRaw, setHashtagsRaw] = useState("");
   const [ytTitle, setYtTitle] = useState("");
@@ -691,7 +689,7 @@ function ScheduleModal({
         clip_id: clipId.trim(),
         social_account_id: accountId,
         platform: acc?.platform ?? "",
-        scheduled_at: new Date(scheduledAt).toISOString(),
+        scheduled_at: datetimeLocalToUtcIso(scheduledAt),
         caption,
         hashtags,
         platform_kwargs,
