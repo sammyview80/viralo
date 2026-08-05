@@ -235,6 +235,19 @@ FONT_PATHS = [
     "/System/Library/Fonts/Helvetica.ttc",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    # CJK / Arabic / broad Unicode
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansDevanagari-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc",
+    "/System/Library/Fonts/Supplemental/ITFDevanagari.ttc",
+    # Emoji
+    "/System/Library/Fonts/Apple Color Emoji.ttc",
+    "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
 ]
 
 redis_client = redis.from_url(REDIS_URL, max_connections=5)

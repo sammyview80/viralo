@@ -15,11 +15,28 @@ export const LENGTH_PRESETS = [
   { id: "custom", label: "Custom", hint: "Manual", min: null, max: null },
 ] as const;
 
+
+export const LANGUAGE_OPTIONS = [
+  { id: null, label: "Auto" },
+  { id: "en", label: "English" },
+  { id: "es", label: "Spanish" },
+  { id: "fr", label: "French" },
+  { id: "de", label: "German" },
+  { id: "it", label: "Italian" },
+  { id: "pt", label: "Portuguese" },
+  { id: "ja", label: "Japanese" },
+  { id: "ko", label: "Korean" },
+  { id: "hi", label: "Hindi" },
+  { id: "zh", label: "Chinese" },
+] as const;
+
 export const DEFAULT_CONFIG: ClipConfig = {
   max_clips: 3,
   min_score: 0.5,
   topic_focus: null,
   add_captions: false,
+  skip_caption: false,
+  language: null,
   caption_style: null,
   aspect_ratio: "9:16",
   duration_min: 20,

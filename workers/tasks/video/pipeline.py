@@ -249,6 +249,46 @@ def _auto_schedule_clips(tenant_id: str, clip_ids: list, ap_cfg: dict) -> None:
     logging.info("_auto_schedule_clips: created %d scheduled posts for tenant %s", posts_created, tenant_id)
 
 
+
+def _resolve_pipeline_language(cfg: dict, *, whisper_lang: str | None = None, meta_lang: str | None = None) -> str:
+    explicit = cfg.get("language")
+    language = explicit if explicit is not None else "auto"
+    if language == "auto" and whisper_lang:
+        return whisper_lang
+    if explicit is None and meta_lang:
+        return meta_lang
+    return language
+
+
+def _transcribe_with_cfg(source_path: str, duration: float, language: str, cfg: dict):
+    """Whisper transcribe; only auto-translate to English when user left language on Auto."""
+    return _transcribe(
+        source_path,
+        duration,
+        language,
+        translate_to_english=cfg.get("language") is None,
+    )
+
+
+def _run_ai_content_step(
+    cfg: dict,
+    clips,
+    words,
+    all_captions,
+    platforms,
+    *,
+    content_type: str = "other",
+    topic_focus: str = "",
+    language: str = "en",
+) -> dict:
+    if cfg.get("skip_caption"):
+        return {}
+    return _batch_ai_content(
+        clips, words, all_captions, platforms,
+        content_type=content_type, topic_focus=topic_focus, language=language,
+    )
+
+
 def _clamp_clip_durations(
     clips: list[ClipResult],
     min_dur: int,
@@ -292,7 +332,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     work_dir = Path(VIDEO_TEMP_DIR) / video_id
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    language = cfg.get("language", "auto")
+    language = _resolve_pipeline_language(cfg)
     num_clips = cfg.get("max_clips", 10)
     min_dur = cfg.get("duration_min", 15)
     max_dur = cfg.get("duration_max", 60)
@@ -350,6 +390,7 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
         return
 
     if meta.has_audio:
+        whisper_lang = None
         # Step 2: Transcribe — use YouTube captions if available, else Groq Whisper
         _update_video(tenant_id, video_id, pipeline_step="transcribe", pipeline_pct=20)
 
@@ -385,18 +426,18 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
             else:
                 _publish_progress(job_id, "transcribe", 20, "processing",
                                   "Transcribing with Groq Whisper for precise caption sync...")
-                words, whisper_lang = _transcribe(source_path, meta.duration, language)
-                if whisper_lang and language == "auto":
-                    language = whisper_lang
+                words, whisper_lang = _transcribe_with_cfg(source_path, meta.duration, language, cfg)
+                language = _resolve_pipeline_language(cfg, whisper_lang=whisper_lang)
+                if whisper_lang and cfg.get("language") is None:
                     logging.info("[Whisper] Auto-detected language: %s", language)
                 _publish_progress(job_id, "transcribe", 35, "processing",
                                   f"Transcribed {len(words)} words via Whisper (lang={language})")
         else:
             _publish_progress(job_id, "transcribe", 20, "processing",
                               "Extracting audio + transcribing with Groq Whisper...")
-            words, whisper_lang = _transcribe(source_path, meta.duration, language)
-            if whisper_lang and language == "auto":
-                language = whisper_lang
+            words, whisper_lang = _transcribe_with_cfg(source_path, meta.duration, language, cfg)
+            language = _resolve_pipeline_language(cfg, whisper_lang=whisper_lang)
+            if whisper_lang and cfg.get("language") is None:
                 logging.info("[Whisper] Auto-detected language: %s", language)
             _publish_progress(job_id, "transcribe", 35, "processing",
                               f"Transcribed {len(words)} words (lang={language})")
@@ -426,9 +467,9 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
                 _update_video(tenant_id, video_id, metadata=json.dumps(vid_meta))
                 _save_step_artifact(tenant_id, video_id, "video_metadata", vid_meta)
                 # Auto-detect language from metadata when user didn't set one explicitly
-                detected_lang = vid_meta.get("language_detected", "")
+                detected_lang = vid_meta.get("language_detected", "") or None
+                language = _resolve_pipeline_language(cfg, whisper_lang=whisper_lang, meta_lang=detected_lang)
                 if detected_lang and cfg.get("language") is None:
-                    language = detected_lang
                     logging.info("Language auto-detected from transcript: %s", language)
 
     if _check_cancelled(tenant_id, video_id):
@@ -516,9 +557,10 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
 
     # Generate AI content for all clips in parallel before export
     _publish_progress(job_id, "ai_content", 58, "processing", f"Generating AI content for {len(clips)} clips...")
-    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms,
-                                       content_type=_content_type, topic_focus=topic_focus,
-                                       language=language)
+    all_ai_content = _run_ai_content_step(
+        cfg, clips, words, all_captions, platforms,
+        content_type=_content_type, topic_focus=topic_focus, language=language,
+    )
 
     # Step 5: Export clips in parallel (60→95%)
     if output_quality == "source":
@@ -660,7 +702,7 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
     min_score   = float(cfg.get("min_score", 0.5))
     topic_focus = cfg.get("topic_focus") or ""
     platforms   = cfg.get("platforms") or ["tiktok", "reels", "shorts"]
-    language    = cfg.get("language", "auto")
+    language    = _resolve_pipeline_language(cfg)
     style       = _effective_caption_style(cfg)
     precision_mode_gvc = cfg.get("precision_mode", False)
     yt_engagement_gvc: dict | None = None
@@ -761,9 +803,9 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
             _publish_progress(job_id, "transcribe", 15, "processing",
                               "Transcribing with Groq Whisper...")
             meta = _probe_video(source_path)
-            words, whisper_lang = _transcribe(source_path, meta.duration, language)
-            if whisper_lang and language == "auto":
-                language = whisper_lang
+            words, whisper_lang = _transcribe_with_cfg(source_path, meta.duration, language, cfg)
+            language = _resolve_pipeline_language(cfg, whisper_lang=whisper_lang)
+            if whisper_lang and cfg.get("language") is None:
                 logging.info("[Whisper/_gvc] Auto-detected language: %s", language)
             transcript_source = "whisper"
             _publish_progress(job_id, "transcribe", 30, "processing",
@@ -797,10 +839,9 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
         try:
             _meta = vid_row.metadata if isinstance(vid_row.metadata, dict) else json.loads(vid_row.metadata)
             _gvc_content_type = _meta.get("content_type", "other") or "other"
-            # Use language from stored metadata when user didn't set one explicitly
-            detected_lang = _meta.get("language_detected", "")
+            detected_lang = _meta.get("language_detected", "") or None
+            language = _resolve_pipeline_language(cfg, meta_lang=detected_lang)
             if detected_lang and cfg.get("language") is None:
-                language = detected_lang
                 logging.info("_gvc_inner: language from stored metadata: %s", language)
         except Exception:
             pass
@@ -852,9 +893,10 @@ def _gvc_inner(self, tenant_id, video_id, job_id, cfg):
     # ── Step 4: AI social content per clip (parallel) ─────────────────────────
     _publish_progress(job_id, "ai_content", 65, "processing",
                       f"Generating social content for {len(clips)} clips across {len(platforms)} platforms...")
-    all_ai_content = _batch_ai_content(clips, words, all_captions, platforms,
-                                       content_type=_gvc_content_type, topic_focus=topic_focus,
-                                       language=language)
+    all_ai_content = _run_ai_content_step(
+        cfg, clips, words, all_captions, platforms,
+        content_type=_gvc_content_type, topic_focus=topic_focus, language=language,
+    )
 
     # ── Step 5: Persist clips ─────────────────────────────────────────────────
     _publish_progress(job_id, "saving", 90, "processing", f"Saving {len(clips)} clips...")

@@ -5,6 +5,7 @@ RUN pip install uv
 FROM base AS deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg nodejs npm curl unzip ca-certificates \
+    fonts-noto-cjk fonts-noto-core fonts-noto-color-emoji fonts-noto-extra \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/nodejs /usr/local/bin/node
 # Deno: yt-dlp's default JS runtime for solving YouTube's n-challenge. Without a
