@@ -28,6 +28,18 @@ from sqlalchemy.orm import Session
 
 from workers.celery_app import celery_app
 
+SUPPORTED_CLIP_LANGUAGES = frozenset(
+    {"en", "es", "fr", "de", "it", "pt", "ja", "ko", "hi", "zh"},
+)
+
+
+def _language_for_prompt(language: str | None) -> str | None:
+    """Return a supported ISO 639-1 code for LLM prompts, or None to omit."""
+    if not language or language in ("en", "auto"):
+        return None
+    code = language.lower().strip()
+    return code if code in SUPPORTED_CLIP_LANGUAGES else None
+
 
 from workers.tasks.video._core import *
 from workers.tasks.video.cookies import *
@@ -802,7 +814,12 @@ def _multi_agent_clip_content(
     """
     topic_ctx = f"Topic: {topic_focus}\n" if topic_focus else ""
     clip_ctx = f"Clip reason: {clip.reason}\nClip title hint: {clip.title}"
-    lang_instruction = f"IMPORTANT: Generate ALL content (title, descriptions, CTAs) in the same language as the transcript. The detected language is: {language}.\n" if language and language != "en" else ""
+    prompt_lang = _language_for_prompt(language)
+    lang_instruction = (
+        f"IMPORTANT: Generate ALL content (title, descriptions, CTAs) in the same language as the transcript. The detected language is: {prompt_lang}.\n"
+        if prompt_lang
+        else ""
+    )
 
     prompt = f"""You are a viral social media expert for {content_type} content. For this clip,
 produce THREE things in one JSON object: platform descriptions, trending hashtags, and the best title.
@@ -927,7 +944,12 @@ def _ai_generate_clip_content(
         caption_text = f"[Hook: {clip.reason}]" if clip.reason else "[no transcript]"
 
     platforms_str = ", ".join(platforms) if platforms else "tiktok, reels, shorts"
-    lang_instruction = f"IMPORTANT: Generate ALL content (title, descriptions) in the same language as the transcript. Detected language: {language}.\n\n" if language and language != "en" else ""
+    prompt_lang = _language_for_prompt(language)
+    lang_instruction = (
+        f"IMPORTANT: Generate ALL content (title, descriptions) in the same language as the transcript. Detected language: {prompt_lang}.\n\n"
+        if prompt_lang
+        else ""
+    )
     prompt = f"""You are a viral social media content strategist. Generate platform-optimized content for this video clip.
 
 {lang_instruction}

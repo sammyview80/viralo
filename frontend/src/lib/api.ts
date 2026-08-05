@@ -341,6 +341,8 @@ export interface ClipConfig {
   min_score?: number;
   topic_focus?: string | null;
   add_captions?: boolean;
+  skip_caption?: boolean;
+  language?: string | null;
   caption_style?: string | null;
   aspect_ratio?: string;
   duration_max?: number;

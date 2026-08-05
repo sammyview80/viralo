@@ -21,6 +21,7 @@ dependencies = [
     "av>=13.0",
     "numpy>=1.26",
     "pillow>=11.0",
+    "fonttools>=4.55",
     "boto3>=1.35",
     "cloudinary>=1.41",
     "edge-tts>=6.1",
