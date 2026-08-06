@@ -572,10 +572,44 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
     clip_ids: list[str] = []
     cancelled = False
 
+    # Resume support: a killed/restarted attempt (timeout, deploy, crash) must not
+    # re-render clips a PREVIOUS attempt already finished — that's the expensive
+    # part (pure-Python caption burn-in can take tens of minutes per clip). Match
+    # existing rows for this video by start_ms so a fresh clip-selection run with
+    # near-identical AI scoring still recognizes already-done work.
+    with _get_session(tenant_id) as _resume_session:
+        _existing = _resume_session.execute(
+            text("SELECT id, start_ms, storage_url FROM clips WHERE video_id = CAST(:vid AS uuid)"),
+            {"vid": video_id},
+        ).fetchall()
+    _existing_by_start = [(row.id, row.start_ms, row.storage_url) for row in _existing]
+
+    def _find_existing(clip: ClipResult) -> tuple[str, str | None] | None:
+        target_ms = int(clip.start * 1000)
+        for cid, start_ms, storage_url in _existing_by_start:
+            if start_ms is not None and abs(start_ms - target_ms) < 500:
+                return str(cid), storage_url
+        return None
+
     def _export_one(args: tuple[int, ClipResult]) -> tuple[str, str] | None:
         i, clip = args
         if _check_cancelled(tenant_id, video_id):
             return None
+
+        existing = _find_existing(clip)
+        if existing:
+            existing_id, storage_url = existing
+            _publish_progress(job_id, "export", 60 + int((i / max(len(clips), 1)) * 35), "processing",
+                              f"Clip {i+1}/{len(clips)} already rendered — resuming from checkpoint")
+            if not storage_url:
+                # Row exists but never finished uploading — re-trigger with a
+                # dummy local path; upload_clip_to_storage re-exports from the
+                # source video when the local tmp file is gone (it always is,
+                # after a restart wipes /tmp).
+                from workers.tasks.video.tasks import upload_clip_to_storage
+                upload_clip_to_storage.delay(existing_id, "", tenant_id, job_id)
+            return existing_id, ""
+
         pct = 60 + int((i / max(len(clips), 1)) * 35)
         _publish_progress(job_id, "export", pct, "processing",
                           f"Rendering clip {i+1}/{len(clips)}: {clip.title}")
@@ -616,9 +650,12 @@ def run_video_pipeline(tenant_id: str, video_id: str, source_path: str, job_id: 
                 if result:
                     clip_id, clip_path = result
                     clip_ids.append(clip_id)
-                    # Queue async cloud upload — returns immediately
-                    from workers.tasks.video.tasks import upload_clip_to_storage
-                    upload_clip_to_storage.delay(clip_id, clip_path, tenant_id, job_id)
+                    # Empty clip_path means _export_one already resolved this
+                    # clip from a prior attempt's checkpoint (either fully done,
+                    # or its own upload already re-queued) — don't double-queue.
+                    if clip_path:
+                        from workers.tasks.video.tasks import upload_clip_to_storage
+                        upload_clip_to_storage.delay(clip_id, clip_path, tenant_id, job_id)
             except Exception as e:
                 logging.exception("Clip %d export failed: %s", i + 1, e)
                 _publish_progress(job_id, "export", 60, "processing",
