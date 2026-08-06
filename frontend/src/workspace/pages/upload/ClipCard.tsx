@@ -109,22 +109,19 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
       style={{ background: "rgba(3,6,14,.82)", backdropFilter: "blur(12px)", animation: "fadeUp .14s ease" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Shell: 2-col grid, fixed height */}
+      {/* Shell: 2-col grid on desktop, stacked on mobile */}
       <div
-        className="w-full overflow-hidden rounded-[22px] border border-c-border shadow-[0_48px_120px_rgba(0,0,0,.85)]"
+        className="grid w-full grid-cols-1 grid-rows-[minmax(160px,38vh)_1fr] overflow-hidden rounded-[22px] border border-c-border shadow-[0_48px_120px_rgba(0,0,0,.85)] sm:grid-cols-[300px_1fr] sm:grid-rows-1"
         style={{
           maxWidth: 860,
-          height: "min(88vh, 580px)",
-          display: "grid",
-          gridTemplateColumns: "300px 1fr",
-          gridTemplateRows: "1fr",
+          height: "min(92vh, 580px)",
           animation: "fadeUp .22s cubic-bezier(.22,.8,.4,1)",
           background: "rgb(var(--surface-0))",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Left: video player ── */}
-        <div className="flex items-center justify-center border-r border-c-border bg-black overflow-hidden">
+        <div className="flex min-h-0 items-center justify-center border-b border-c-border bg-black overflow-hidden sm:border-b-0 sm:border-r">
           <div className="relative h-full w-full overflow-hidden">
             {clip.storage_url
               ? <video ref={videoRef} src={clip.storage_url} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" poster={clip.thumbnail_url ?? undefined} />
@@ -188,7 +185,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
         </div>
 
         {/* ── Right: header + tabs + content + footer ── */}
-        <div className="flex min-w-0 flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           {/* Header */}
           <div className="flex shrink-0 items-start gap-3 border-b border-c-border bg-surface-1 px-5 py-4">
             <div className="min-w-0 flex-1">
