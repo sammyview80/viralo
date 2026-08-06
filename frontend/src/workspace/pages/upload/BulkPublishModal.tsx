@@ -88,7 +88,7 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4"
       style={{ background: "rgba(4,7,15,.85)", backdropFilter: "blur(6px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="flex w-full max-w-[560px] flex-col rounded-[20px] border border-c-border bg-surface-0 shadow-[0_40px_100px_rgba(0,0,0,.7)]"
+      <div data-testid="bulk-publish-modal" className="flex w-full max-w-[560px] min-w-0 max-w-full flex-col overflow-x-hidden rounded-[20px] border border-c-border bg-surface-0 shadow-[0_40px_100px_rgba(0,0,0,.7)]"
         style={{ maxHeight: "90vh" }}
         onClick={(e) => e.stopPropagation()}>
 
@@ -103,12 +103,15 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto p-5 space-y-4">
+        <div className="min-w-0 overflow-y-auto p-5 space-y-4">
           {success ? (
             <div className="flex flex-col items-center gap-4 py-10 text-center">
               <div className="grid h-14 w-14 place-items-center rounded-full bg-green-500/10 text-3xl">✓</div>
               <p className="font-display text-lg font-bold text-c-text">Scheduled!</p>
               <p className="text-sm text-c-text-muted">{totalScheduled} clip{totalScheduled !== 1 ? "s" : ""} queued for publishing.</p>
+              <button onClick={onClose} className="w-full sm:w-auto rounded-[10px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white transition hover:bg-[#ff3d6a]/85">
+                Done
+              </button>
             </div>
           ) : loadingAccounts ? (
             <div className="space-y-3">{[1,2].map((i) => <div key={i} className="h-28 animate-pulse rounded-[12px] bg-surface-1" />)}</div>
@@ -191,13 +194,19 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
         </div>
 
         {/* Footer */}
-        {!success && accounts.length > 0 && (
-          <div className="flex gap-3 border-t border-c-border px-5 py-4 shrink-0">
-            <button onClick={onClose} className="rounded-[10px] border border-c-border bg-surface-1 px-5 py-2.5 text-[13px] font-semibold text-c-text-secondary hover:text-c-text transition">
+        {success ? (
+          <div data-testid="bulk-publish-actions" className="grid grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-3 border-t border-c-border px-5 py-4 pb-[max(env(safe-area-inset-bottom),1rem)] shrink-0">
+            <button onClick={onClose} className="col-span-2 sm:col-span-1 w-full sm:w-auto ml-auto rounded-[10px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white transition hover:bg-[#ff3d6a]/85">
+              Done
+            </button>
+          </div>
+        ) : accounts.length > 0 && (
+          <div data-testid="bulk-publish-actions" className="grid grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-3 border-t border-c-border px-5 py-4 pb-[max(env(safe-area-inset-bottom),1rem)] shrink-0">
+            <button onClick={onClose} className="w-full sm:w-auto rounded-[10px] border border-c-border bg-surface-1 px-5 py-2.5 text-[13px] font-semibold text-c-text-secondary hover:text-c-text transition">
               Cancel
             </button>
             <button onClick={handleSubmit} disabled={submitting || totalScheduled === 0}
-              className="ml-auto flex items-center gap-2 rounded-[10px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50 transition hover:bg-[#ff3d6a]/85">
+              className="col-span-2 sm:col-span-1 w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-2 rounded-[10px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50 transition hover:bg-[#ff3d6a]/85">
               {submitting ? "Scheduling…" : `↗ Schedule ${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""}`}
             </button>
           </div>
