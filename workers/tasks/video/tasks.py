@@ -320,7 +320,12 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
 
 @celery_app.task(bind=True, name="workers.tasks.video.process_youtube_video",
                  queue="viralo.video.pipeline", acks_late=True, max_retries=3,
-                 time_limit=3600, soft_time_limit=3540)
+                 # 60min was too tight for longer clip durations + heavy per-word
+                 # caption burn-in (pure-Python PyAV/Pillow, no hardware accel) —
+                 # SIGKILL was destroying up to an hour of real progress and
+                 # forcing a full restart from scratch every time. 100min gives
+                 # genuinely heavy renders room to actually finish.
+                 time_limit=6000, soft_time_limit=5940)
 def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: dict | None = None):
     from celery.exceptions import SoftTimeLimitExceeded
     from urllib.parse import urlparse, urlencode, parse_qs, urlunparse as _urlunparse
@@ -1230,9 +1235,10 @@ def reconcile_stuck_videos(self) -> dict:
 
     Thresholds avoid false positives:
       - 'processing' + confirmed-dead task_id: >3 min stale (fast path above).
-      - 'processing' (any, incl. inspect() unavailable/unknown): >65 min stale —
-        PAST the 60-min hard time limit, so a still-running long job is never
-        mistaken for dead even if the fast path can't confirm it either way.
+      - 'processing' (any, incl. inspect() unavailable/unknown): >105 min stale —
+        PAST process_youtube_video's 100-min hard time limit, so a still-running
+        long job is never mistaken for dead even if the fast path can't confirm
+        it either way.
       - 'queued'/'pending': >15 min — a task that never started executing.
     Runs tenantless (worker DB role owns the tables → RLS bypassed; if not, the
     query simply returns no rows and this is a safe no-op).
@@ -1253,7 +1259,7 @@ def reconcile_stuck_videos(self) -> dict:
                        COALESCE((metadata->>'reconcile_retries')::int, 0) AS retries,
                        source_type, metadata, celery_task_id
                 FROM videos
-                WHERE (status = 'processing' AND updated_at < NOW() - INTERVAL '65 minutes')
+                WHERE (status = 'processing' AND updated_at < NOW() - INTERVAL '105 minutes')
                    OR (status IN ('queued','pending') AND updated_at < NOW() - INTERVAL '15 minutes')
                    OR (status = 'processing' AND celery_task_id IS NOT NULL
                        AND updated_at < NOW() - INTERVAL '3 minutes')
