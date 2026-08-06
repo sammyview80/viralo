@@ -58,7 +58,12 @@ class FacebookPublisher(BasePublisher):
                         timeout=120,
                     )
                     cr.raise_for_status()
-                    start_offset = int(cr.json().get("start_offset", end_offset))
+                    new_offset = int(cr.json().get("start_offset", end_offset))
+                    if new_offset <= start_offset:
+                        # Facebook didn't acknowledge forward progress — looping
+                        # here would hang the task indefinitely instead of failing.
+                        return PublishResult(success=False, error=f"Facebook upload stalled at offset {start_offset}")
+                    start_offset = new_offset
 
             # Step 3: Finish upload
             fr = requests.post(

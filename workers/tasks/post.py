@@ -117,7 +117,10 @@ def _try_insert_notification(
 @celery_app.task(name="workers.tasks.post.process_due_posts", queue="viralo.post.schedule")
 def process_due_posts():
     """Celery Beat task — find pending posts due for publishing and enqueue them."""
-    # Recover posts stuck in 'publishing' for >10 min (worker crash / container restart)
+    # Recover posts stuck in 'publishing' for >5 min (worker crash / container restart).
+    # Was 10 min — that turned every mid-publish worker kill (e.g. a redeploy) into a
+    # guaranteed ~10min delay before retry. 5 min still comfortably outlasts a normal
+    # TikTok/YouTube upload+poll cycle while halving the worst-case recovery time.
     # Auto-retry if under max retries, otherwise mark as failed
     with engine.connect() as conn:
         publishing_rows = conn.execute(
@@ -133,7 +136,7 @@ def process_due_posts():
                     END,
                     updated_at = NOW()
                 WHERE status = 'publishing'
-                  AND updated_at < NOW() - interval '10 minutes'
+                  AND updated_at < NOW() - interval '5 minutes'
             """)
         ).rowcount
         conn.commit()
@@ -380,7 +383,12 @@ def publish_post(self, tenant_id: str, post_id: str):
         plat_lower = platform.lower()
         if plat_lower == "instagram":
             pub_kwargs.setdefault("ig_user_id", platform_user_id)
-            pub_kwargs.setdefault("video_url", clip_storage_url)
+            if "video_url" not in pub_kwargs:
+                # Instagram's servers fetch this URL themselves — clip_storage_url is
+                # just the bucket key (storage.upload() returns the key, not a URL),
+                # so it must be resolved to a fetchable signed URL first or every
+                # Instagram publish fails at Meta's own download step.
+                pub_kwargs["video_url"] = asyncio.run(storage.get_signed_url(clip_storage_url, expires_in=3600))
         elif plat_lower == "facebook":
             pub_kwargs.setdefault("page_id", platform_user_id)
         elif plat_lower == "linkedin":
