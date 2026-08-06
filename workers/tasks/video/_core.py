@@ -250,7 +250,10 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
 ]
 
-redis_client = redis.from_url(REDIS_URL, max_connections=5)
+redis_client = redis.from_url(
+    REDIS_URL, max_connections=5,
+    socket_connect_timeout=10, socket_timeout=10,
+)
 engine = create_engine(
     SYNC_DATABASE_URL,
     pool_pre_ping=True,
@@ -258,6 +261,7 @@ engine = create_engine(
     max_overflow=5,
     pool_recycle=3600,
     pool_timeout=30,
+    connect_args={"connect_timeout": 10},
 )
 import atexit as _atexit
 _atexit.register(lambda: engine.dispose())

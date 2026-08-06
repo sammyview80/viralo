@@ -974,7 +974,8 @@ def _reexport_clip_from_source(clip_id: str, tenant_id: str, out_path: str) -> N
     with _get_session(tenant_id) as session:
         row = session.execute(
             text("""
-                SELECT c.start_sec, c.end_sec, v.original_storage_key, v.id::text as vid
+                SELECT c.start_sec, c.end_sec, v.original_storage_key, v.id::text as vid,
+                       v.source_type, v.source_url
                   FROM clips c
                   JOIN videos v ON v.id = c.video_id
                  WHERE c.id = CAST(:cid AS uuid)
@@ -982,18 +983,25 @@ def _reexport_clip_from_source(clip_id: str, tenant_id: str, out_path: str) -> N
             {"cid": clip_id},
         ).fetchone()
 
-    if not row or not row[2]:
-        raise FileNotFoundError(f"Cannot re-export clip {clip_id}: missing source storage key")
+    if not row:
+        raise FileNotFoundError(f"Cannot re-export clip {clip_id}: video/clip not found")
 
-    start_sec, end_sec, storage_key, video_id = row[0], row[1], row[2], row[3]
+    start_sec, end_sec, storage_key, video_id, source_type, source_url = row
 
     work_dir = Path(VIDEO_TEMP_DIR) / video_id
     work_dir.mkdir(parents=True, exist_ok=True)
     source_path = str(work_dir / "source_reexport.mp4")
 
-    from shared.storage.base import get_storage
-    storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
-    asyncio.run(storage.download(storage_key, source_path))
+    if storage_key:
+        from shared.storage.base import get_storage
+        storage = get_storage(os.getenv("STORAGE_PROVIDER", "local"))
+        asyncio.run(storage.download(storage_key, source_path))
+    elif source_type == "youtube_url" and source_url:
+        # No persisted source (YouTube-sourced videos keep the download only in
+        # ephemeral /tmp) — re-fetch straight from YouTube instead of failing.
+        _download_youtube(source_url, source_path)
+    else:
+        raise FileNotFoundError(f"Cannot re-export clip {clip_id}: missing source storage key")
 
     subprocess.run(
         _build_precise_trim_command(
