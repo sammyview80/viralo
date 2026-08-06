@@ -220,7 +220,7 @@ services:
     build:
       context: .
       dockerfile: services/video/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.video.pipeline --concurrency=4 --loglevel=info
+    command: celery -A workers.celery_app worker -Q viralo.video.pipeline --concurrency=2 --loglevel=info
     mem_limit: 8g
     memswap_limit: 8g
     environment:
@@ -253,7 +253,7 @@ services:
     build:
       context: .
       dockerfile: services/video/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.video.ai --concurrency=2 --loglevel=info
+    command: celery -A workers.celery_app worker -Q viralo.video.ai --concurrency=1 --loglevel=info
     mem_limit: 8g
     memswap_limit: 8g
     environment:
@@ -319,7 +319,7 @@ services:
     build:
       context: .
       dockerfile: services/video/Dockerfile
-    command: celery -A workers.celery_app worker -Q viralo.video.generate --concurrency=2 --loglevel=info
+    command: celery -A workers.celery_app worker -Q viralo.video.generate --concurrency=1 --loglevel=info
     mem_limit: 4g
     memswap_limit: 4g
     environment:
