@@ -604,7 +604,7 @@ export function ResultsView({
           isScheduled={scheduledClipIds.has(detailClip.id)}
           posts={postsByClipId.get(detailClip.id) ?? []}
           onClose={() => setDetailClip(null)}
-          onPublish={() => setSinglePublishClip(detailClip)}
+          onPublish={() => { setDetailClip(null); setSinglePublishClip(detailClip); }}
         />
       )}
     </div>
