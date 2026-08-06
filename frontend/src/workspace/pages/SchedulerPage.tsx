@@ -527,6 +527,31 @@ function PostPopover({ post, onClose, onCancelled, onPublished }: { post: Schedu
       >
         <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1 text-c-text-muted hover:text-c-text-secondary transition">✕</button>
 
+        {(post.clip_storage_url || post.clip_thumbnail_url) && (
+          <a
+            href={post.clip_storage_url || post.clip_thumbnail_url || "#"}
+            target="_blank"
+            rel="noreferrer"
+            className="group relative mb-3 block aspect-[9/16] max-h-[220px] w-full overflow-hidden rounded-[10px] bg-black"
+          >
+            {post.clip_storage_url ? (
+              <video
+                src={post.clip_storage_url}
+                poster={post.clip_thumbnail_url ?? undefined}
+                className="h-full w-full object-cover"
+                muted
+                playsInline
+                preload="metadata"
+              />
+            ) : (
+              <img src={post.clip_thumbnail_url!} alt="clip thumbnail" className="h-full w-full object-cover" />
+            )}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition group-hover:bg-black/30">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-black opacity-0 transition group-hover:opacity-100">▶</span>
+            </div>
+          </a>
+        )}
+
         <div className="flex items-start gap-2">
           <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize", PLATFORM_COLORS[post.platform] ?? "bg-zinc-500/20 text-zinc-300 border-zinc-500/30")}>
             <span className={cn("h-1.5 w-1.5 rounded-full", PLATFORM_DOT[post.platform])} />

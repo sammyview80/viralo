@@ -615,6 +615,8 @@ export interface ScheduledPost {
   hashtags: string[];
   retry_count: number;
   last_error: string | null;
+  clip_storage_url?: string | null;
+  clip_thumbnail_url?: string | null;
   created_at: string;
 }
 
