@@ -1015,7 +1015,8 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
 
 # ── Editor server-side render ─────────────────────────────────────────────────
 
-@celery_app.task(bind=True, name="workers.tasks.video.render_clip_with_edits", max_retries=2)
+@celery_app.task(bind=True, name="workers.tasks.video.render_clip_with_edits", max_retries=2,
+                 time_limit=900, soft_time_limit=870)
 def render_clip_with_edits(
     self,
     tenant_id: str,
