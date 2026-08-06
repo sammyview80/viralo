@@ -218,8 +218,8 @@ export function UploadPage() {
         />
       )}
 
-      <div className="flex h-[calc(100vh-116px)] flex-col overflow-hidden bg-surface-0">
-        <div className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-5 sm:py-5">
+      <div className="flex h-[calc(100vh-116px)] min-w-0 flex-col overflow-hidden bg-surface-0">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-3 py-3 sm:px-5 sm:py-5">
           {loadingVideo && (
             <div className="flex h-full flex-col overflow-hidden -mx-3 -my-3 sm:-mx-5 sm:-my-5">
               <div className="border-b border-c-border">
@@ -282,8 +282,8 @@ export function UploadPage() {
           )}
 
           {view === "processing" && activeVideo && (
-            <div className="h-full overflow-y-auto">
-              <div className="mx-auto w-full max-w-[1100px] py-6 pb-10">
+            <div className="h-full min-w-0 overflow-x-hidden overflow-y-auto">
+              <div data-testid="processing-page-shell" className="mx-auto w-full min-w-0 max-w-[1100px] py-4 pb-[max(env(safe-area-inset-bottom),4rem)] sm:py-6 lg:pb-10">
               <ProcessingView
                 video={activeVideo}
                 onDone={handleDone}
