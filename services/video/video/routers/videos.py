@@ -36,6 +36,7 @@ from video.schemas import (
     ClipMergeAiRequest,
     ClipPatchRequest,
     ClipResponse,
+    ScheduledPostSummary,
     EditorDataRequest,
     EditorDataResponse,
     GenerateClipsRequest,
@@ -1023,12 +1024,12 @@ async def delete_video(
         from sqlalchemy import text as sa_text
         # Use ANY(:arr) with parameterized array — no string interpolation
         await db.execute(
-            sa_text("UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(CAST(:ids AS uuid[]))"),
-            {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
+            sa_text("UPDATE scheduled_posts SET clip_id = NULL WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(:ids)"),
+            {"tid": str(token.tenant_id), "ids": clip_ids},
         )
         await db.execute(
-            sa_text("DELETE FROM captions WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(CAST(:ids AS uuid[]))"),
-            {"tid": str(token.tenant_id), "ids": "{" + ",".join(clip_ids) + "}"},
+            sa_text("DELETE FROM captions WHERE tenant_id = CAST(:tid AS uuid) AND clip_id = ANY(:ids)"),
+            {"tid": str(token.tenant_id), "ids": clip_ids},
         )
 
     # Revoke running/queued Celery task before deleting
@@ -1200,8 +1201,37 @@ async def list_clips(
         query.order_by(order_col).offset((page - 1) * per_page).limit(per_page)
     )
     clips = result.scalars().all()
+    posts_by_clip: dict[uuid.UUID, list[ScheduledPostSummary]] = {}
+    if clips:
+        from sqlalchemy import text as sa_text
+
+        clip_ids = [str(c.id) for c in clips]
+        rows = (
+            await db.execute(
+                sa_text(
+                    """
+                    SELECT id, clip_id, platform, status, scheduled_at, posted_at, created_at, last_error
+                    FROM scheduled_posts
+                    WHERE tenant_id = CAST(:tid AS uuid)
+                      AND clip_id = ANY(:ids)
+                      AND status != 'deleted'
+                    ORDER BY created_at DESC
+                    """
+                ),
+                {"tid": str(token.tenant_id), "ids": clip_ids},
+            )
+        ).mappings().all()
+        for row in rows:
+            cid = row["clip_id"]
+            posts_by_clip.setdefault(cid, []).append(ScheduledPostSummary.model_validate(row))
+
     return ClipListResponse(
-        items=[ClipResponse.model_validate(c) for c in clips],
+        items=[
+            ClipResponse.model_validate(c).model_copy(
+                update={"scheduled_posts": posts_by_clip.get(c.id, [])}
+            )
+            for c in clips
+        ],
         total=total,
         page=page,
         per_page=per_page,

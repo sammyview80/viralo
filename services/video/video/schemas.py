@@ -14,6 +14,8 @@ def sign_media_url(value: str | None) -> str | None:
         return sign_local_url(urlsplit(value).path)
     return value
 
+ClipLanguage = Literal["en", "es", "fr", "de", "it", "pt", "ja", "ko", "hi", "zh"]
+
 EditorCaptionTemplate = Literal[
     "default",
     "modern",
@@ -85,7 +87,9 @@ class ClipConfig(BaseModel):
     min_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Min virality score 0-1 (0.5 = balanced, 0.8 = viral only)")
 
     # Captions
-    add_captions: bool = Field(default=True, description="Burn captions into clip")
+    add_captions: bool = Field(default=False, description="Burn captions into clip")
+    skip_caption: bool = Field(default=False, description="Skip AI title/description/hashtag generation")
+    language: ClipLanguage | None = Field(default=None, description="Caption/AI content language (ISO 639-1); None = auto-detect")
     caption_style: Literal[
         "capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke", "classic", "impact", "minimal",
         "sunset", "royal", "ocean", "bubble", "banger", "money", "reveal-light", "podcast",
@@ -198,9 +202,21 @@ class VideoResponse(BaseModel):
     @classmethod
     def hide_destination_config(cls, value: Any) -> Any:
         if isinstance(value, dict):
-            hidden = {"platforms", "language", "precision_mode"}
+            hidden = {"platforms", "precision_mode"}
             return {k: v for k, v in value.items() if k not in hidden}
         return value
+
+
+class ScheduledPostSummary(BaseModel):
+    id: uuid.UUID
+    clip_id: uuid.UUID
+    platform: str
+    status: str
+    scheduled_at: Any
+    posted_at: Any | None = None
+    created_at: Any
+    last_error: str | None = None
+    model_config = {"from_attributes": True}
 
 
 class ClipResponse(BaseModel):
@@ -221,6 +237,7 @@ class ClipResponse(BaseModel):
     upload_error: str | None = None
     upscaled_storage_url: str | None = None
     created_at: Any
+    scheduled_posts: list[ScheduledPostSummary] = Field(default_factory=list)
     model_config = {"from_attributes": True}
 
     _sign_media = field_validator(

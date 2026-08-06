@@ -113,32 +113,31 @@ def _try_insert_notification(
 
 # ── Beat task: scan for due posts ─────────────────────────────────────────────
 
-@celery_app.task(name="workers.tasks.post.process_due_posts")
+@celery_app.task(name="workers.tasks.post.process_due_posts", queue="viralo.post.schedule")
 def process_due_posts():
     """Celery Beat task — find pending posts due for publishing and enqueue them."""
-    # Recover posts stuck in 'processing' for >10 min (worker crash / container restart)
+    # Recover posts stuck in 'publishing' for >10 min (worker crash / container restart)
+    # Auto-retry if under max retries, otherwise mark as failed
     with engine.connect() as conn:
-        conn.execute(
+        publishing_rows = conn.execute(
             text("""
                 UPDATE scheduled_posts
-                SET status = 'scheduled', scheduled_at = NOW(), updated_at = NOW()
-                WHERE status = 'processing'
-                  AND updated_at < NOW() - interval '10 minutes'
-            """)
-        )
-        recovered = conn.execute(
-            text("""
-                UPDATE scheduled_posts
-                SET status = 'failed',
-                    last_error = 'Publish outcome unknown after worker interruption; reconcile before retry',
+                SET status = CASE
+                        WHEN COALESCE(retry_count, 0) < 3 THEN 'scheduled'
+                        ELSE 'failed'
+                    END,
+                    last_error = CASE
+                        WHEN COALESCE(retry_count, 0) < 3 THEN ''
+                        ELSE 'Publish outcome unknown after worker interruption; reconcile before retry'
+                    END,
                     updated_at = NOW()
                 WHERE status = 'publishing'
                   AND updated_at < NOW() - interval '10 minutes'
             """)
         ).rowcount
         conn.commit()
-    if recovered:
-        logger.info("process_due_posts: recovered %d stale processing posts", recovered)
+    if publishing_rows:
+        logger.info("process_due_posts: recovered %d stale publishing posts (auto-retry if retries < 3)", publishing_rows)
 
     with engine.connect() as conn:
         rows = conn.execute(
@@ -262,41 +261,74 @@ def publish_post(self, tenant_id: str, post_id: str):
             if isinstance(token_expires_at, datetime) and token_expires_at.tzinfo is None:
                 token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
             expires_soon = token_expires_at <= (now_utc + timedelta(minutes=5))
-            if expires_soon and refresh_token:
+            if expires_soon:
+                if not refresh_token:
+                    _handle_publish_failure(
+                        tenant_id, post_id, platform, retry_count,
+                        error="Access token expired and no refresh token — reconnect the social account",
+                        clip_id=str(clip_id) if clip_id else None,
+                        user_id=notification_user_id,
+                    )
+                    return
                 try:
                     from workers.publishers.registry import get_publisher
                     publisher = get_publisher(platform)
                     new_tokens = publisher.refresh_token(refresh_token)
-                    new_access = new_tokens.get("access_token", "")
-                    new_refresh = new_tokens.get("refresh_token", refresh_token)
-                    new_expires_in = new_tokens.get("expires_in", 3600)
-                    new_expires_at = now_utc + timedelta(seconds=new_expires_in)
+                    if not isinstance(new_tokens, dict):
+                        raise ValueError(f"invalid refresh response type: {type(new_tokens).__name__}")
+                    new_access = (new_tokens.get("access_token") or "").strip()
+                    if new_access:
+                        new_refresh = new_tokens.get("refresh_token", refresh_token)
+                        new_expires_in = new_tokens.get("expires_in", 3600)
+                        new_expires_at = now_utc + timedelta(seconds=new_expires_in)
 
-                    with _get_session(tenant_id) as session:
-                        session.execute(
-                            text("""
-                                UPDATE social_accounts
-                                SET access_token_enc = :at,
-                                    refresh_token_enc = :rt,
-                                    token_expires_at = :exp,
-                                    updated_at = NOW()
-                                WHERE id = (
-                                    SELECT social_account_id FROM scheduled_posts
-                                    WHERE id = CAST(:pid AS uuid)
-                                )
-                            """),
-                            {
-                                "at": _encrypt_token(new_access),
-                                "rt": _encrypt_token(new_refresh),
-                                "exp": new_expires_at,
-                                "pid": post_id,
-                            },
-                        )
-                    access_token = new_access
-                    refresh_token = new_refresh
-                    logger.info("publish_post: refreshed token for post %s", post_id)
+                        with _get_session(tenant_id) as session:
+                            session.execute(
+                                text("""
+                                    UPDATE social_accounts
+                                    SET access_token_enc = :at,
+                                        refresh_token_enc = :rt,
+                                        token_expires_at = :exp,
+                                        updated_at = NOW()
+                                    WHERE id = (
+                                        SELECT social_account_id FROM scheduled_posts
+                                        WHERE id = CAST(:pid AS uuid)
+                                    )
+                                """),
+                                {
+                                    "at": _encrypt_token(new_access),
+                                    "rt": _encrypt_token(new_refresh),
+                                    "exp": new_expires_at,
+                                    "pid": post_id,
+                                },
+                            )
+                        access_token = new_access
+                        refresh_token = new_refresh
+                        logger.info("publish_post: refreshed token for post %s", post_id)
+                    elif new_tokens:
+                        raise ValueError("refresh response missing access_token")
+                    else:
+                        logger.info("publish_post: token refresh no-op for post %s (static token)", post_id)
                 except Exception as e:
-                    logger.warning("publish_post: token refresh failed for post %s: %s", post_id, e)
+                    err = str(e).strip()
+                    if not err:
+                        err = type(e).__name__
+                        resp = getattr(e, "response", None)
+                        if resp is not None:
+                            body = (getattr(resp, "text", None) or getattr(resp, "reason", None) or "").strip()
+                            if body:
+                                err = f"{type(e).__name__}: {body[:200]}"
+                    logger.warning(
+                        "publish_post: token refresh failed for post %s: %s",
+                        post_id, err or type(e).__name__, exc_info=True,
+                    )
+                    _handle_publish_failure(
+                        tenant_id, post_id, platform, retry_count,
+                        error=f"Token refresh failed — reconnect the social account: {(err or type(e).__name__)[:200]}",
+                        clip_id=str(clip_id) if clip_id else None,
+                        user_id=notification_user_id,
+                    )
+                    return
 
         # ── 4. Download clip video to temp file ───────────────────────────────
         if not clip_storage_url:
@@ -418,20 +450,19 @@ def publish_post(self, tenant_id: str, post_id: str):
         logger.exception("publish_post: exception for post %s", post_id)
 
         if publish_attempted:
+            # Publish was attempted but outcome unknown — use retry logic
             with _get_session(tenant_id) as session:
-                session.execute(
-                    text("""
-                        UPDATE scheduled_posts
-                        SET status = 'failed',
-                            last_error = :err,
-                            updated_at = NOW()
-                        WHERE id = CAST(:pid AS uuid)
-                    """),
-                    {
-                        "err": ("Publish outcome unknown; reconcile before retry: " + str(exc))[:1000],
-                        "pid": post_id,
-                    },
-                )
+                r = session.execute(
+                    text("SELECT retry_count FROM scheduled_posts WHERE id = CAST(:pid AS uuid)"),
+                    {"pid": post_id},
+                ).fetchone()
+                current_retries = (r[0] or 0) if r else 0
+            _handle_publish_failure(
+                tenant_id, post_id, platform, current_retries,
+                error="Publish outcome unknown: " + str(exc)[:200],
+                clip_id=str(clip_id) if clip_id else None,
+                user_id=notification_user_id,
+            )
             return
 
         # Load current retry_count from DB

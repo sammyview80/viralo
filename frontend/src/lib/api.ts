@@ -223,6 +223,17 @@ export interface ClipPlatformContent {
   tags: string[];
 }
 
+export interface ScheduledPostSummary {
+  id: string;
+  clip_id: string;
+  platform: string;
+  status: string;
+  scheduled_at: string;
+  posted_at: string | null;
+  created_at: string;
+  last_error: string | null;
+}
+
 export interface ClipApiResponse {
   id: string;
   video_id: string;
@@ -255,6 +266,7 @@ export interface ClipApiResponse {
   upload_error: string | null;
   upscaled_storage_url: string | null;
   created_at: string;
+  scheduled_posts?: ScheduledPostSummary[];
 }
 
 export type ClipListResponse = PaginatedResponse<ClipApiResponse>;
@@ -329,6 +341,8 @@ export interface ClipConfig {
   min_score?: number;
   topic_focus?: string | null;
   add_captions?: boolean;
+  skip_caption?: boolean;
+  language?: string | null;
   caption_style?: string | null;
   aspect_ratio?: string;
   duration_max?: number;

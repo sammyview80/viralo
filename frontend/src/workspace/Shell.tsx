@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { nav, groups } from "./data";
@@ -151,39 +151,150 @@ function Sidebar({ active, collapsed, onCollapse, isPro }: { active: ActiveKey; 
 }
 
 function MobileNav({ active }: { active: ActiveKey }) {
-  const items: Array<{ key: ActiveKey; label: string; href: string; icon: keyof typeof Icons }> = [
-    { key: "dashboard", label: "Home", href: "/", icon: "Bolt" },
-    { key: "studio", label: "Studio", href: "/studio", icon: "Video" },
-    { key: "clips", label: "Clips", href: "/clips", icon: "Film" },
-    { key: "analytics", label: "Analytics", href: "/analytics", icon: "Chart" },
-    { key: "settings", label: "Settings", href: "/settings", icon: "Gear" },
-  ];
+  const [moreOpen, setMoreOpen] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Bottom bar: Home + first 4 Create items + More = 6 slots
+  const createItems = nav.filter((n) => n.group === "Create").slice(0, 4);
+  const moreActive = !createItems.some((i) => i.key === active) && active !== "dashboard";
+  const allGroups = groups.map((g) => ({ label: g, items: nav.filter((n) => n.group === g) }));
+
+  // Escape-to-close + focus restore for More sheet
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    sheetRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      moreBtnRef.current?.focus();
+    };
+  }, [moreOpen]);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-c-border bg-surface-0 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1">
-        {items.map((item) => {
-          const Ico = Icons[item.icon];
-          const isActive = item.key === active;
-          return (
-            <a
-              key={item.key}
-              href={item.href}
-              onClick={(e) => { e.preventDefault(); navigate(item.href); }}
-              className={cn(
-                "flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-[12px] px-1 text-[10.5px] font-semibold transition",
-                isActive
-                  ? "bg-brand/12 text-[#ff7a9a] ring-1 ring-[#ff3d6a]/20"
-                  : "text-c-text-muted hover:bg-surface-2 hover:text-c-text"
-              )}
-            >
-              <Ico size={17} />
-              <span className="truncate">{item.label}</span>
-            </a>
-          );
-        })}
-      </div>
-    </nav>
+    <>
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-c-border bg-surface-0 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 backdrop-blur-xl lg:hidden">
+        <div className="mx-auto grid max-w-[560px] grid-cols-6 gap-1">
+          <a
+            key="dashboard"
+            href="/"
+            onClick={(e) => { e.preventDefault(); navigate("/"); }}
+            className={cn(
+              "flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-[12px] px-1 text-[10.5px] font-semibold transition",
+              active === "dashboard"
+                ? "bg-brand/12 text-[#ff7a9a] ring-1 ring-[#ff3d6a]/20"
+                : "text-c-text-muted hover:bg-surface-2 hover:text-c-text"
+            )}
+          >
+            <Icons.Bolt size={17} />
+            <span className="truncate">Home</span>
+          </a>
+          {createItems.map((item) => {
+            const Ico = Icons[item.icon];
+            const isActive = item.key === active;
+            return (
+              <a
+                key={item.key}
+                href={item.href}
+                onClick={(e) => { e.preventDefault(); navigate(item.href); }}
+                className={cn(
+                  "flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-[12px] px-1 text-[10.5px] font-semibold transition",
+                  isActive
+                    ? "bg-brand/12 text-[#ff7a9a] ring-1 ring-[#ff3d6a]/20"
+                    : "text-c-text-muted hover:bg-surface-2 hover:text-c-text"
+                )}
+              >
+                <Ico size={17} />
+                <span className="truncate">{item.label}</span>
+              </a>
+            );
+          })}
+          <button
+            ref={moreBtnRef}
+            onClick={() => setMoreOpen(true)}
+            className={cn(
+              "flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-[12px] px-1 text-[10.5px] font-semibold transition",
+              moreActive
+                ? "bg-brand/12 text-[#ff7a9a] ring-1 ring-[#ff3d6a]/20"
+                : "text-c-text-muted hover:bg-surface-2 hover:text-c-text"
+            )}
+          >
+            <Icons.Branch size={17} />
+            <span className="truncate">More</span>
+          </button>
+        </div>
+      </nav>
+
+      {moreOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="All pages">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50" onClick={() => setMoreOpen(false)} />
+          {/* Sheet */}
+          <div
+            ref={sheetRef}
+            tabIndex={-1}
+            className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-y-auto rounded-t-[16px] border-t border-c-border bg-surface-0 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 outline-none"
+          >
+            <div className="mx-auto mb-2 h-1 w-9 rounded-full bg-surface-3" />
+            <div className="flex items-center justify-between px-4 pb-2">
+              <span className="text-[13px] font-semibold text-c-text">All pages</span>
+              <button
+                onClick={() => setMoreOpen(false)}
+                className="grid h-7 w-7 place-items-center rounded-full text-c-text-muted hover:bg-surface-2 hover:text-c-text"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            {/* Dashboard link inside the sheet */}
+            <div className="px-2 pb-1">
+              <a
+                href="/"
+                onClick={(e) => { e.preventDefault(); setMoreOpen(false); navigate("/"); }}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-[8px] px-2.5 py-2.5 text-[13px] font-medium transition",
+                  active === "dashboard" ? "bg-surface-2 text-c-text" : "text-c-text-secondary hover:bg-surface-2 hover:text-c-text"
+                )}
+              >
+                <Icons.Bolt size={17} />
+                <span className="flex-1">Dashboard</span>
+              </a>
+            </div>
+            {allGroups.map((group) => (
+              <div key={group.label} className="px-2 pb-2">
+                <div className="px-2.5 pb-1 pt-2 text-[9.5px] font-bold uppercase tracking-[.14em] text-c-text-muted">
+                  {group.label}
+                </div>
+                {group.items.map((item) => {
+                  const Ico = Icons[item.icon];
+                  const isActive = item.key === active;
+                  return (
+                    <a
+                      key={item.key}
+                      href={item.href}
+                      onClick={(e) => { e.preventDefault(); setMoreOpen(false); navigate(item.href); }}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-[8px] px-2.5 py-2.5 text-[13px] font-medium transition",
+                        isActive ? "bg-surface-2 text-c-text" : "text-c-text-secondary hover:bg-surface-2 hover:text-c-text"
+                      )}
+                    >
+                      <Ico size={17} />
+                      <span className="flex-1">{item.label}</span>
+                      {item.badge && (
+                        <span className="rounded-full bg-surface-3 px-1.5 py-0.5 text-[10px] font-bold text-c-text-muted">{item.badge}</span>
+                      )}
+                    </a>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -221,7 +332,7 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
   const isPro = isAtLeast("pro");
 
   return (
-    <div className="relative min-h-screen" style={shellStyle}>
+    <div className="relative min-h-dvh" style={shellStyle}>
       <CommandPalette />
       <ToastContainer />
       <Sidebar active={active} collapsed={collapsed} onCollapse={() => setCollapsed((c) => !c)} isPro={isPro} />
@@ -235,7 +346,7 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
           <div className="lg:hidden">
             <ViraloIcon size={28} />
           </div>
-          <span className="cursor-pointer" onClick={() => {}}>Viralo</span>
+          <a href="/" onClick={(e) => { e.preventDefault(); navigate("/"); }} className="cursor-pointer hover:text-c-text">Viralo</a>
           <Icons.ChevronR size={11} className="hidden sm:block" />
           <span className="font-medium text-c-text-secondary">{title}</span>
         </div>
@@ -255,6 +366,13 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={openCommandPalette}
+            aria-label="Search"
+            className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-c-border bg-surface-2 text-c-text-muted transition hover:border-c-border-hover hover:text-c-text sm:hidden"
+          >
+            <Icons.Search size={15} />
+          </button>
           <button
             onClick={toggleTheme}
             aria-label="Toggle theme"
@@ -303,9 +421,14 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
       {/* Page content */}
       <main
         className={cn(
-          "relative z-[1] flex h-[calc(100vh-3.5rem)] min-h-0 flex-col transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
-          fullBleed ? "overflow-y-auto" : "overflow-y-auto px-3 pb-6 pt-5 sm:px-4 sm:pt-6 lg:pb-6"
+          "relative z-[1] flex min-h-0 flex-col transition-[margin-left] duration-300 ease-[cubic-bezier(.4,.1,.2,1)] lg:ml-[var(--sidebar-width)]",
+          fullBleed ? "overflow-y-auto" : "overflow-y-auto px-3 pb-4 pt-5 sm:px-4 sm:pt-6 sm:pb-5 lg:pb-6"
         )}
+        style={{
+          // Use dvh for dynamic viewport (handles mobile browser chrome). 
+          // Subtract header (3.5rem=56px) + bottom nav clearance.
+          height: "calc(100dvh - 3.5rem - max(env(safe-area-inset-bottom, 16px), 64px))",
+        }}
       >
         {fullBleed
           ? <div className="flex h-full min-h-0 w-full flex-1 flex-col">{children}</div>

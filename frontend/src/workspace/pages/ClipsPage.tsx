@@ -6,9 +6,10 @@ import { Platform } from "../components";
 import { UniversalClipCard } from "../components/UniversalClipCard";
 import { VirtualizedGrid, VirtualizedList } from "../components/VirtualizedCollection";
 import { Pagination } from "../components/Pagination";
-import { videoApi, platformApi, agentApi, token, API_BASES, type ClipApiResponse, type ScheduledPost, SocialAccount, type TagSuggestResponse } from "@/lib/api";
+import { videoApi, platformApi, agentApi, token, API_BASES, type ClipApiResponse, type ScheduledPost, type ScheduledPostSummary, SocialAccount, type TagSuggestResponse } from "@/lib/api";
 import { VideoEditor } from "../components/VideoEditor";
 import { addToast } from "@/stores/notifications";
+import { datetimeLocalToUtcIso } from "@/lib/datetimeLocal";
 
 const VIDEO_SSE_BASE = API_BASES.video;
 
@@ -20,15 +21,17 @@ function formatDuration(ms: number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function buildPostedClipIds(posts: ScheduledPost[]): Set<string> {
+function buildPostedClipIds(clips: ClipApiResponse[]): Set<string> {
   const s = new Set<string>();
-  for (const p of posts) { if (p.status === "posted" && p.clip_id) s.add(p.clip_id); }
+  for (const c of clips) {
+    if ((c.scheduled_posts ?? []).some((p) => p.status === "posted")) s.add(c.id);
+  }
   return s;
 }
-function buildScheduledClipIds(posts: ScheduledPost[]): Set<string> {
+function buildScheduledClipIds(clips: ClipApiResponse[]): Set<string> {
   const s = new Set<string>();
-  for (const p of posts) {
-    if (["scheduled", "pending", "processing"].includes(p.status) && p.clip_id) s.add(p.clip_id);
+  for (const c of clips) {
+    if ((c.scheduled_posts ?? []).some((p) => ["scheduled", "pending", "processing"].includes(p.status))) s.add(c.id);
   }
   return s;
 }
@@ -146,7 +149,7 @@ const ClipCard = memo(function ClipCard({ clip, active, onClick, onRetry, delay 
           <div className="space-y-2 border-t border-c-border pt-3">
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {postedPlatforms.slice(0, 2).map((p) => {
+                {postedPlatforms.map((p) => {
                   const pcfg = CARD_PLAT_CFG[p.platform?.toLowerCase() ?? ""] ?? { color: "#ff3d6a", icon: "↗" };
                   const isLive = p.status === "posted";
                   const isQ = ["scheduled","pending","processing"].includes(p.status);
@@ -279,7 +282,7 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
       made_for_kids: false,
     } : undefined;
     setSubmitting(true); setError(null);
-    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: new Date(scheduledAt).toISOString(), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined, platform_kwargs }); setSuccess(true); setTimeout(onClose, 1500); }
+    try { await platformApi.schedulePost({ clip_id: clip.id, social_account_id: selectedAccountId, platform: account.platform, scheduled_at: datetimeLocalToUtcIso(scheduledAt), caption: caption || undefined, hashtags: hashtagList.length > 0 ? hashtagList : undefined, platform_kwargs }); setSuccess(true); setTimeout(onClose, 1500); }
     catch (e) { setError(e instanceof Error ? e.message : "Something went wrong."); }
     finally { setSubmitting(false); }
   }
@@ -572,7 +575,6 @@ const PLATFORM_DOT_COLOR: Record<string, string> = {
 
 export function ClipsPage() {
   const [clips, setClips] = useState<ClipApiResponse[]>([]);
-  const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Desktop auto-selects the first clip to fill the sidebar; that must NOT auto-open
@@ -676,20 +678,11 @@ export function ClipsPage() {
     async function load() {
       setLoading(true);
       try {
-        const [clipsResp, postsResp] = await Promise.allSettled([
-          videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined, sort === "score_desc" ? "score" : undefined),
-          platformApi.listPosts({ per_page: 20 }),
-        ]);
-        if (clipsResp.status === "fulfilled") {
-          const allClips = Array.isArray(clipsResp.value.items) ? clipsResp.value.items : [];
-          setClips(allClips);
-          setTotalClips(typeof clipsResp.value.total === "number" ? clipsResp.value.total : allClips.length);
-          setSelectedId((current) => current ?? (allClips.at(0)?.id ?? null));
-        } else {
-          setClips([]);
-          setTotalClips(0);
-        }
-        setPosts(postsResp.status === "fulfilled" && Array.isArray(postsResp.value.items) ? postsResp.value.items : []);
+        const clipsResp = await videoApi.listClips(page, perPage, minViralityScore > 0 ? minViralityScore : undefined, sort === "score_desc" ? "score" : undefined);
+        const allClips = Array.isArray(clipsResp.items) ? clipsResp.items : [];
+        setClips(allClips);
+        setTotalClips(typeof clipsResp.total === "number" ? clipsResp.total : allClips.length);
+        setSelectedId((current) => current ?? (allClips.at(0)?.id ?? null));
       } catch {
         setClips([]);
         setTotalClips(0);
@@ -769,21 +762,18 @@ export function ClipsPage() {
     };
   }, []);
 
-  const postedClipIds = useMemo(() => buildPostedClipIds(posts), [posts]);
-  const scheduledClipIds = useMemo(() => buildScheduledClipIds(posts), [posts]);
+  const postedClipIds = useMemo(() => buildPostedClipIds(clips), [clips]);
+  const scheduledClipIds = useMemo(() => buildScheduledClipIds(clips), [clips]);
   const postsByClipId = useMemo(() => {
-    const map = new Map<string, ScheduledPost[]>();
-    for (const post of posts) {
-      if (!post.clip_id) continue;
-      const list = map.get(post.clip_id) ?? [];
-      list.push(post);
-      map.set(post.clip_id, list);
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const map = new Map<string, ScheduledPostSummary[]>();
+    for (const c of clips) {
+      const list = [...(c.scheduled_posts ?? [])].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      if (list.length) map.set(c.id, list);
     }
     return map;
-  }, [posts]);
+  }, [clips]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -930,7 +920,7 @@ export function ClipsPage() {
                       delay={(i % 12) * 35}
                       isPosted={postedClipIds.has(clip.id)}
                       isScheduled={scheduledClipIds.has(clip.id)}
-                      posts={postsByClipId.get(clip.id) ?? []}
+                      posts={(postsByClipId.get(clip.id) ?? []) as ScheduledPost[]}
                     />
 
                   </div>
@@ -1048,7 +1038,7 @@ export function ClipsPage() {
               const allPlatformEntries = Object.entries(drawer.clip_metadata?.platforms ?? {});
               const primaryDescription = platformContent?.description ?? drawer.clip_metadata?.ai_title ?? drawer.title ?? "";
               const primaryTags = platformContent?.tags ?? [];
-              const clipPosts = posts.filter((p) => p.clip_id === drawer.id).sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
+              const clipPosts = [...(drawer.scheduled_posts ?? [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
               const clipStart = drawer.start_ms != null ? formatDuration(drawer.start_ms) : "--:--";
               const clipEnd = drawer.end_ms != null ? formatDuration(drawer.end_ms) : "--:--";
               const score = drawer.score ?? 0;

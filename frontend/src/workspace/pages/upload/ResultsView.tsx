@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { cn, safeFilename, downloadBlob, downloadUrl, stripSrtTimecodes } from "@/lib/utils";
-import { videoApi, platformApi, type VideoResponse, type ClipApiResponse, type ScheduledPost } from "@/lib/api";
+import { videoApi, type VideoResponse, type ClipApiResponse, type ScheduledPostSummary } from "@/lib/api";
 import { VirtualizedGrid } from "../../components/VirtualizedCollection";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ClipCard, ClipDetailModal } from "./ClipCard";
@@ -359,7 +359,6 @@ export function ResultsView({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkModal, setBulkModal] = useState(false);
   const [zipModal, setZipModal] = useState(false);
-  const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [publishFilter, setPublishFilter] = useState<"all" | "posted" | "queued" | "unposted">("all");
   const [detailClip, setDetailClip] = useState<ClipApiResponse | null>(null);
   const toggleSelect = (id: string) =>
@@ -367,11 +366,10 @@ export function ResultsView({
   const selectAll = () => setSelected(new Set(clips.map((c) => c.id)));
   const clearSel = () => setSelected(new Set());
 
-  useEffect(() => {
-    platformApi.listPosts({ per_page: 200 })
-      .then((r) => setPosts(Array.isArray(r.items) ? r.items : []))
-      .catch(() => {});
-  }, []);
+  const posts = useMemo(
+    () => clips.flatMap((c) => c.scheduled_posts ?? []),
+    [clips],
+  );
 
   const postedClipIds = useMemo(() => {
     const s = new Set<string>();
@@ -388,7 +386,7 @@ export function ResultsView({
   }, [posts]);
 
   const postsByClipId = useMemo(() => {
-    const map = new Map<string, ScheduledPost[]>();
+    const map = new Map<string, ScheduledPostSummary[]>();
     for (const p of posts) {
       if (!p.clip_id) continue;
       const list = map.get(p.clip_id) ?? [];

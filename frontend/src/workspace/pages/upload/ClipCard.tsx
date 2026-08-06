@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn, safeFilename, downloadBlob, downloadUrl, stripSrtTimecodes } from "@/lib/utils";
-import { videoApi, platformApi, type ClipApiResponse, type ScheduledPost } from "@/lib/api";
+import { videoApi, platformApi, type ClipApiResponse, type ScheduledPost, type ScheduledPostSummary } from "@/lib/api";
 import { UniversalClipCard, type ClipCardAction } from "../../components/UniversalClipCard";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PLAT_DISPLAY, PlatPill, VirChip, fmtSec } from "./helpers";
@@ -26,7 +26,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
   clip: ClipApiResponse;
   isPosted?: boolean;
   isScheduled?: boolean;
-  posts?: ScheduledPost[];
+  posts?: ScheduledPostSummary[];
   onClose: () => void;
   onPublish?: () => void;
 }) {
@@ -535,7 +535,7 @@ export function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted
   onToggleSelect?: () => void;
   isPosted?: boolean;
   isScheduled?: boolean;
-  posts?: ScheduledPost[];
+  posts?: ScheduledPostSummary[];
   onOpen?: () => void;
 }) {
   const [showEditor,     setShowEditor]     = useState(false);
@@ -586,7 +586,7 @@ export function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted
     disabled?: boolean;
     onClick?: (clip: ClipApiResponse) => void;
   }> = [
-    { id: "publish", label: "Publish", icon: "↗", primary: true, onClick: () => setShowPublish(true) },
+    { id: "publish", primary: true, onClick: () => setShowPublish(true) },
     { id: "trim", label: "Trim", icon: "✂", onClick: () => setShowEditor(true) },
     { id: "edit", label: "Edit", icon: "✎", onClick: () => setShowEditor(true) },
     ...(localClip.caption_srt ? [{ id: "transcript" as ClipCardAction, label: "Transcript", icon: "☷" }] : []),
@@ -609,7 +609,7 @@ export function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted
           density="compact"
           isPosted={isPosted}
           isScheduled={isScheduled}
-          posts={posts}
+          posts={posts as ScheduledPost[]}
           showTags={false}
         />
         {regenerating && (

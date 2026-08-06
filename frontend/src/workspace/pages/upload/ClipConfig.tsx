@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { videoApi, type ClipConfig } from "@/lib/api";
-import { ASPECT_OPTIONS, ASPECT_DETAILS, LENGTH_PRESETS, CAPTION_STYLES, type CaptionStyleOption } from "./constants";
+import { ASPECT_OPTIONS, ASPECT_DETAILS, LENGTH_PRESETS, CAPTION_STYLES, LANGUAGE_OPTIONS, type CaptionStyleOption } from "./constants";
 import { formatClipTime } from "./helpers";
 
 /* 9:16 phone-frame mock of how each caption style renders on video — the
@@ -277,6 +277,49 @@ export function TargetLengthControl({
   );
 }
 
+export function ClipCaptionToggles({
+  addCaptions,
+  skipCaption,
+  onAddCaptionsChange,
+  onSkipCaptionChange,
+}: {
+  addCaptions: boolean;
+  skipCaption: boolean;
+  onAddCaptionsChange: (value: boolean) => void;
+  onSkipCaptionChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5">
+        <div>
+          <div className="text-[13px] font-bold text-c-text">Auto captions</div>
+          <div className="mt-0.5 text-[11.5px] text-c-text-muted">Burn readable subtitles into every clip.</div>
+        </div>
+        <button type="button" onClick={() => onAddCaptionsChange(!addCaptions)}
+          aria-pressed={addCaptions}
+          className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+            addCaptions ? "bg-[#ff3d6a]" : "bg-surface-3")}>
+          <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+            addCaptions ? "left-[calc(100%-24px)]" : "left-1")} />
+        </button>
+      </div>
+      <div className="flex items-start justify-between gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5">
+        <div>
+          <div className="text-[13px] font-bold text-c-text">No caption</div>
+          <div className="mt-0.5 text-[11.5px] text-c-text-muted">Skip AI titles, descriptions, and hashtags.</div>
+        </div>
+        <button type="button" onClick={() => onSkipCaptionChange(!skipCaption)}
+          aria-pressed={skipCaption}
+          className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
+            skipCaption ? "bg-[#ff3d6a]" : "bg-surface-3")}>
+          <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
+            skipCaption ? "left-[calc(100%-24px)]" : "left-1")} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig; onChange: (c: ClipConfig) => void; step?: 1 | 2 | 3 }) {
   const set = (patch: Partial<ClipConfig>) => onChange({ ...config, ...patch });
   const [captionStyles, setCaptionStyles] = useState<CaptionStyleOption[]>(CAPTION_STYLES);
@@ -368,19 +411,12 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
             <p className="mt-2 text-[11.5px] text-c-text-muted">Use this to bias clip selection without changing the source video.</p>
           </div>
 
-          <div className="flex items-start justify-between gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5">
-            <div>
-              <div className="text-[13px] font-bold text-c-text">Auto captions</div>
-              <div className="mt-0.5 text-[11.5px] text-c-text-muted">Burn readable subtitles into every clip.</div>
-            </div>
-            <button type="button" onClick={() => set({ add_captions: !config.add_captions })}
-              aria-pressed={!!config.add_captions}
-              className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200",
-                config.add_captions ? "bg-[#ff3d6a]" : "bg-surface-3")}>
-              <span className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
-                config.add_captions ? "left-[calc(100%-24px)]" : "left-1")} />
-            </button>
-          </div>
+          <ClipCaptionToggles
+            addCaptions={!!config.add_captions}
+            skipCaption={!!(config.skip_caption ?? false)}
+            onAddCaptionsChange={(add_captions) => set({ add_captions })}
+            onSkipCaptionChange={(skip_caption) => set({ skip_caption })}
+          />
         </div>}
 
         {s2 && config.add_captions && (
@@ -498,6 +534,26 @@ export function ClipConfigPanel({ config, onChange, step }: { config: ClipConfig
                 <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-200",
                   config.voiceover ? "left-[calc(100%-22px)]" : "left-0.5")} />
               </button>
+            </div>
+          </div>
+
+
+          <div className="border-t border-c-border pt-4">
+            <div className="mb-1.5 flex items-center gap-2">
+              <div className="text-[12px] font-bold text-c-text">Caption language</div>
+              {!config.language && <span className="rounded-full border border-emerald-400/20 bg-emerald-400/[.08] px-2 py-0.5 text-[10px] font-bold text-emerald-300">Auto</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+              {LANGUAGE_OPTIONS.map((l) => (
+                <button key={String(l.id)} type="button"
+                  onClick={() => set({ language: l.id })}
+                  className={cn("cursor-pointer rounded-[8px] border px-2 py-1.5 text-center text-[10.5px] font-medium transition-colors",
+                    (config.language ?? null) === l.id
+                      ? "border-[#ff3d6a]/40 bg-[#ff3d6a]/[.08] text-[#ff7a9a]"
+                      : "border-c-border bg-surface-1 text-c-text-secondary hover:border-c-border-hover")}>
+                  {l.label}
+                </button>
+              ))}
             </div>
           </div>
 

@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { navigate } from "@/lib/router";
-import { videoApi, platformApi, type ClipConfig, type VideoResponse, type SocialAccount } from "@/lib/api";
-import { DEFAULT_CONFIG } from "./UploadPage";
-import { CAPTION_STYLES, type CaptionStyleOption } from "./upload/constants";
+import { videoApi, platformApi, type VideoResponse, type SocialAccount } from "@/lib/api";
+import { CAPTION_STYLES, buildStudioModalClipConfig, type CaptionStyleOption } from "./upload/constants";
+import { ClipCaptionToggles } from "./upload/ClipConfig";
 
 // ── YouTube Import Modal ──────────────────────────────────────────────────────
 
@@ -227,6 +227,8 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
   const [clipCount, setClipCount] = useState<string>("auto");
   const [tab, setTab]             = useState<typeof TEMPLATE_TABS[number]>("9:16 template");
   const [template, setTemplate]   = useState<string>("tiktok");
+  const [addCaptions, setAddCaptions] = useState(true);
+  const [skipCaption, setSkipCaption] = useState(false);
   const [feat, setFeat]           = useState({ emoji: true, highlight: true, silences: false, brolls: false });
   const [findMoment, setFindMoment] = useState("");
   const [autoSchedule, setAutoSchedule] = useState(false);
@@ -327,32 +329,31 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
       const tpl = CAPTION_STYLES.find((s) => (s.id ?? "auto") === template);
       const len = CLIP_LENGTHS.find((c) => c.id === clipLen);
       const cnt = CLIP_COUNTS.find((c) => c.id === clipCount);
-      const cfg: ClipConfig = {
-        ...DEFAULT_CONFIG,
-        output_quality: "source",
-        aspect_ratio: ratio,
-        add_captions: true,
-        caption_style: tpl?.id ?? null,
-        ...(len?.min != null ? { duration_min: len.min, duration_max: len.max } : {}),
-        ...(cnt?.value != null ? { max_clips: cnt.value } : {}),
-        ...(findMoment.trim() ? { topic_focus: findMoment.trim() } : {}),
+      const cfg = buildStudioModalClipConfig({
+        ratio,
+        durationMin: len?.min,
+        durationMax: len?.max,
+        maxClips: cnt?.value,
+        captionStyle: tpl?.id ?? null,
+        topicFocus: findMoment.trim() || undefined,
+        addCaptions,
+        skipCaption,
         ...(autoSchedule && pubAccountIds.length > 0 ? {
-          auto_publish: true,
-          auto_publish_config: {
+          autoPublish: {
             social_account_ids: pubAccountIds,
             publish_per_day: pubPerDay,
             publish_interval_hours: pubIntervalHours,
             publish_start_at: publishStart.toISOString(),
           },
         } : {}),
-      };
+      });
       const video = await videoApi.youtube(urlVal.trim(), undefined, cfg);
       navigate(`/projects/${video.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
       setUploading(false);
     }
-  }, [urlVal, urlReady, ratio, clipLen, clipCount, template, findMoment, autoSchedule, pubAccountIds, pubPerDay, pubIntervalHours, pubStartAt]);
+  }, [urlVal, urlReady, ratio, clipLen, clipCount, template, findMoment, addCaptions, skipCaption, autoSchedule, pubAccountIds, pubPerDay, pubIntervalHours, pubStartAt]);
 
   const selectClass = "flex h-[50px] items-center gap-2 rounded-[12px] border border-c-border bg-surface-2 px-3.5 transition focus-within:border-[#ff3d6a]/50";
 
@@ -464,6 +465,15 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
                 </label>
               </div>
 
+              <div className="mb-4">
+                <ClipCaptionToggles
+                  addCaptions={addCaptions}
+                  skipCaption={skipCaption}
+                  onAddCaptionsChange={setAddCaptions}
+                  onSkipCaptionChange={setSkipCaption}
+                />
+              </div>
+
               {/* ── Template tabs ── */}
               <div className="mb-3 flex items-center gap-1 border-b border-c-border">
                 {TEMPLATE_TABS.map((t) => (
@@ -484,16 +494,22 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
 
               {/* ── Caption template carousel ── */}
               {tab === "9:16 template" ? (
-                <div className="relative">
-                  <div ref={carouselRef} className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="relative -mx-5 px-5 sm:mx-0 sm:px-0">
+                  <div
+                    ref={carouselRef}
+                    className="flex snap-x snap-proximity gap-3 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
                     {CAPTION_STYLES.map((s) => (
-                      <CaptionCard key={String(s.id)} s={s} selected={template === (s.id ?? "auto")} onSelect={() => setTemplate(s.id ?? "auto")} />
+                      <div key={String(s.id)} className="snap-start">
+                        <CaptionCard s={s} selected={template === (s.id ?? "auto")} onSelect={() => setTemplate(s.id ?? "auto")} />
+                      </div>
                     ))}
                   </div>
+                  <div className="pointer-events-none absolute right-0 top-0 h-[200px] w-10 bg-gradient-to-l from-surface-0 to-transparent sm:hidden" />
                   <button
                     type="button"
                     onClick={() => carouselRef.current?.scrollBy({ left: 280, behavior: "smooth" })}
-                    className="absolute right-1 top-[92px] grid h-8 w-8 place-items-center rounded-full border border-c-border bg-surface-0 text-c-text shadow-lg transition hover:bg-surface-3"
+                    className="absolute right-1 top-[92px] hidden h-8 w-8 place-items-center rounded-full border border-c-border bg-surface-0 text-c-text shadow-lg transition hover:bg-surface-3 sm:grid"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M9 18l6-6-6-6"/></svg>
                   </button>
@@ -642,6 +658,8 @@ function UploadConfigModal({ file, onClose }: UploadModalProps) {
   const [clipCount, setClipCount] = useState<string>("auto");
   const [tab, setTab]             = useState<typeof TEMPLATE_TABS[number]>("9:16 template");
   const [template, setTemplate]   = useState<string>("tiktok");
+  const [addCaptions, setAddCaptions] = useState(true);
+  const [skipCaption, setSkipCaption] = useState(false);
   const [feat, setFeat]           = useState({ emoji: true, highlight: true, silences: false, brolls: false });
   const [findMoment, setFindMoment] = useState("");
   const [autoSchedule, setAutoSchedule] = useState(false);
@@ -701,32 +719,31 @@ function UploadConfigModal({ file, onClose }: UploadModalProps) {
       const tpl = CAPTION_STYLES.find((s) => (s.id ?? "auto") === template);
       const len = CLIP_LENGTHS.find((c) => c.id === clipLen);
       const cnt = CLIP_COUNTS.find((c) => c.id === clipCount);
-      const cfg: ClipConfig = {
-        ...DEFAULT_CONFIG,
-        output_quality: "source",
-        aspect_ratio: ratio,
-        add_captions: true,
-        caption_style: tpl?.id ?? null,
-        ...(len?.min != null ? { duration_min: len.min, duration_max: len.max } : {}),
-        ...(cnt?.value != null ? { max_clips: cnt.value } : {}),
-        ...(findMoment.trim() ? { topic_focus: findMoment.trim() } : {}),
+      const cfg = buildStudioModalClipConfig({
+        ratio,
+        durationMin: len?.min,
+        durationMax: len?.max,
+        maxClips: cnt?.value,
+        captionStyle: tpl?.id ?? null,
+        topicFocus: findMoment.trim() || undefined,
+        addCaptions,
+        skipCaption,
         ...(autoSchedule && pubAccountIds.length > 0 ? {
-          auto_publish: true,
-          auto_publish_config: {
+          autoPublish: {
             social_account_ids: pubAccountIds,
             publish_per_day: pubPerDay,
             publish_interval_hours: pubIntervalHours,
             publish_start_at: publishStart.toISOString(),
           },
         } : {}),
-      };
+      });
       const video = await videoApi.upload(file, file.name.replace(/\.[^.]+$/, ""), cfg);
       navigate(`/projects/${video.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
       setUploading(false);
     }
-  }, [file, ratio, clipLen, clipCount, template, findMoment, autoSchedule, pubAccountIds, pubPerDay, pubIntervalHours, pubStartAt]);
+  }, [file, ratio, clipLen, clipCount, template, findMoment, addCaptions, skipCaption, autoSchedule, pubAccountIds, pubPerDay, pubIntervalHours, pubStartAt]);
 
   const selectClass = "flex h-[50px] items-center gap-2 rounded-[12px] border border-c-border bg-surface-2 px-3.5 transition focus-within:border-[#ff3d6a]/50";
 
@@ -787,6 +804,15 @@ function UploadConfigModal({ file, onClose }: UploadModalProps) {
               </select>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth={2.2}><path d="M6 9l6 6 6-6"/></svg>
             </label>
+          </div>
+
+          <div className="mb-4">
+            <ClipCaptionToggles
+              addCaptions={addCaptions}
+              skipCaption={skipCaption}
+              onAddCaptionsChange={setAddCaptions}
+              onSkipCaptionChange={setSkipCaption}
+            />
           </div>
 
           {/* ── Template tabs ── */}

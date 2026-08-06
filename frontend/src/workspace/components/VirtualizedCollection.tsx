@@ -14,6 +14,22 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+/** Walk up the DOM to find the nearest ancestor that actually scrolls (overflow-y auto/scroll).
+ *  The app's page content scrolls inside <main className="overflow-y-auto"> (see Shell.tsx),
+ *  not the window — so virtualization must track that element's scroll, not just window's.
+ */
+function findScrollParent(node: HTMLElement | null): HTMLElement | Window {
+  let el = node?.parentElement ?? null;
+  while (el) {
+    const style = window.getComputedStyle(el);
+    if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return window;
+}
+
 function useElementWidth<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
   const [width, setWidth] = useState(0);
@@ -52,7 +68,11 @@ function useVirtualRange(total: number, estimateSize: number, overscan = 4): [Re
     const rect = node.getBoundingClientRect();
     const totalHeight = total * estimateSize;
     const visibleTop = Math.max(0, -rect.top);
-    const visibleBottom = Math.min(totalHeight, Math.max(0, window.innerHeight - rect.top));
+    const scrollParent = findScrollParent(node);
+    const viewportHeight = scrollParent instanceof Window
+      ? window.innerHeight
+      : scrollParent.getBoundingClientRect().height;
+    const visibleBottom = Math.min(totalHeight, Math.max(0, viewportHeight - rect.top));
     const first = clamp(Math.floor(visibleTop / estimateSize) - overscan, 0, Math.max(0, total - 1));
     const last = clamp(Math.ceil(visibleBottom / estimateSize) + overscan, first + 1, total);
 
@@ -75,7 +95,8 @@ function useVirtualRange(total: number, estimateSize: number, overscan = 4): [Re
     };
 
     updateRange();
-    window.addEventListener("scroll", schedule, { passive: true });
+    const scrollParent = findScrollParent(ref.current);
+    scrollParent.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule, { passive: true });
 
     const observer = new ResizeObserver(schedule);
@@ -84,7 +105,7 @@ function useVirtualRange(total: number, estimateSize: number, overscan = 4): [Re
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
       observer.disconnect();
-      window.removeEventListener("scroll", schedule);
+      scrollParent.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
     };
   }, [updateRange]);

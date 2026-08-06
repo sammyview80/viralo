@@ -170,6 +170,74 @@ def _load_font_cached(size: int):
     return _load_font(size)
 
 
+def _is_emoji_char(char: str) -> bool:
+    if len(char) != 1:
+        return False
+    o = ord(char)
+    return (
+        0x1F300 <= o <= 0x1FAFF
+        or 0x2600 <= o <= 0x27BF
+        or o in (0xFE0F, 0x200D)
+    )
+
+
+@_lru_cache(maxsize=4096)
+def _path_has_glyph(path: str, char: str) -> bool:
+    if _is_emoji_char(char) and "emoji" in path.lower():
+        return os.path.isfile(path)
+    try:
+        from fontTools.ttLib import TTFont
+        tt = TTFont(path, lazy=True)
+        cmap = tt.getBestCmap() or {}
+        return ord(char) in cmap
+    except Exception:
+        pass
+    try:
+        from PIL import ImageFont
+        f = ImageFont.truetype(path, 24)
+        bb = f.getbbox(char)
+        return bool(bb and (bb[2] - bb[0]) > 0)
+    except Exception:
+        return False
+
+
+@_lru_cache(maxsize=512)
+def _font_path_for_char(char: str) -> str:
+    for path in FONT_PATHS:
+        if os.path.isfile(path) and _path_has_glyph(path, char):
+            return path
+    for path in FONT_PATHS:
+        if os.path.isfile(path):
+            return path
+    return FONT_PATHS[0]
+
+
+@_lru_cache(maxsize=2048)
+def _load_font_for_char(char: str, size: int):
+    from PIL import ImageFont
+    path = _font_path_for_char(char)
+    try:
+        return ImageFont.truetype(path, size)
+    except Exception:
+        return _load_font(size)
+
+
+def _text_width_mixed(draw, text: str, size: int) -> float:
+    total = 0.0
+    for ch in text:
+        f = _load_font_for_char(ch, size)
+        total += draw.textlength(ch, font=f)
+    return total
+
+
+def _draw_text_mixed(draw, xy, text: str, size: int, fill):
+    x, y = xy
+    for ch in text:
+        f = _load_font_for_char(ch, size)
+        draw.text((x, y), ch, font=f, fill=fill)
+        x += draw.textlength(ch, font=f)
+
+
 
 def _build_caption_timeline(segments: list[CaptionSegment], style: str) -> dict:
     """
@@ -256,24 +324,26 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
 
     draw = ImageDraw.Draw(img)
 
+    def _caption_text(xy, text, font, fill):
+        size = int(getattr(font, "size", font_size))
+        _draw_text_mixed(draw, xy, text, size, fill)
+
     def fit_font(text: str, font, max_w: int):
         """Step the font size down until the text fits max_w (captions must never overflow the frame)."""
-        bb = draw.textbbox((0, 0), text, font=font)
-        if bb[2] - bb[0] <= max_w:
-            return font
         size = int(getattr(font, "size", font_size))
+        if _text_width_mixed(draw, text, size) <= max_w:
+            return font
         while size > 24:
             size = int(size * 0.9)
-            f = _load_font_cached(size)
-            bb = draw.textbbox((0, 0), text, font=f)
-            if bb[2] - bb[0] <= max_w:
-                return f
+            if _text_width_mixed(draw, text, size) <= max_w:
+                return _load_font_cached(size)
         return _load_font_cached(24)
 
     def draw_centered_outline(text, y, font, color, stroke_width=4, stroke_color=(0, 0, 0, 255), bg=None, pad=16):
         font = fit_font(text, font, int(width * 0.92))
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        size = int(getattr(font, "size", font_size))
+        tw = int(_text_width_mixed(draw, text, size))
+        th = draw.textbbox((0, 0), text, font=font)[3] - draw.textbbox((0, 0), text, font=font)[1]
         x = (width - tw) // 2
         if bg and bg[3] > 0:
             draw.rounded_rectangle([x - pad, y - pad // 2, x + tw + pad, y + th + pad // 2], radius=8, fill=bg)
@@ -281,8 +351,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
             for dy in range(-stroke_width, stroke_width + 1):
                 if dx == 0 and dy == 0:
                     continue
-                draw.text((x + dx, y + dy), text, font=font, fill=stroke_color)
-        draw.text((x, y), text, font=font, fill=color)
+                _caption_text((x + dx, y + dy), text, font=font, fill=stroke_color)
+        _caption_text((x, y), text, font=font, fill=color)
 
     def draw_capcut_inline(words: list, active_idx: int, y: int, bold: bool):
         """Draw words in one or two rows; wraps to second row if total exceeds frame width."""
@@ -346,8 +416,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                 wx = x + PAD_X
                 wy = pill_y + PAD_Y
                 if i != act_idx:
-                    draw.text((wx + 2, wy + 2), w, font=font, fill=(0, 0, 0, 120))
-                draw.text((wx, wy), w, font=font, fill=txt_color)
+                    _caption_text((wx + 2, wy + 2), w, font=font, fill=(0, 0, 0, 120))
+                _caption_text((wx, wy), w, font=font, fill=txt_color)
                 x += pw + GAP
 
     def draw_karaoke_line(words: list, active_idx: int, y: int):
@@ -370,8 +440,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                 for dy in range(-3, 4):
                     if dx == 0 and dy == 0:
                         continue
-                    draw.text((x + dx, y + dy), w, font=font, fill=(0, 0, 0, 255))
-            draw.text((x, y), w, font=font, fill=color)
+                    _caption_text((x + dx, y + dy), w, font=font, fill=(0, 0, 0, 255))
+            _caption_text((x, y), w, font=font, fill=color)
             x += tw + GAP
 
     def draw_tiktok_reveal(words: list, active_idx: int, y: int):
@@ -404,7 +474,7 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
             ly = y + i * (line_h + LINE_GAP)
             draw.rounded_rectangle([x - PAD_X, ly - PAD_Y, x + tw + PAD_X, ly + th + PAD_Y],
                                    radius=12, fill=bg_color)
-            draw.text((x, ly), ln, font=font_main, fill=text_color)
+            _caption_text((x, ly), ln, font=font_main, fill=text_color)
 
     def _line_layout(words: list, font, gap: int = 12):
         """Common word-row measure: returns (font, sizes, x_start, row_height)."""
@@ -436,8 +506,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
             for dx in range(-3, 4):
                 for dy in range(-3, 4):
                     if dx or dy:
-                        draw.text((x + dx, wy + dy), w, font=f, fill=(0, 0, 0, 255))
-            draw.text((x, wy), w, font=f, fill=color)
+                        _caption_text((x + dx, wy + dy), w, font=f, fill=(0, 0, 0, 255))
+            _caption_text((x, wy), w, font=f, fill=color)
             x += tw + GAP
 
     def draw_glow_line(words: list, active_idx: int, y: int):
@@ -455,7 +525,7 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
                 for dx in (-r, 0, r):
                     for dy in (-r, 0, r):
                         if dx or dy:
-                            hdraw.text((x + dx, y + dy), w, font=font, fill=(*highlight_color[:3], 255))
+                            _caption_text((x + dx, y + dy), w, font=font, fill=(*highlight_color[:3], 255))
             x += tw + GAP
         from PIL import ImageFilter as _PILFilter
         mask = halo_layer.getchannel("A").filter(_PILFilter.GaussianBlur(5))
@@ -464,8 +534,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         img.paste(solid, (0, 0), mask=mask)
         x = x0
         for i, (w, (tw, _h)) in enumerate(zip(words, sizes)):
-            draw.text((x + 1, y + 1), w, font=font, fill=(0, 0, 0, 140))
-            draw.text((x, y), w, font=font, fill=highlight_color if i == active_idx else text_color)
+            _caption_text((x + 1, y + 1), w, font=font, fill=(0, 0, 0, 140))
+            _caption_text((x, y), w, font=font, fill=highlight_color if i == active_idx else text_color)
             x += tw + GAP
 
     def draw_highlighter_line(words: list, active_idx: int, y: int):
@@ -478,10 +548,10 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
             if i == active_idx:
                 draw.rounded_rectangle([x - 6, y - 4, x + tw + 6, y + th + 6],
                                        radius=6, fill=(*highlight_color[:3], 235))
-                draw.text((x, y), w, font=font, fill=marker_txt)
+                _caption_text((x, y), w, font=font, fill=marker_txt)
             else:
-                draw.text((x + 2, y + 2), w, font=font, fill=(0, 0, 0, 170))
-                draw.text((x, y), w, font=font, fill=text_color)
+                _caption_text((x + 2, y + 2), w, font=font, fill=(0, 0, 0, 170))
+                _caption_text((x, y), w, font=font, fill=text_color)
             x += tw + GAP
 
     _RAINBOW = [(255, 82, 82, 255), (255, 165, 40, 255), (250, 220, 50, 255),
@@ -496,8 +566,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
             for dx in range(-3, 4):
                 for dy in range(-3, 4):
                     if dx or dy:
-                        draw.text((x + dx, y + dy), w, font=font, fill=(0, 0, 0, 255))
-            draw.text((x, y), w, font=font, fill=color)
+                        _caption_text((x + dx, y + dy), w, font=font, fill=(0, 0, 0, 255))
+            _caption_text((x, y), w, font=font, fill=color)
             if i == active_idx:
                 draw.rounded_rectangle([x, y + th + 6, x + tw, y + th + 11], radius=2, fill=color)
             x += tw + GAP
@@ -518,11 +588,11 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         bb = draw.textbbox((0, 0), ctx_text, font=font)
         tw = bb[2] - bb[0]
         x = (width - tw) // 2
-        draw.text((x + 6, y_base + 6), ctx_text, font=font, fill=highlight_color)
+        _caption_text((x + 6, y_base + 6), ctx_text, font=font, fill=highlight_color)
         for dx in (-2, 2):
             for dy in (-2, 2):
-                draw.text((x + dx, y_base + dy), ctx_text, font=font, fill=(0, 0, 0, 220))
-        draw.text((x, y_base), ctx_text, font=font, fill=text_color)
+                _caption_text((x + dx, y_base + dy), ctx_text, font=font, fill=(0, 0, 0, 220))
+        _caption_text((x, y_base), ctx_text, font=font, fill=text_color)
 
     elif style == "bounce" and isinstance(entry[0], list):
         words, active_idx = entry
@@ -574,8 +644,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
         bbox = draw.textbbox((0, 0), ctx_text, font=font)
         tw = bbox[2] - bbox[0]
         x = (width - tw) // 2
-        draw.text((x + 2, y_base + 2), ctx_text, font=font, fill=(0, 0, 0, 100))
-        draw.text((x, y_base), ctx_text, font=font, fill=ctx_color)
+        _caption_text((x + 2, y_base + 2), ctx_text, font=font, fill=(0, 0, 0, 100))
+        _caption_text((x, y_base), ctx_text, font=font, fill=ctx_color)
 
     else:  # capcut default
         if isinstance(entry[0], list):
@@ -591,8 +661,8 @@ def _draw_caption(img, t: float, caption_timeline: dict, style: str, width: int,
             if bg_color[3] > 0:
                 draw.rounded_rectangle([x - 16, y_base - 8, x + tw + 16, y_base + th + 8],
                                        radius=8, fill=bg_color)
-            draw.text((x + 3, y_base + 3), ctx_text, font=font, fill=(0, 0, 0, 170))
-            draw.text((x, y_base), ctx_text, font=font, fill=ctx_color)
+            _caption_text((x + 3, y_base + 3), ctx_text, font=font, fill=(0, 0, 0, 170))
+            _caption_text((x, y_base), ctx_text, font=font, fill=ctx_color)
 
     return img
 

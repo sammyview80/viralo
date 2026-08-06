@@ -37,13 +37,13 @@ function SocialConnectBanner({ isRanking = false }: { isRanking?: boolean }) {
   if (unconnected.length === 0) {
     return (
       <div className="rounded-[13px] border border-emerald-300/25 bg-emerald-50 p-4 dark:border-emerald-300/15 dark:bg-emerald-400/[.04]">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-emerald-300/30 bg-emerald-100 text-emerald-600 text-sm dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-300">✓</div>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-[13px] font-semibold text-emerald-600 dark:text-emerald-300">All platforms connected</div>
             <div className="text-[11.5px] text-c-text-muted">{isRanking ? "Ranking video" : "Clips"} will be ready to publish when processing completes.</div>
           </div>
-          <a href="/integrations" className="ml-auto text-[11.5px] font-semibold text-c-text-muted transition hover:text-c-text">Manage →</a>
+          <a href="/integrations" className="shrink-0 self-start text-[11.5px] font-semibold text-c-text-muted transition hover:text-c-text sm:ml-auto sm:self-center">Manage →</a>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {accounts.filter((a) => a.is_active).map((a) => {
@@ -62,9 +62,9 @@ function SocialConnectBanner({ isRanking = false }: { isRanking?: boolean }) {
 
   return (
     <div className="rounded-[13px] border border-[#ff3d6a]/20 bg-[#ff3d6a]/[.05] p-4 dark:border-[#ff3d6a]/15 dark:bg-[#ff3d6a]/[.04]" style={{ animation: "fadeUp .3s .4s cubic-bezier(.22,.8,.4,1) both" }}>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="grid h-8 w-8 flex-none place-items-center rounded-[8px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a] text-sm">↗</div>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold text-c-text">Connect social accounts while you wait</div>
           <div className="mt-0.5 text-[11.5px] text-c-text-muted">
             {connectedIds.size > 0
@@ -73,7 +73,7 @@ function SocialConnectBanner({ isRanking = false }: { isRanking?: boolean }) {
           </div>
         </div>
         <a href="/integrations"
-          className="ml-auto flex-none rounded-[8px] border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-3 py-1.5 text-[12px] font-semibold text-[#ff3d6a] transition hover:bg-[#ff3d6a]/20">
+          className="shrink-0 self-start rounded-[8px] border border-[#ff3d6a]/30 bg-[#ff3d6a]/10 px-3 py-1.5 text-[12px] font-semibold text-[#ff3d6a] transition hover:bg-[#ff3d6a]/20 sm:ml-auto sm:self-center">
           Connect →
         </a>
       </div>
@@ -333,43 +333,57 @@ export function ProcessingView({
   const sourceLabel = isRankingVideo ? "Ranking video" : current.source_type === "youtube_url" ? "YouTube" : "Uploaded file";
 
   const isDone = current.status === "done" || current.status === "ready" || current.pipeline_step === "complete";
+  const showCancel = Boolean(onCancel && current.status !== "failed" && !isTerminal(current));
+  const showNewUpload = Boolean(onNewUpload);
+  const useActionGrid = showCancel && showNewUpload;
 
   // suppress unused warning
   void liveMsg;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-testid="processing-view" className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-x-hidden">
       {/* ── HEADER ───────────────────────────────── */}
-      <div className="rounded-[16px] border border-c-border bg-surface-1 p-5">
+      <div className="min-w-0 overflow-hidden rounded-[16px] border border-c-border bg-surface-1 p-4 sm:p-5">
           {/* Top row */}
-          <div className="mb-6 flex items-start gap-4">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="flex min-w-0 items-start gap-4">
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ff3d6a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
               </svg>
             </div>
-            <div className="flex-1">
-              <h1 className="text-[22px] font-bold leading-tight tracking-[-0.4px] text-c-text">Processing…</h1>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[20px] font-bold leading-tight tracking-[-0.4px] text-c-text sm:text-[22px]">Processing…</h1>
               <p className="mt-0.5 text-[13px] text-c-text-muted">
                 {isRankingVideo ? "Rendering your ranked countdown video." : "AI is analyzing your video and generating clips."}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2.5">
+            </div>
+            <div
+              data-testid="processing-actions"
+              className={cn(
+                "w-full gap-2 sm:ml-auto sm:flex sm:w-auto sm:shrink-0 sm:justify-end",
+                useActionGrid ? "grid grid-cols-2 sm:flex" : "flex flex-wrap",
+              )}
+            >
               <button onClick={() => navigate("/projects")}
-                className="inline-flex items-center rounded-[10px] border border-c-border bg-surface-2 px-3.5 py-2 text-[13px] font-medium text-c-text-secondary transition hover:bg-surface-3">
+                className="inline-flex w-full items-center justify-center rounded-[10px] border border-c-border bg-surface-2 px-3 py-2 text-[13px] font-medium text-c-text-secondary transition hover:bg-surface-3 sm:w-auto sm:px-3.5">
                 Projects
               </button>
-              {onCancel && current.status !== "failed" && !isTerminal(current) && (
+              {showCancel && (
                 <button
-                  onClick={() => { if (window.confirm("Cancel processing? This cannot be undone.")) onCancel(); }}
-                  className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-400/30 bg-red-50 px-3.5 py-2 text-[13px] font-medium text-red-500 transition hover:bg-red-100 dark:border-red-400/[.28] dark:bg-red-400/[.07] dark:text-red-400 dark:hover:bg-red-400/[.14]">
+                  onClick={() => { if (window.confirm("Cancel processing? This cannot be undone.")) onCancel!(); }}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-red-400/30 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-500 transition hover:bg-red-100 dark:border-red-400/[.28] dark:bg-red-400/[.07] dark:text-red-400 dark:hover:bg-red-400/[.14] sm:w-auto sm:px-3.5">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   Cancel
                 </button>
               )}
-              {onNewUpload && (
-                <button onClick={() => isRankingVideo ? navigate("/ranking") : onNewUpload()}
-                  className="inline-flex items-center gap-1.5 rounded-[10px] bg-[#ff3d6a] px-3.5 py-2 text-[13px] font-semibold text-white transition hover:opacity-85">
+              {showNewUpload && (
+                <button onClick={() => isRankingVideo ? navigate("/ranking") : onNewUpload!()}
+                  className={cn(
+                    "inline-flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-[#ff3d6a] px-3 py-2 text-[13px] font-semibold text-white transition hover:opacity-85 sm:w-auto sm:px-3.5",
+                    useActionGrid && "col-span-2 sm:col-span-1",
+                  )}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   {isRankingVideo ? "New ranking" : "New upload"}
                 </button>
@@ -378,13 +392,14 @@ export function ProcessingView({
           </div>
 
           {/* Video strip */}
-          <div className="flex items-center gap-4 rounded-[12px] border border-c-border bg-surface-2 p-3">
+          <div data-testid="processing-video-strip" className="flex min-w-0 flex-col gap-3 overflow-hidden rounded-[12px] border border-c-border bg-surface-2 p-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex min-w-0 items-center gap-4">
             <div className={cn("grid h-12 w-14 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-gradient-to-br", grad)}>
               <span className="text-xl">{isRankingVideo ? "🏆" : "🎬"}</span>
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[15px] font-semibold text-c-text">{current.title ?? "Untitled"}</div>
-              <div className="mt-1 flex items-center gap-2 text-[12px] text-c-text-muted">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-c-text-muted">
                 <span>{sourceLabel}</span>
                 {current.duration_sec && <><span className="text-c-text-muted">·</span><span>{fmtDur(current.duration_sec)}</span></>}
                 <span className="text-c-text-muted">·</span>
@@ -394,7 +409,8 @@ export function ProcessingView({
                 }
               </div>
             </div>
-            <div className="min-w-[130px] shrink-0 text-right">
+            </div>
+            <div className="w-full min-w-0 sm:w-auto sm:min-w-[130px] sm:shrink-0 sm:text-right">
               {current.created_at && <div className="mb-1.5 text-[11px] text-c-text-muted">Elapsed: {formatElapsedSince(current.created_at, now)}</div>}
               <div className="h-[3px] w-full overflow-hidden rounded-full bg-surface-3">
                 <div className="h-full rounded-full bg-gradient-to-r from-[#ff3d6a] to-[#F59E0B] transition-[width_.3s_linear]" style={{ width: `${overallPct}%` }} />
@@ -405,11 +421,11 @@ export function ProcessingView({
       </div>
 
       {/* ── LEAVE PAGE NOTICE ────────────────────── */}
-      <div className="flex items-center gap-2.5 rounded-[10px] border border-c-border bg-surface-1 px-4 py-2.5">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-c-text-muted">
+      <div className="flex min-w-0 items-start gap-2.5 overflow-hidden rounded-[10px] border border-c-border bg-surface-1 px-4 py-2.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0 text-c-text-muted">
           <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
         </svg>
-        <p className="text-[12px] text-c-text-muted">
+        <p className="min-w-0 flex-1 text-[12px] text-c-text-muted">
           You can leave this page — processing continues in the background. You'll be emailed and notified when your {isRankingVideo ? "ranking video is" : "clips are"} ready.
         </p>
       </div>
@@ -455,10 +471,10 @@ export function ProcessingView({
       )}
 
       {/* ── TWO-COLUMN MAIN ───────────────────────── */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "260px 1fr" }}>
+      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-[260px_1fr]">
 
         {/* LEFT: VERTICAL STEPPER */}
-        <div className="rounded-[18px] border border-c-border bg-surface-1 p-5">
+        <div className="min-w-0 overflow-hidden rounded-[18px] border border-c-border bg-surface-1 p-4 sm:p-5">
           <div className="mb-5 text-[10px] font-bold uppercase tracking-[1.2px] text-c-text-muted">Pipeline</div>
           <div className="flex flex-col">
             {pipelineSteps.filter((_, i) => i < pipelineSteps.length - 1).map((step, i) => {
@@ -513,7 +529,7 @@ export function ProcessingView({
         </div>
 
         {/* RIGHT COLUMN */}
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <SocialConnectBanner isRanking={isRankingVideo} />
 
           {liveEvents.length > 0 && (

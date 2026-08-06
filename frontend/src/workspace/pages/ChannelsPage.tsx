@@ -218,7 +218,7 @@ function AddChannelModal({ onClose, onSuccess, initialUrl }: { onClose: () => vo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-[480px] max-h-[90vh] overflow-y-auto rounded-[18px] border border-c-border bg-surface-1 shadow-[0_32px_80px_rgba(0,0,0,.6)]"
+      <div className="w-full max-w-[480px] max-h-[90vh] overflow-y-auto rounded-[18px] border border-c-border bg-surface-1 pb-[max(env(safe-area-inset-bottom),4rem)] shadow-[0_32px_80px_rgba(0,0,0,.6)]"
         style={{ animation: "fadeUp .2s cubic-bezier(.22,.8,.4,1)" }}>
         <div className="flex items-center justify-between border-b border-c-border px-5 py-4">
           <div>
@@ -227,7 +227,7 @@ function AddChannelModal({ onClose, onSuccess, initialUrl }: { onClose: () => vo
           </div>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-full text-c-text-muted transition hover:bg-surface-2 hover:text-c-text">✕</button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3 p-5">
+        <form onSubmit={handleSubmit} className="space-y-3 p-5 [&_input,&_select,&_textarea]:scroll-mb-16">
           <div className="flex gap-2">
             <input
               value={urlInput}

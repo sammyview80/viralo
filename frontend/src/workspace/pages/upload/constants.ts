@@ -15,11 +15,57 @@ export const LENGTH_PRESETS = [
   { id: "custom", label: "Custom", hint: "Manual", min: null, max: null },
 ] as const;
 
+
+export const LANGUAGE_OPTIONS = [
+  { id: null, label: "Auto" },
+  { id: "en", label: "English" },
+  { id: "es", label: "Spanish" },
+  { id: "fr", label: "French" },
+  { id: "de", label: "German" },
+  { id: "it", label: "Italian" },
+  { id: "pt", label: "Portuguese" },
+  { id: "ja", label: "Japanese" },
+  { id: "ko", label: "Korean" },
+  { id: "hi", label: "Hindi" },
+  { id: "zh", label: "Chinese" },
+] as const;
+
+export type StudioModalClipInput = {
+  ratio: string;
+  durationMin?: number;
+  durationMax?: number;
+  maxClips?: number;
+  captionStyle: string | null;
+  topicFocus?: string;
+  addCaptions: boolean;
+  skipCaption: boolean;
+  autoPublish?: NonNullable<ClipConfig["auto_publish_config"]>;
+};
+
+export function buildStudioModalClipConfig(input: StudioModalClipInput): ClipConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    output_quality: "source",
+    aspect_ratio: input.ratio,
+    add_captions: input.addCaptions,
+    skip_caption: input.skipCaption,
+    caption_style: input.captionStyle,
+    ...(input.durationMin != null && input.durationMax != null
+      ? { duration_min: input.durationMin, duration_max: input.durationMax }
+      : {}),
+    ...(input.maxClips != null ? { max_clips: input.maxClips } : {}),
+    ...(input.topicFocus ? { topic_focus: input.topicFocus } : {}),
+    ...(input.autoPublish ? { auto_publish: true, auto_publish_config: input.autoPublish } : {}),
+  };
+}
+
 export const DEFAULT_CONFIG: ClipConfig = {
   max_clips: 3,
   min_score: 0.5,
   topic_focus: null,
   add_captions: false,
+  skip_caption: false,
+  language: null,
   caption_style: null,
   aspect_ratio: "9:16",
   duration_min: 20,

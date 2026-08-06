@@ -124,6 +124,9 @@ export function UniversalClipCard({
   }
 
   const primaryAction = actions.find((a) => a.primary) ?? actions.find((a) => a.id === "publish");
+  const displayPrimary = primaryAction?.id === "publish"
+    ? { ...primaryAction, label: isPosted ? "Live" : isScheduled ? "Queued" : (primaryAction.label ?? "Publish"), icon: isPosted ? "✓" : isScheduled ? "⏱" : (primaryAction.icon ?? defaultIcon("publish")) }
+    : primaryAction;
   const secondaryActions = actions.filter((a) => a !== primaryAction);
 
   return (
@@ -202,13 +205,13 @@ export function UniversalClipCard({
       <div className={cn("space-y-3", p)}>
         <div className="space-y-1.5">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text">{title}</h3>
+            <h3 title={title} className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text">{title}</h3>
             <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-c-border bg-surface-3 px-2 py-1">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: scoreColor }} />
               <span className="font-mono text-[11px] font-bold" style={{ color: scoreColor }}>{score}</span>
             </div>
           </div>
-          {description && <p className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted">{description}</p>}
+          {description && <p title={description} className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted">{description}</p>}
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted">
@@ -224,7 +227,7 @@ export function UniversalClipCard({
           <div className="space-y-2 border-t border-c-border pt-3">
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {postedPlatforms.slice(0, 2).map((post) => {
+                {postedPlatforms.map((post) => {
                   const pcfg = PLATFORM_CFG[post.platform?.toLowerCase() ?? ""] ?? { color: "#ff3d6a", icon: "↗", label: post.platform ?? "Post" };
                   const isLive = post.status === "posted";
                   const isQ = ["scheduled", "pending", "processing"].includes(post.status);
@@ -238,8 +241,8 @@ export function UniversalClipCard({
             )}
             {showTags && tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {tags.slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-surface-3 px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
-                {tags.length > 2 && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 2}</span>}
+                {tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-surface-3 px-2 py-0.5 text-[9px] font-medium text-zinc-500">#{tag}</span>)}
+                {tags.length > 4 && <span title={tags.slice(4).map((t) => `#${t}`).join(" ")} className="rounded-full bg-surface-2 px-2 py-0.5 text-[9px] font-medium text-zinc-600">+{tags.length - 4}</span>}
               </div>
             )}
           </div>
@@ -253,9 +256,9 @@ export function UniversalClipCard({
 
         {actions.length > 0 && (
           <div className="flex items-center gap-2 border-t border-c-border pt-3">
-            {primaryAction && (
-              <button onClick={(e) => runAction(primaryAction, e)} disabled={primaryAction.disabled} className="flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.22)] transition hover:bg-[#ff527a] disabled:opacity-50">
-                <span>{primaryAction.icon ?? defaultIcon(primaryAction.id)}</span>{primaryAction.label ?? primaryAction.id}
+            {displayPrimary && (
+              <button onClick={(e) => runAction(displayPrimary, e)} disabled={displayPrimary.disabled} className="flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.22)] transition hover:bg-[#ff527a] disabled:opacity-50">
+                <span>{displayPrimary.icon ?? defaultIcon(displayPrimary.id)}</span>{displayPrimary.label ?? displayPrimary.id}
               </button>
             )}
             {secondaryActions.slice(0, 2).map((action) => (
