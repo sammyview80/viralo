@@ -1216,30 +1216,55 @@ def prune_source_cache(self) -> dict:
 def reconcile_stuck_videos(self) -> dict:
     """Backstop for jobs orphaned by a worker crash / restart / OOM.
 
-    task_reject_on_worker_lost requeues a killed task immediately, so this only
-    catches the rare cases that slipped through (broker lost the message, the
-    startup-race wedge, etc.). It re-enqueues faithfully from the row's own
-    source_url + clip_config, bounded by a retry counter so it can't loop forever.
+    task_reject_on_worker_lost is supposed to requeue a killed task immediately,
+    but that only fires when Celery itself detects the worker process died (e.g.
+    a child pool process OOM-killed). When the whole container gets stopped and
+    recreated (deploy, docker compose up) the in-flight task's message can simply
+    vanish — acked or lost with the connection — with no redelivery at all. The
+    old 65-minute-only window meant a task that died 2 minutes after being
+    claimed still sat "processing" for up to an hour before anything noticed.
+    Fast path: ask Celery which task IDs are ACTUALLY running right now; a
+    'processing' row whose celery_task_id isn't in that set is provably dead,
+    not just slow, so it gets reconciled after a short (3 min) grace period
+    instead of waiting for the full 65-minute timeout.
 
     Thresholds avoid false positives:
-      - 'processing': only >65 min stale — PAST the 60-min hard time limit, so a
-        still-running long job is never mistaken for dead.
+      - 'processing' + confirmed-dead task_id: >3 min stale (fast path above).
+      - 'processing' (any, incl. inspect() unavailable/unknown): >65 min stale —
+        PAST the 60-min hard time limit, so a still-running long job is never
+        mistaken for dead even if the fast path can't confirm it either way.
       - 'queued'/'pending': >15 min — a task that never started executing.
     Runs tenantless (worker DB role owns the tables → RLS bypassed; if not, the
     query simply returns no rows and this is a safe no-op).
     """
     requeued = failed = 0
     try:
+        active_task_ids = None
+        try:
+            inspect = celery_app.control.inspect(timeout=5)
+            active = inspect.active() or {}
+            active_task_ids = {t["id"] for tasks in active.values() for t in tasks}
+        except Exception as e:
+            logging.warning("reconcile_stuck_videos: inspect().active() failed, fast path disabled: %s", e)
+
         with Session(engine) as s:
             rows = s.execute(text("""
                 SELECT id, tenant_id, source_url, clip_config, status,
                        COALESCE((metadata->>'reconcile_retries')::int, 0) AS retries,
-                       source_type, metadata
+                       source_type, metadata, celery_task_id
                 FROM videos
                 WHERE (status = 'processing' AND updated_at < NOW() - INTERVAL '65 minutes')
                    OR (status IN ('queued','pending') AND updated_at < NOW() - INTERVAL '15 minutes')
+                   OR (status = 'processing' AND celery_task_id IS NOT NULL
+                       AND updated_at < NOW() - INTERVAL '3 minutes')
             """)).fetchall()
-            for vid, tid, src_url, cfg, status_, retries, source_type, metadata in rows:
+            if active_task_ids is not None:
+                rows = [
+                    r for r in rows
+                    if not (r.status == "processing" and r.celery_task_id
+                            and r.celery_task_id in active_task_ids)
+                ]
+            for vid, tid, src_url, cfg, status_, retries, source_type, metadata, _task_id in rows:
                 if source_type == "series" and retries < 2 and metadata:
                     series_id = metadata.get("series_id")
                     publish_at = metadata.get("publish_at")
