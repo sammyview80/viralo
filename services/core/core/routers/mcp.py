@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mcp_svc.client import list_clips
+from mcp_svc.client import UpstreamServiceError, list_clips
 from shared.deps import get_db_no_rls
 from shared.models.public.api_key import TenantApiKey
 
@@ -76,7 +76,12 @@ async def mcp(
         if not isinstance(arguments, dict):
             return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "arguments must be an object"}}
         api_key = x_api_key or authorization[7:]
-        clips = await list_clips(api_key, **{key: arguments[key] for key in TOOLS[0]["inputSchema"]["properties"] if key in arguments})
+        try:
+            clips = await list_clips(api_key, **{key: arguments[key] for key in TOOLS[0]["inputSchema"]["properties"] if key in arguments})
+        except UpstreamServiceError as exc:
+            if exc.status_code == 404:
+                return {"jsonrpc": "2.0", "id": request_id, "result": {"content": [{"type": "text", "text": json.dumps({"clips": [], "total": 0})}]}}
+            return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": "Upstream video service error"}}
         return {
             "jsonrpc": "2.0",
             "id": request_id,

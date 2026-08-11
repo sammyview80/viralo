@@ -6,12 +6,23 @@ No DB access — each method simply forwards to the existing
 core/platform HTTP endpoints via shared.http.
 Only rewrites auth/token handling.
 """
+import os
 import httpx
 from typing import Any, Dict, Optional
-# Base URLs for services
-VIDEO_SVC_BASE = "https://api.viraloapp.tech/video"
-PLATFORM_SVC_BASE = "https://api.viraloapp.tech/platform"
-CORE_SVC_BASE = "https://api.viraloapp.tech/core"
+
+# Base URLs for services — internal service names by default, overridable via env
+# (public gateway does not expose these paths, so do NOT default to api.viraloapp.tech)
+VIDEO_SVC_BASE = os.environ.get("VIDEO_SVC_BASE", "http://video-service:8003")
+PLATFORM_SVC_BASE = os.environ.get("PLATFORM_SVC_BASE", "http://platform-service:8006")
+CORE_SVC_BASE = os.environ.get("CORE_SVC_BASE", "http://core-service:8001")
+
+
+class UpstreamServiceError(Exception):
+    """Raised when an upstream service call fails; carries the original status code."""
+
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        super().__init__(message)
 
 
 class ServiceClient:
@@ -35,15 +46,24 @@ class ServiceClient:
         """GET request to a service endpoint."""
         self._client.base_url = base_url
         resp = await self._client.get(endpoint, params=params)
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp
 
     async def post(self, base_url: str, endpoint: str, json: Dict[str, Any] = None) -> httpx.Response:
         """POST request to a service endpoint."""
         self._client.base_url = base_url
         resp = await self._client.post(endpoint, json=json)
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp
+
+    @staticmethod
+    def _raise_for_status(resp: httpx.Response) -> None:
+        if resp.is_success:
+            return
+        raise UpstreamServiceError(
+            resp.status_code,
+            f"Upstream {resp.request.method} {resp.request.url} -> {resp.status_code}",
+        )
 
 
 # Convenience functions for direct use (optional)
