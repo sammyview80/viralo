@@ -69,10 +69,25 @@ function DownloadLink({ href, children }: { href: string; children: React.ReactN
 
 /* ─── Sections ──────────────────────────────────────────────────────────── */
 
+function CliInstallSection() {
+  return (
+    <Card>
+      <SectionTitle step={1}>Install the Viralo CLI</SectionTitle>
+      <p className="px-4 pt-2 text-[13px] text-c-text-muted sm:px-5">
+        One command, no npm required. Logs in via device code from your terminal.
+      </p>
+      <CodeBlock>{`curl -fsSL https://raw.githubusercontent.com/sammyview80/viralo-cli/main/install.sh | sh`}</CodeBlock>
+      <p className="px-4 pb-3 text-[12px] text-c-text-muted sm:px-5">
+        Then run <code className="font-mono text-[12px]">viralo login</code> to connect your workspace.
+      </p>
+    </Card>
+  );
+}
+
 function EndpointSection() {
   return (
     <Card>
-      <SectionTitle step={1}>Connect to the endpoint</SectionTitle>
+      <SectionTitle step={2}>Connect to the endpoint</SectionTitle>
       <p className="px-4 pt-2 text-[13px] text-c-text-muted sm:px-5">
         Point any MCP client at this URL. It speaks JSON-RPC 2.0 over HTTP.
       </p>
@@ -90,7 +105,7 @@ function AuthSection({ keys, generating, onGenerate, revealedKey, onDismissRevea
 }) {
   return (
     <Card>
-      <SectionTitle step={2}>Generate an API key</SectionTitle>
+      <SectionTitle step={3}>Generate an API key</SectionTitle>
       <p className="px-4 pt-2 text-[13px] text-c-text-muted sm:px-5">
         Every MCP request authenticates with a Viralo API key — send it as <code className="font-mono text-[12px]">x-api-key</code> or a bearer token. Never paste keys into chats, prompts, or source control.
       </p>
@@ -155,7 +170,7 @@ function ClientSetupSection() {
 
   return (
     <Card>
-      <SectionTitle step={3}>Configure your client</SectionTitle>
+      <SectionTitle step={4}>Configure your client</SectionTitle>
       <p className="px-4 pt-2 text-[13px] text-c-text-muted sm:px-5">
         Works with Claude Code, Claude Desktop, Cursor, Codex, and any MCP-compatible client. Custom-header clients use <code className="font-mono text-[12px]">x-api-key</code>; bearer-only clients use <code className="font-mono text-[12px]">Authorization: Bearer</code>.
       </p>
@@ -170,7 +185,7 @@ function ClientSetupSection() {
 function UseToolsSection() {
   return (
     <Card>
-      <SectionTitle step={4}>Call tools</SectionTitle>
+      <SectionTitle step={5}>Call tools</SectionTitle>
       <p className="px-4 pt-2 text-[13px] text-c-text-muted sm:px-5">
         Call <code className="font-mono text-[12px]">initialize</code>, then <code className="font-mono text-[12px]">tools/list</code> to discover the live schema. Currently available tools:
       </p>
@@ -192,7 +207,7 @@ function UseToolsSection() {
 function SkillDownloadSection() {
   return (
     <Card>
-      <SectionTitle step={5}>Install the Viralo skill</SectionTitle>
+      <SectionTitle step={6}>Install the Viralo skill</SectionTitle>
       <p className="px-4 pt-2 text-[13px] text-c-text-muted sm:px-5">
         Drop this skill into an MCP-aware agent (e.g. Claude Code's <code className="font-mono text-[12px]">~/.claude/skills/</code>) for ready-made connection and usage guidance — no need to re-explain the API each session.
       </p>
@@ -240,6 +255,7 @@ export function McpPage() {
         <p className="text-[13px] text-c-text-muted">Connect Claude, Cursor, Codex, and other MCP clients to your Viralo workspace.</p>
       </div>
       <div className="space-y-3 px-4 py-5 sm:px-5">
+        <CliInstallSection />
         <EndpointSection />
         <AuthSection
           keys={keys}

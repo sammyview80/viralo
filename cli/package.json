@@ -4,7 +4,7 @@
   "description": "Viralo CLI — OAuth device login, then use Viralo's MCP tools from your terminal or any MCP client.",
   "type": "module",
   "bin": {
-    "viralo": "./bin/viralo.js"
+    "viralo": "bin/viralo.js"
   },
   "engines": {
     "node": ">=18"
@@ -12,5 +12,10 @@
   "files": [
     "bin"
   ],
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sammyview80/viralo.git",
+    "directory": "cli"
+  }
 }
