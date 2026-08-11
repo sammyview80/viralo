@@ -27,7 +27,7 @@ from shared.schemas.auth import TokenPayload
 
 router = APIRouter(prefix="/device", tags=["device-auth"])
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 DEVICE_CODE_TTL_SECONDS = 600  # 10 min to complete the flow
 APPROVED_KEY_TTL_SECONDS = 120  # once approved, CLI has 2 min to collect the key
 POLL_INTERVAL_SECONDS = 5
