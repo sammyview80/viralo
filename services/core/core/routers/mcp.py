@@ -17,8 +17,10 @@ from mcp_svc.client import (
     publish_clip,
     schedule_clip,
 )
+from shared.auth import create_access_token
 from shared.deps import get_db_no_rls
 from shared.models.public.api_key import TenantApiKey
+from shared.models.public.user import User
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 TOOLS = [
@@ -104,7 +106,13 @@ async def require_api_key(
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db_no_rls),
-) -> TenantApiKey:
+) -> str:
+    """Validate the tenant API key and mint a short-lived service JWT for it.
+
+    Downstream services (video/platform/core) authenticate via JWT, not raw
+    API keys — forwarding the raw key as a bearer token always fails auth
+    there, so tools/call must use this minted token instead.
+    """
     api_key = x_api_key or (authorization[7:] if authorization and authorization.lower().startswith("bearer ") else None)
     if not api_key:
         raise HTTPException(status_code=401, detail="Missing x-api-key")
@@ -112,14 +120,15 @@ async def require_api_key(
     key = (await db.execute(select(TenantApiKey).where(TenantApiKey.key_hash == key_hash))).scalar_one_or_none()
     if not key:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    return key
+    user = (await db.execute(select(User).where(User.tenant_id == key.tenant_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=403, detail="No user associated with this tenant")
+    return create_access_token(user_id=str(user.id), tenant_id=str(key.tenant_id), email=user.email, plan="")
 
 @router.post("", response_model=None)
 async def mcp(
     request: dict[str, Any],
-    _: TenantApiKey = Depends(require_api_key),
-    x_api_key: str | None = Header(default=None),
-    authorization: str | None = Header(default=None),
+    service_token: str = Depends(require_api_key),
 ) -> dict[str, Any] | Response:
     request_id = request.get("id")
     if request.get("jsonrpc") != "2.0":
@@ -151,9 +160,8 @@ async def mcp(
         if missing:
             return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": f"Missing required arguments: {', '.join(missing)}"}}
         filtered_args = {key: value for key, value in arguments.items() if key in tool["inputSchema"]["properties"]}
-        api_key = x_api_key or authorization[7:]
         try:
-            result = await tool["fn"](api_key, filtered_args)
+            result = await tool["fn"](service_token, filtered_args)
         except UpstreamServiceError as exc:
             if exc.status_code == 404:
                 return {"jsonrpc": "2.0", "id": request_id, "result": {"content": [{"type": "text", "text": json.dumps({})}]}}
