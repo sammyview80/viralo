@@ -15,6 +15,9 @@ const TOOLS: { name: string; desc: string }[] = [
   { name: "list_social_accounts", desc: "List connected publishing accounts." },
   { name: "get_workspace_context", desc: "Get the authenticated tenant's workspace context." },
   { name: "get_job_status", desc: "Get render job status for a clip." },
+  { name: "import_youtube_video", desc: "Import a YouTube video and queue clip generation (schedule, connect accounts, max clips/day, and all clip config)." },
+  { name: "upload_video", desc: "Upload a video file (base64) and queue clip generation with the same config options." },
+  { name: "generate_clips", desc: "(Re)generate clips for an already-imported video with a new config." },
 ];
 
 /* ─── Primitives (mirrors SettingsPage styling) ────────────────────────── */

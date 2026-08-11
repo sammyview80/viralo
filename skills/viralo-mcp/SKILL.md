@@ -48,6 +48,26 @@ Example (generic `mcp.json`):
 - `list_social_accounts` — list connected publishing accounts. No args.
 - `get_workspace_context` — get the authenticated tenant's workspace context. No args.
 - `get_job_status` — get render job status. Args: `clip_id`, `render_id` (both required).
+- `import_youtube_video` — import a YouTube video and queue clip generation. Args: `url` (required), `title`, `config` (clip-generation settings, see below).
+- `upload_video` — upload a video file and queue clip generation. Args: `filename`, `content_base64` (base64-encoded raw file bytes), `title` (all required), `config`.
+- `generate_clips` — (re)generate clips for an already-imported video with a new config. Args: `video_id` (required), `config`.
+
+### `config` (clip-generation settings)
+
+Shared by `import_youtube_video`, `upload_video`, `generate_clips`. All fields optional — omitted fields fall back to service defaults.
+
+- `duration_min` / `duration_max` — clip length bounds in seconds (5-300 / 10-600).
+- `max_clips` — max number of clips to generate (1-30, default 5).
+- `aspect_ratio` — `9:16` | `1:1` | `16:9` | `4:5`.
+- `min_score` — min virality score 0.0-1.0 (0.5 balanced, 0.8 viral-only).
+- `add_captions`, `skip_caption`, `language`, `caption_style`, `output_quality`, `topic_focus`, `template_id`, `music`, `music_track`, `voiceover`, `occasion` — see `tools/list` for full enums.
+- `auto_publish` — auto-schedule generated clips to social accounts once ready.
+- `auto_publish_config` — required when `auto_publish` is true:
+  - `social_account_ids` — connected account IDs to publish to (call `list_social_accounts` first).
+  - `publish_per_day` — max clips published per day (1-10, default 3).
+  - `publish_interval_hours` — hours between scheduled posts (1-24, default 8).
+  - `publish_start_at` — ISO 8601 datetime with timezone; when the schedule begins.
+  - `caption_template` — optional caption template string.
 
 ## Planned UI parity
 

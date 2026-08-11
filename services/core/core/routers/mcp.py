@@ -9,13 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mcp_svc.client import (
     UpstreamServiceError,
+    generate_clips,
     get_clip,
     get_job_status,
     get_workspace_context,
+    import_youtube_video,
     list_clips,
     list_social_accounts,
     publish_clip,
     schedule_clip,
+    upload_video,
 )
 from shared.auth import create_access_token
 from shared.deps import get_db_no_rls
@@ -23,6 +26,54 @@ from shared.models.public.api_key import TenantApiKey
 from shared.models.public.user import User
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
+
+# Mirrors video-service's ClipConfig/AutoPublishConfig (services/video/video/schemas.py).
+# Passed through as-is to the upstream service, which is the source of truth for validation.
+CLIP_CONFIG_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "Clip-generation settings. Any field omitted falls back to the service default.",
+    "properties": {
+        "duration_min": {"type": "integer", "minimum": 5, "maximum": 300, "default": 15, "description": "Min clip length in seconds"},
+        "duration_max": {"type": "integer", "minimum": 10, "maximum": 600, "default": 60, "description": "Max clip length in seconds"},
+        "max_clips": {"type": "integer", "minimum": 1, "maximum": 30, "default": 5, "description": "Max number of clips to generate from this video"},
+        "aspect_ratio": {"type": "string", "enum": ["9:16", "1:1", "16:9", "4:5"], "default": "9:16"},
+        "min_score": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.5, "description": "Min virality score (0.5 = balanced, 0.8 = viral only)"},
+        "add_captions": {"type": "boolean", "default": False},
+        "skip_caption": {"type": "boolean", "default": False, "description": "Skip AI title/description/hashtag generation"},
+        "language": {"type": "string", "description": "Caption/AI content language (ISO 639-1); omit for auto-detect"},
+        "caption_style": {
+            "type": "string",
+            "enum": ["capcut", "capcut-bold", "tiktok", "word-pop", "hormozi", "beast", "neon", "karaoke", "classic",
+                     "impact", "minimal", "sunset", "royal", "ocean", "bubble", "banger", "money", "reveal-light",
+                     "podcast", "pop-yellow", "pop-red", "karaoke-green", "karaoke-cyan", "comic", "cinema",
+                     "bounce", "glow", "shadow", "highlighter", "rainbow"],
+        },
+        "output_quality": {"type": "string", "enum": ["source", "1080p", "720p", "480p", "360p"], "default": "1080p"},
+        "topic_focus": {"type": "string", "description": "Guide AI to focus on a specific topic"},
+        "template_id": {"type": "string", "enum": ["sports-hype", "gaming-clutch", "cinematic", "music-vibe", "talking-head", "generic"]},
+        "music": {"type": "boolean", "default": True},
+        "music_track": {"type": "string", "enum": ["hype", "dramatic", "chill"]},
+        "voiceover": {"type": "boolean", "default": False, "description": "Generate and mix an AI narrator voiceover"},
+        "occasion": {
+            "type": "string",
+            "enum": ["football", "soccer", "sports", "cricket", "ufc", "boxing", "mma", "f1", "racing", "gaming",
+                     "esports", "podcast", "interview", "concert", "music", "wedding", "travel", "general"],
+        },
+        "auto_publish": {"type": "boolean", "default": False, "description": "Auto-schedule generated clips to social accounts once ready"},
+        "auto_publish_config": {
+            "type": "object",
+            "description": "Required when auto_publish is true.",
+            "properties": {
+                "social_account_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 20, "description": "Connected account IDs to publish to — see list_social_accounts"},
+                "publish_per_day": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3, "description": "Max clips published per day"},
+                "publish_interval_hours": {"type": "integer", "minimum": 1, "maximum": 24, "default": 8, "description": "Hours between scheduled posts"},
+                "publish_start_at": {"type": "string", "description": "ISO 8601 datetime with timezone; when the schedule begins"},
+                "caption_template": {"type": "string", "maxLength": 2000},
+            },
+        },
+    },
+}
+
 TOOLS = [
     {
         "name": "list_clips",
@@ -90,6 +141,55 @@ TOOLS = [
             "required": ["clip_id", "render_id"],
         },
         "fn": lambda api_key, args: get_job_status(api_key, args["clip_id"], args["render_id"]),
+    },
+    {
+        "name": "import_youtube_video",
+        "description": (
+            "Import a YouTube video and queue clip generation from it. Use list_social_accounts first "
+            "to get account IDs for auto_publish_config.social_account_ids."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "YouTube video URL"},
+                "title": {"type": "string", "description": "Title for the imported video; defaults to the YouTube title"},
+                "config": CLIP_CONFIG_SCHEMA,
+            },
+            "required": ["url"],
+        },
+        "fn": lambda api_key, args: import_youtube_video(api_key, args["url"], args.get("title"), args.get("config")),
+    },
+    {
+        "name": "upload_video",
+        "description": (
+            "Upload a video file and queue clip generation from it. Provide the raw file contents "
+            "base64-encoded — not a URL or local path. Use list_social_accounts first to get account "
+            "IDs for auto_publish_config.social_account_ids."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "Original filename, e.g. episode-12.mp4"},
+                "content_base64": {"type": "string", "description": "Base64-encoded video file bytes"},
+                "title": {"type": "string", "description": "Title for the video"},
+                "config": CLIP_CONFIG_SCHEMA,
+            },
+            "required": ["filename", "content_base64", "title"],
+        },
+        "fn": lambda api_key, args: upload_video(api_key, args["filename"], args["content_base64"], args["title"], args.get("config")),
+    },
+    {
+        "name": "generate_clips",
+        "description": "(Re)generate clips for a video that was already imported, with a new config.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "video_id": {"type": "string"},
+                "config": CLIP_CONFIG_SCHEMA,
+            },
+            "required": ["video_id"],
+        },
+        "fn": lambda api_key, args: generate_clips(api_key, args["video_id"], args.get("config")),
     },
 ]
 TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}

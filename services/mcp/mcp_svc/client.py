@@ -1,11 +1,13 @@
 """Thin HTTP client for Viralo MCP service.
 Provides `list_clips`, `get_clip`, `publish_clip`, `schedule_clip`,
-`list_social_accounts`, `get_workspace_context`, `get_job_status`.
+`list_social_accounts`, `get_workspace_context`, `get_job_status`,
+`import_youtube_video`, `upload_video`, `generate_clips`.
 
 No DB access — each method simply forwards to the existing
 core/platform HTTP endpoints via shared.http.
 Only rewrites auth/token handling.
 """
+import base64
 import os
 import httpx
 from typing import Any, Dict, Optional
@@ -53,6 +55,19 @@ class ServiceClient:
         """POST request to a service endpoint."""
         self._client.base_url = base_url
         resp = await self._client.post(endpoint, json=json)
+        self._raise_for_status(resp)
+        return resp
+
+    async def post_multipart(
+        self,
+        base_url: str,
+        endpoint: str,
+        files: Dict[str, Any],
+        data: Dict[str, Any] = None,
+    ) -> httpx.Response:
+        """POST multipart/form-data request (file upload) to a service endpoint."""
+        self._client.base_url = base_url
+        resp = await self._client.post(endpoint, files=files, data=data)
         self._raise_for_status(resp)
         return resp
 
@@ -128,4 +143,58 @@ async def get_job_status(token: str, clip_id: str, render_id: str) -> Dict[str, 
     """GET /clips/{clip_id}/render/{render_id}"""
     async with ServiceClient(token) as client:
         resp = await client.get(VIDEO_SVC_BASE, f"/clips/{clip_id}/render/{render_id}")
+        return resp.json()
+
+
+async def import_youtube_video(
+    token: str,
+    url: str,
+    title: str | None = None,
+    config: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """POST /youtube — queue clip generation from a YouTube URL.
+
+    `config` accepts the full ClipConfig shape (duration_min/max, max_clips,
+    aspect_ratio, captions, output_quality, auto_publish + auto_publish_config
+    with social_account_ids/publish_per_day/publish_interval_hours/publish_start_at, etc).
+    """
+    async with ServiceClient(token) as client:
+        body: Dict[str, Any] = {"url": url}
+        if title:
+            body["title"] = title
+        if config:
+            body["config"] = config
+        resp = await client.post(VIDEO_SVC_BASE, "/youtube", json=body)
+        return resp.json()
+
+
+async def upload_video(
+    token: str,
+    filename: str,
+    content_base64: str,
+    title: str,
+    config: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """POST /upload (multipart) — queue clip generation from an uploaded video file.
+
+    `content_base64` is the raw video file, base64-encoded. Same `config`
+    shape as `import_youtube_video`.
+    """
+    import json as _json
+
+    file_bytes = base64.b64decode(content_base64)
+    async with ServiceClient(token) as client:
+        resp = await client.post_multipart(
+            VIDEO_SVC_BASE,
+            "/upload",
+            files={"file": (filename, file_bytes, "video/mp4")},
+            data={"title": title, "config": _json.dumps(config or {})},
+        )
+        return resp.json()
+
+
+async def generate_clips(token: str, video_id: str, config: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """POST /videos/{video_id}/generate-clips — (re)generate clips for an already-imported video."""
+    async with ServiceClient(token) as client:
+        resp = await client.post(VIDEO_SVC_BASE, f"/videos/{video_id}/generate-clips", json={"config": config or {}})
         return resp.json()
