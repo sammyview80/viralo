@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from shared.middleware.tenant import TenantMiddleware
-from core.routers import auth, tenants, onboarding, billing, settings
+from core.routers import auth, tenants, onboarding, billing, mcp, settings
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ app.include_router(tenants.router, prefix="/api/v1")
 app.include_router(onboarding.router, prefix="/api/v1")
 app.include_router(billing.router, prefix="/api/v1")
 app.include_router(settings.router, prefix="/api/v1")
+app.include_router(mcp.router, prefix="/api/v1")
 
 
 @app.get("/health")
