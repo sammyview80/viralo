@@ -2,7 +2,7 @@
 import hashlib
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,10 +31,23 @@ async def require_api_key(
     return key
 
 @router.post("")
-async def mcp(request: dict[str, Any], _: TenantApiKey = Depends(require_api_key)) -> dict[str, Any]:
+async def mcp(request: dict[str, Any], _: TenantApiKey = Depends(require_api_key)) -> dict[str, Any] | Response:
     request_id = request.get("id")
     if request.get("jsonrpc") != "2.0":
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "Invalid Request"}}
-    if request.get("method") == "tools/list":
+    method = request.get("method")
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": request.get("params", {}).get("protocolVersion", "2025-03-26"),
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "viralo", "version": "0.1.0"},
+            },
+        }
+    if method == "notifications/initialized":
+        return Response(status_code=202)
+    if method == "tools/list":
         return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
