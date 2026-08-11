@@ -16,10 +16,15 @@ TOOLS = [
     {"name": "list_social_accounts", "description": "List connected social accounts.", "inputSchema": {"type": "object", "properties": {}}},
 ]
 
-async def require_api_key(x_api_key: str | None = Header(default=None), db: AsyncSession = Depends(get_db_no_rls)) -> TenantApiKey:
-    if not x_api_key:
+async def require_api_key(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db_no_rls),
+) -> TenantApiKey:
+    api_key = x_api_key or (authorization[7:] if authorization and authorization.lower().startswith("bearer ") else None)
+    if not api_key:
         raise HTTPException(status_code=401, detail="Missing x-api-key")
-    key_hash = hashlib.sha256(x_api_key.strip().encode()).hexdigest()
+    key_hash = hashlib.sha256(api_key.strip().encode()).hexdigest()
     key = (await db.execute(select(TenantApiKey).where(TenantApiKey.key_hash == key_hash))).scalar_one_or_none()
     if not key:
         raise HTTPException(status_code=401, detail="Invalid API key")
