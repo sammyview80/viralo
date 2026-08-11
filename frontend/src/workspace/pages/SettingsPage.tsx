@@ -14,6 +14,19 @@ import {
   type UserResponse,
 } from "@/lib/api";
 
+/* ─── Nav sections ──────────────────────────────────────────────────────── */
+
+const SECTIONS = [
+  { id: "profile",       label: "Profile",       icon: <IconProfile />,      desc: "Your name and avatar." },
+  { id: "workspace",     label: "Workspace",    icon: <IconWorkspace />,    desc: "Name, URL, and timezone for your workspace." },
+  { id: "brand",         label: "Brand kit",    icon: <IconBrand />,        desc: "Colors and font applied to exported clips." },
+  { id: "billing",       label: "Billing",       icon: <IconBilling />,      desc: "Plan and usage." },
+  { id: "notifications", label: "Notifications", icon: <IconNotifications />,desc: "Choose what Viralo alerts you about." },
+  { id: "api",           label: "API keys",      icon: <IconApi />,          desc: "Keys for accessing the Viralo API programmatically." },
+] as const;
+
+type SectionId = typeof SECTIONS[number]["id"];
+
 /* ─── Icons ─────────────────────────────────────────────────────────────── */
 
 function IconProfile() {
@@ -551,3 +564,85 @@ function ApiKeysSection() {
     </div>
   );
 }
+
+/* ─── Section content map ────────────────────────────────────────────────── */
+
+const CONTENT: Record<SectionId, React.ReactNode> = {
+  profile:       <ProfileSection />,
+  workspace:     <WorkspaceSection />,
+  brand:         <BrandSection />,
+  billing:       <BillingSection />,
+  notifications: <NotificationsSection />,
+  api:           <ApiKeysSection />,
+};
+
+/* ─── Page ───────────────────────────────────────────────────────────────── */
+
+export function SettingsPage() {
+  const [active, setActive] = useState<SectionId>("profile");
+  const section = SECTIONS.find(s => s.id === active)!;
+
+  return (
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-c-border sm:flex-row sm:min-h-[calc(100dvh-116px)]">
+
+      {/* Sidebar */}
+      <nav className="hidden w-[200px] shrink-0 flex-col border-r border-c-border bg-surface-1 p-2 sm:flex">
+        <p className="px-2.5 pt-3 pb-2 text-[9.5px] font-bold uppercase tracking-[.14em] text-c-text-muted">Settings</p>
+        {SECTIONS.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setActive(s.id)}
+            className={cn(
+              "relative mb-0.5 flex w-full cursor-pointer items-center gap-2.5 overflow-hidden rounded-[8px] px-2.5 py-2 text-left text-[13px] font-medium transition-colors",
+              active === s.id
+                ? "bg-surface-glass text-c-text before:absolute before:left-[-8px] before:top-2.5 before:bottom-2.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
+                : "text-c-text-muted hover:bg-surface-2 hover:text-c-text"
+            )}
+          >
+            <span className={cn("shrink-0 transition-opacity", active === s.id ? "opacity-100" : "opacity-60")}>
+              {s.icon}
+            </span>
+            {s.label}
+          </button>
+        ))}
+      </nav>
+
+      {/* Mobile strip */}
+      <div className="sm:hidden w-full border-b border-c-border bg-surface-1 flex overflow-x-auto snap-x snap-mandatory gap-0.5 p-1.5">
+        {SECTIONS.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setActive(s.id)}
+            className={cn(
+              "relative shrink-0 snap-start cursor-pointer rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-colors",
+              active === s.id
+                ? "bg-surface-glass text-c-text before:absolute before:left-1.5 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:rounded-r before:bg-[#ff3d6a]"
+                : "text-c-text-muted hover:text-c-text"
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto bg-surface-0">
+        {/* Section header */}
+        <div className="border-b border-c-border px-4 py-4 sm:px-7 sm:py-5">
+          <div className="flex items-center gap-2.5 mb-0.5">
+            <span className="text-[#ff3d6a]">{section.icon}</span>
+            <h1 className="text-[15px] font-semibold text-c-text">{section.label}</h1>
+          </div>
+          <p className="text-[13px] text-c-text-muted">{section.desc}</p>
+        </div>
+
+        {/* Section body */}
+        <div className="px-4 py-5 sm:px-7 sm:py-6">
+          {CONTENT[active]}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default SettingsPage;
