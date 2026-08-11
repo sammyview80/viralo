@@ -62,6 +62,12 @@ async def get_tenant_db(
             raise
 
 
+def get_viralo_api_key() -> str:
+    if not settings.viralo_api_key:
+        raise HTTPException(status_code=500, detail="VIRALO_API_KEY not configured")
+    return settings.viralo_api_key
+
+
 async def get_db_no_rls() -> AsyncGenerator[AsyncSession, None]:
     """Unauthenticated DB access for auth endpoints (register/login). No RLS set."""
     async with AsyncSessionLocal() as session:

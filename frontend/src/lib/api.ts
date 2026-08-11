@@ -129,6 +129,12 @@ export const auth = {
   me:       ()                   => req<UserResponse>("GET",  "/auth/me"),
 };
 
+/* ─── MCP Settings endpoints ─── */
+export const mcpSettings = {
+  generateKey: (name: string) => req<{ key: string; expires_at: string }>("POST", "/api/settings/mcp-key", { name }),
+  listKeys: () => req<ApiKeyInfo[]>("GET", "/api/settings/mcp-keys"),
+};
+
 /* ─── Onboarding types ─── */
 export interface StepResponse     { step: number | null; is_complete: boolean; message: string }
 export interface FinalizeResponse { access_token: string; token_type: string; message: string }

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
     trusted_proxy_ips: str = ""
+    viralo_api_key: str = ""
 
 
 settings = Settings()
