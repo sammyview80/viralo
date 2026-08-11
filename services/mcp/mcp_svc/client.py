@@ -8,8 +8,6 @@ Only rewrites auth/token handling.
 """
 import httpx
 from typing import Any, Dict, Optional
-from mcp_svc.auth import get_access_token
-
 # Base URLs for services
 VIDEO_SVC_BASE = "https://api.viraloapp.tech/video"
 PLATFORM_SVC_BASE = "https://api.viraloapp.tech/platform"
@@ -49,10 +47,25 @@ class ServiceClient:
 
 
 # Convenience functions for direct use (optional)
-async def list_clips(token: str, video_id: str) -> Dict[str, Any]:
-    """GET /clips [?video_id=...]"""
+async def list_clips(
+    token: str,
+    video_id: str | None = None,
+    min_virality_score: float | None = None,
+    sort_by: str = "created_at",
+    page: int = 1,
+    per_page: int = 20,
+) -> Dict[str, Any]:
+    """GET /clips with the video API's filters and pagination."""
     async with ServiceClient(token) as client:
-        resp = await client.get(VIDEO_SVC_BASE, "/clips", params={"video_id": video_id} if video_id else None)
+        params = {
+            "min_virality_score": min_virality_score,
+            "sort_by": sort_by,
+            "page": page,
+            "per_page": per_page,
+        }
+        if video_id:
+            params["video_id"] = video_id
+        resp = await client.get(VIDEO_SVC_BASE, "/clips", params={key: value for key, value in params.items() if value is not None})
         return resp.json()
 
 

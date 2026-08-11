@@ -1,19 +1,32 @@
 """Minimal MCP tools discovery endpoint."""
 import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mcp_svc.client import list_clips
 from shared.deps import get_db_no_rls
 from shared.models.public.api_key import TenantApiKey
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 TOOLS = [
-    {"name": "list_clips", "description": "List workspace clips.", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "get_clip", "description": "Get a clip by ID.", "inputSchema": {"type": "object", "properties": {"clip_id": {"type": "string"}}, "required": ["clip_id"]}},
-    {"name": "list_social_accounts", "description": "List connected social accounts.", "inputSchema": {"type": "object", "properties": {}}},
+    {
+        "name": "list_clips",
+        "description": "List workspace clips.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "video_id": {"type": "string"},
+                "min_virality_score": {"type": "number", "minimum": 0, "maximum": 10},
+                "sort_by": {"type": "string", "enum": ["created_at", "score"]},
+                "page": {"type": "integer", "minimum": 1, "default": 1},
+                "per_page": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            },
+        },
+    },
 ]
 
 async def require_api_key(
@@ -31,7 +44,12 @@ async def require_api_key(
     return key
 
 @router.post("", response_model=None)
-async def mcp(request: dict[str, Any], _: TenantApiKey = Depends(require_api_key)) -> dict[str, Any] | Response:
+async def mcp(
+    request: dict[str, Any],
+    _: TenantApiKey = Depends(require_api_key),
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any] | Response:
     request_id = request.get("id")
     if request.get("jsonrpc") != "2.0":
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "Invalid Request"}}
@@ -50,4 +68,18 @@ async def mcp(request: dict[str, Any], _: TenantApiKey = Depends(require_api_key
         return Response(status_code=202)
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
+    if method == "tools/call":
+        params = request.get("params", {})
+        if params.get("name") != "list_clips":
+            return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Unknown tool"}}
+        arguments = params.get("arguments", {})
+        if not isinstance(arguments, dict):
+            return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "arguments must be an object"}}
+        api_key = x_api_key or authorization[7:]
+        clips = await list_clips(api_key, **{key: arguments[key] for key in TOOLS[0]["inputSchema"]["properties"] if key in arguments})
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"content": [{"type": "text", "text": json.dumps(clips, default=str)}]},
+        }
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}

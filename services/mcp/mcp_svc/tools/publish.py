@@ -1,17 +1,15 @@
-"""MCP tools for publishing and scheduling — proxies platform service, no DB access."""
-from mcp_svc.client import ServiceClient, PLATFORM_SVC_BASE
-from typing import Dict, Any
+"""MCP publishing tools backed by the Platform API."""
 
-async def publish_clip(token: str, post_id: str) -> Dict[str, Any]:
-    \"\"\"POST /publish/{post_id} → platform service\"\"\"  
-    client = ServiceClient(token)
-    resp = await client.post(f\"/publish/{post_id}\", headers={"Authorization": f"Bearer {token}"})
-    resp.raise_for_status()
-    return resp.json()
+from typing import Any
 
-async def schedule_clip(token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    \"\"\"POST /schedule → platform service\"\"\"  
-    client = ServiceClient(token)
-    resp = await client.post(\"/schedule\", json=payload, headers={"Authorization": f"Bearer {token}"})
-    resp.raise_for_status()
-    return resp.json()
+from mcp_svc.client import PLATFORM_SVC_BASE, ServiceClient
+
+
+async def publish_clip(token: str, post_id: str) -> dict[str, Any]:
+    async with ServiceClient(token) as client:
+        return (await client.post(PLATFORM_SVC_BASE, f"/scheduled-posts/{post_id}/publish-now")).json()
+
+
+async def schedule_clip(token: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async with ServiceClient(token) as client:
+        return (await client.post(PLATFORM_SVC_BASE, "/scheduled-posts", json=payload)).json()

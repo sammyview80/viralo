@@ -1,10 +1,10 @@
-"""MCP tools for social account management — proxies platform service, no DB access."""
-from mcp_svc.client import ServiceClient, PLATFORM_SVC_BASE
-from typing import Dict, Any
+"""MCP social-account tools backed by the Platform API."""
 
-async def list_social_accounts(token: str) -> Dict[str, Any]:
-    \"\"\"GET /social-accounts → platform service\"\"\"  
-    client = ServiceClient(token)
-    resp = await client.get(\"/social-accounts\", headers={"Authorization": f"Bearer {token}"})
-    resp.raise_for_status()
-    return resp.json()
+from typing import Any
+
+from mcp_svc.client import PLATFORM_SVC_BASE, ServiceClient
+
+
+async def list_social_accounts(token: str) -> dict[str, Any]:
+    async with ServiceClient(token) as client:
+        return (await client.get(PLATFORM_SVC_BASE, "/social-accounts")).json()
