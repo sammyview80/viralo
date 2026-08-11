@@ -1,0 +1,16 @@
+{
+  "name": "@viralo/cli",
+  "version": "0.1.0",
+  "description": "Viralo CLI — OAuth device login, then use Viralo's MCP tools from your terminal or any MCP client.",
+  "type": "module",
+  "bin": {
+    "viralo": "./bin/viralo.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin"
+  ],
+  "license": "UNLICENSED"
+}

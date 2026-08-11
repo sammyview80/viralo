@@ -5,6 +5,7 @@ import { LoginPage } from "@/app/auth/LoginPage";
 import { RegisterPage } from "@/app/auth/RegisterPage";
 import { lazy, Suspense } from "react";
 import { OAuthCallbackPage } from "@/workspace/pages/OAuthCallbackPage";
+import { CliAuthPage } from "@/workspace/pages/CliAuthPage";
 import { useAuth, hydrate } from "@/stores/auth";
 import { usePathname } from "@/lib/router";
 import { ViraloIcon } from "@/components/ViraloLogo";
@@ -47,6 +48,9 @@ export default function App() {
     window.location.replace("/login");
     return null;
   }
+
+  /* ── CLI device-auth (works regardless of onboarding state) ── */
+  if (path === "/cli-auth") return <CliAuthPage />;
 
   /* ── Onboarding gate ── */
   if (user.onboarding_step === 0) return <WorkspacePage page="onboarding" />;

@@ -129,10 +129,15 @@ export const auth = {
   me:       ()                   => req<UserResponse>("GET",  "/auth/me"),
 };
 
-/* ─── MCP Settings endpoints ─── */
+/* ─── MCP Settings endpoints (same TenantApiKey used for MCP auth) ─── */
 export const mcpSettings = {
-  generateKey: (name: string) => req<{ key: string; expires_at: string }>("POST", "/api/settings/mcp-key", { name }),
-  listKeys: () => req<ApiKeyInfo[]>("GET", "/api/settings/mcp-keys"),
+  generateKey: (name: string) => req<ApiKeyCreated>("POST", "/settings/api-keys", { name }),
+  listKeys: () => req<ApiKeyInfo[]>("GET", "/settings/api-keys"),
+};
+
+/* ─── CLI device-authorization flow (viralo login) ─── */
+export const deviceAuth = {
+  approve: (userCode: string) => req<void>("POST", "/device/approve", { user_code: userCode }),
 };
 
 /* ─── Onboarding types ─── */
