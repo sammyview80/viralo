@@ -1,0 +1,7 @@
+[project]
+name = "viralo-mcp-svc"
+version = "0.1.0"
+dependencies = ["fastapi", "uvicorn[standard]"]
+
+[project.optional-dependencies]
+test = ["pytest"]
