@@ -15,6 +15,7 @@ export type PageKey =
   | "analytics"
   | "trending"
   | "settings"
+  | "mcp"
   | "billing"
   | "ranking"
   | "notifications";

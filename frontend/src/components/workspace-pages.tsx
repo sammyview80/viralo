@@ -13,6 +13,7 @@ const OnboardingPage   = lazy(() => import("@/workspace/pages/OnboardingPage").t
 const ProjectsPage     = lazy(() => import("@/workspace/pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
 const SchedulerPage    = lazy(() => import("@/workspace/pages/SchedulerPage").then((m) => ({ default: m.SchedulerPage })));
 const SettingsPage     = lazy(() => import("@/workspace/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const McpPage          = lazy(() => import("@/workspace/pages/McpPage").then((m) => ({ default: m.McpPage })));
 const StudioPage       = lazy(() => import("@/workspace/pages/StudioPage").then((m) => ({ default: m.StudioPage })));
 const LyricVideoPlanner = lazy(() => import("@/workspace/pages/studio/LyricVideoPlanner").then((m) => ({ default: m.LyricVideoPlanner })));
 const SeriesPage       = lazy(() => import("@/workspace/pages/SeriesPage").then((m) => ({ default: m.SeriesPage })));
@@ -43,6 +44,7 @@ const pages: Record<PageKey, React.ReactNode> = {
   analytics:     <AnalyticsPage />,
   trending:      <TrendingPage />,
   settings:      <SettingsPage />,
+  mcp:           <McpPage />,
   billing:       <BillingPage />,
   ranking:       <RankingPage />,
   notifications: <NotificationsPage />,

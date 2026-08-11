@@ -32,6 +32,7 @@ export const Icons = {
   CreditCard: (p: IconProps) => <Icon {...p}><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></Icon>,
   Sun:        (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></Icon>,
   Moon:       (p: IconProps) => <Icon {...p} d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
+  Plug:       (p: IconProps) => <Icon {...p}><path d="M9 2v4M15 2v4M7 6h10v4a5 5 0 0 1-5 5 5 5 0 0 1-5-5V6z" /><path d="M12 15v4M9 22h6" /></Icon>,
 } as const;
 
 export type IconKey = keyof typeof Icons;
