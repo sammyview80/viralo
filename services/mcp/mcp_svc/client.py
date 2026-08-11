@@ -12,9 +12,9 @@ from typing import Any, Dict, Optional
 
 # Base URLs for services — internal service names by default, overridable via env
 # (public gateway does not expose these paths, so do NOT default to api.viraloapp.tech)
-VIDEO_SVC_BASE = os.environ.get("VIDEO_SVC_BASE", "http://video-service:8003")
-PLATFORM_SVC_BASE = os.environ.get("PLATFORM_SVC_BASE", "http://platform-service:8006")
-CORE_SVC_BASE = os.environ.get("CORE_SVC_BASE", "http://core-service:8001")
+VIDEO_SVC_BASE = os.environ.get("VIDEO_SVC_BASE", "http://video-service:8003/api/v1/video")
+PLATFORM_SVC_BASE = os.environ.get("PLATFORM_SVC_BASE", "http://platform-service:8006/api/v1/platform")
+CORE_SVC_BASE = os.environ.get("CORE_SVC_BASE", "http://core-service:8001/api/v1")
 
 
 class UpstreamServiceError(Exception):
@@ -97,16 +97,16 @@ async def get_clip(token: str, clip_id: str) -> Dict[str, Any]:
 
 
 async def publish_clip(token: str, post_id: str) -> Dict[str, Any]:
-    """POST /publish/{post_id}"""
+    """POST /scheduled-posts/{post_id}/publish-now"""
     async with ServiceClient(token) as client:
-        resp = await client.post(PLATFORM_SVC_BASE, f"/publish/{post_id}")
+        resp = await client.post(PLATFORM_SVC_BASE, f"/scheduled-posts/{post_id}/publish-now")
         return resp.json()
 
 
 async def schedule_clip(token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """POST /schedule"""
+    """POST /scheduled-posts"""
     async with ServiceClient(token) as client:
-        resp = await client.post(PLATFORM_SVC_BASE, "/schedule", json=payload)
+        resp = await client.post(PLATFORM_SVC_BASE, "/scheduled-posts", json=payload)
         return resp.json()
 
 
@@ -117,15 +117,15 @@ async def list_social_accounts(token: str) -> Dict[str, Any]:
         return resp.json()
 
 
-async def get_workspace_context(token: str, tenant_id: str) -> Dict[str, Any]:
-    """GET /tenants/{tenant_id}"""
+async def get_workspace_context(token: str) -> Dict[str, Any]:
+    """GET /tenants/me (JWT-scoped; no by-id route exists)"""
     async with ServiceClient(token) as client:
-        resp = await client.get(CORE_SVC_BASE, f"/tenants/{tenant_id}")
+        resp = await client.get(CORE_SVC_BASE, "/tenants/me")
         return resp.json()
 
 
 async def get_job_status(token: str, clip_id: str, render_id: str) -> Dict[str, Any]:
-    """GET /render/{render_id}/status"""
+    """GET /clips/{clip_id}/render/{render_id}"""
     async with ServiceClient(token) as client:
-        resp = await client.get(VIDEO_SVC_BASE, f"/render/{render_id}/status")
+        resp = await client.get(VIDEO_SVC_BASE, f"/clips/{clip_id}/render/{render_id}")
         return resp.json()

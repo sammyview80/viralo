@@ -77,13 +77,9 @@ TOOLS = [
     },
     {
         "name": "get_workspace_context",
-        "description": "Get workspace/tenant context.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"tenant_id": {"type": "string"}},
-            "required": ["tenant_id"],
-        },
-        "fn": lambda api_key, args: get_workspace_context(api_key, args["tenant_id"]),
+        "description": "Get workspace/tenant context for the authenticated tenant.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "fn": lambda api_key, args: get_workspace_context(api_key),
     },
     {
         "name": "get_job_status",
