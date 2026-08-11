@@ -1,0 +1,4 @@
+interface:
+  display_name: "Viralo MCP"
+  short_description: "Operate Viralo through MCP."
+  default_prompt: "Use Viralo MCP to manage workspace content."

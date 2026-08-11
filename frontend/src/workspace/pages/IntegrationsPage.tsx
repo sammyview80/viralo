@@ -587,6 +587,11 @@ export function IntegrationsPage() {
         </div>
       </div>
 
+      <Card className="mt-4 border-c-border bg-surface-1">
+        <CardHeader className="pb-2"><h2 className="text-base font-semibold text-c-text">Viralo MCP</h2><p className="text-sm text-c-text-muted">Connect Claude, Codex, Cursor, or Hermes.</p></CardHeader>
+        <CardContent className="space-y-3"><code className="block overflow-x-auto rounded-lg bg-surface-2 p-3 text-xs text-c-text">https://app.viraloapp.tech/api/v1/mcp</code><p className="text-xs text-c-text-muted">Create API key in Settings → API Keys; use it as bearer token.</p></CardContent>
+      </Card>
+
       {toast && <ToastAlert msg={toast} onClose={() => setToast(null)} />}
     </>
   );
