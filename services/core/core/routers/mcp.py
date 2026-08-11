@@ -30,7 +30,7 @@ async def require_api_key(
         raise HTTPException(status_code=401, detail="Invalid API key")
     return key
 
-@router.post("")
+@router.post("", response_model=None)
 async def mcp(request: dict[str, Any], _: TenantApiKey = Depends(require_api_key)) -> dict[str, Any] | Response:
     request_id = request.get("id")
     if request.get("jsonrpc") != "2.0":
