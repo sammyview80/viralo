@@ -361,6 +361,7 @@ export function ResultsView({
   const [zipModal, setZipModal] = useState(false);
   const [publishFilter, setPublishFilter] = useState<"all" | "posted" | "queued" | "unposted">("all");
   const [detailClip, setDetailClip] = useState<ClipApiResponse | null>(null);
+  const [singlePublishClip, setSinglePublishClip] = useState<ClipApiResponse | null>(null);
   const toggleSelect = (id: string) =>
     setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const selectAll = () => setSelected(new Set(clips.map((c) => c.id)));
@@ -537,6 +538,13 @@ export function ResultsView({
         />
       )}
 
+      {singlePublishClip && (
+        <BulkPublishModal
+          clips={[singlePublishClip]}
+          onClose={() => setSinglePublishClip(null)}
+        />
+      )}
+
       {zipModal && (
         <ZipDownloadModal
           clips={clips}
@@ -596,7 +604,7 @@ export function ResultsView({
           isScheduled={scheduledClipIds.has(detailClip.id)}
           posts={postsByClipId.get(detailClip.id) ?? []}
           onClose={() => setDetailClip(null)}
-          onPublish={() => setBulkModal(true)}
+          onPublish={() => { setDetailClip(null); setSinglePublishClip(detailClip); }}
         />
       )}
     </div>

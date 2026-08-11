@@ -61,22 +61,36 @@ def _ytdlp_proxies() -> list[str]:
     return _proxies.get_proxies()
 
 
-import threading as _threading_mod
+_GOOD_PROXY_REDIS_KEY = "ytdlp:last_good_proxy"
+_GOOD_PROXY_TTL_SEC = 1800  # proxies rotate/die — don't trust a stale hint forever
 
-_last_good_proxy_lock = _threading_mod.Lock()
-_LAST_GOOD_PROXY: str | None = None  # most recent proxy to win a download — tried first next time
+# In-process fallback only for when redis itself is unreachable; the real
+# shared state lives in redis so every worker process/restart benefits from
+# whichever one last found a working proxy, instead of each fresh worker
+# (constant after every deploy/restart) re-burning through the whole dead
+# proxy list from scratch — that's what was making downloads take 5-10+
+# minutes cycling through mostly-dead/bot-blocked proxies one at a time.
+_LAST_GOOD_PROXY_LOCAL: str | None = None
 
 
 def _record_good_proxy(proxy: str) -> None:
-    global _LAST_GOOD_PROXY
-    with _last_good_proxy_lock:
-        _LAST_GOOD_PROXY = proxy
+    global _LAST_GOOD_PROXY_LOCAL
+    _LAST_GOOD_PROXY_LOCAL = proxy
+    try:
+        redis_client.setex(_GOOD_PROXY_REDIS_KEY, _GOOD_PROXY_TTL_SEC, proxy)
+    except Exception as exc:
+        logging.warning("Could not persist good proxy to redis: %s", exc)
 
 
 def _ytdlp_proxies_with_refresh() -> list[str]:
     proxies = _ytdlp_proxies()
-    with _last_good_proxy_lock:
-        good = _LAST_GOOD_PROXY
+    good = _LAST_GOOD_PROXY_LOCAL
+    try:
+        redis_good = redis_client.get(_GOOD_PROXY_REDIS_KEY)
+        if redis_good:
+            good = redis_good.decode() if isinstance(redis_good, bytes) else redis_good
+    except Exception as exc:
+        logging.warning("Could not read good proxy from redis, using in-process fallback: %s", exc)
     if good and good in proxies:
         proxies.remove(good)
         proxies.insert(0, good)

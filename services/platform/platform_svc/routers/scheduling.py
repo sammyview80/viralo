@@ -19,6 +19,25 @@ from platform_svc.schemas import (
 
 router = APIRouter(tags=["scheduling"])
 
+
+async def _thumbnails_for(db: AsyncSession, clip_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """Batch-fetch clip thumbnails. clips lives in the shared DB but isn't a
+    platform_svc model, so this is a plain lookup query, not an ORM join."""
+    ids = [cid for cid in clip_ids if cid]
+    if not ids:
+        return {}
+    rows = await db.execute(
+        text("SELECT id, thumbnail_url FROM clips WHERE id = ANY(:ids) AND thumbnail_url IS NOT NULL"),
+        {"ids": ids},
+    )
+    return {row.id: row.thumbnail_url for row in rows}
+
+
+def _with_clip_media(resp: ScheduledPostResponse, post: ScheduledPost, thumbnails: dict[uuid.UUID, str]) -> ScheduledPostResponse:
+    resp.clip_storage_url = post.clip_storage_url
+    resp.clip_thumbnail_url = thumbnails.get(post.clip_id) if post.clip_id else None
+    return resp
+
 # ---------------------------------------------------------------------------
 # Optimal posting time heuristics (no ML — time-of-day recommendations)
 # ---------------------------------------------------------------------------
@@ -185,9 +204,10 @@ async def list_scheduled_posts(
     q = base_q.order_by(ScheduledPost.scheduled_at.asc()).offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(q)
     posts = result.scalars().all()
+    thumbnails = await _thumbnails_for(db, [p.clip_id for p in posts])
 
     return ScheduledPostListResponse(
-        items=[ScheduledPostResponse.model_validate(p) for p in posts],
+        items=[_with_clip_media(ScheduledPostResponse.model_validate(p), p, thumbnails) for p in posts],
         total=total,
         page=page,
         per_page=per_page,
@@ -206,7 +226,8 @@ async def get_scheduled_post(
     post = result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled post not found.")
-    return ScheduledPostResponse.model_validate(post)
+    thumbnails = await _thumbnails_for(db, [post.clip_id])
+    return _with_clip_media(ScheduledPostResponse.model_validate(post), post, thumbnails)
 
 
 @router.patch("/scheduled-posts/{post_id}", response_model=ScheduledPostResponse)
@@ -303,6 +324,7 @@ async def get_calendar(
     )
     result = await db.execute(q)
     posts = result.scalars().all()
+    thumbnails = await _thumbnails_for(db, [p.clip_id for p in posts])
 
     # Group by date string (YYYY-MM-DD)
     calendar: dict[str, list[Any]] = {}
@@ -310,7 +332,8 @@ async def get_calendar(
         day_key = post.scheduled_at.strftime("%Y-%m-%d")
         if day_key not in calendar:
             calendar[day_key] = []
-        calendar[day_key].append(ScheduledPostResponse.model_validate(post).model_dump())
+        resp = _with_clip_media(ScheduledPostResponse.model_validate(post), post, thumbnails)
+        calendar[day_key].append(resp.model_dump())
 
     return [{"date": date, "posts": posts_list} for date, posts_list in calendar.items()]
 

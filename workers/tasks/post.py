@@ -9,6 +9,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -116,7 +117,10 @@ def _try_insert_notification(
 @celery_app.task(name="workers.tasks.post.process_due_posts", queue="viralo.post.schedule")
 def process_due_posts():
     """Celery Beat task — find pending posts due for publishing and enqueue them."""
-    # Recover posts stuck in 'publishing' for >10 min (worker crash / container restart)
+    # Recover posts stuck in 'publishing' for >5 min (worker crash / container restart).
+    # Was 10 min — that turned every mid-publish worker kill (e.g. a redeploy) into a
+    # guaranteed ~10min delay before retry. 5 min still comfortably outlasts a normal
+    # TikTok/YouTube upload+poll cycle while halving the worst-case recovery time.
     # Auto-retry if under max retries, otherwise mark as failed
     with engine.connect() as conn:
         publishing_rows = conn.execute(
@@ -132,7 +136,7 @@ def process_due_posts():
                     END,
                     updated_at = NOW()
                 WHERE status = 'publishing'
-                  AND updated_at < NOW() - interval '10 minutes'
+                  AND updated_at < NOW() - interval '5 minutes'
             """)
         ).rowcount
         conn.commit()
@@ -252,8 +256,19 @@ def publish_post(self, tenant_id: str, post_id: str):
         retry_count = retry_count or 0
 
         # ── 2. Decrypt tokens ──────────────────────────────────────────────────
-        access_token = _decrypt_token(access_token_enc) if access_token_enc else ""
-        refresh_token = _decrypt_token(refresh_token_enc) if refresh_token_enc else None
+        try:
+            access_token = _decrypt_token(access_token_enc) if access_token_enc else ""
+            refresh_token = _decrypt_token(refresh_token_enc) if refresh_token_enc else None
+        except InvalidToken:
+            # Ciphertext doesn't match the current ENCRYPTION_KEY (rotated key or
+            # corrupted value) — retrying won't help, fail fast with a clear message.
+            _handle_publish_failure(
+                tenant_id, post_id, platform, retry_count,
+                error="Stored access token is unreadable — reconnect the social account",
+                clip_id=str(clip_id) if clip_id else None,
+                user_id=notification_user_id,
+            )
+            return
 
         # ── 3. Check token expiry (refresh if within 5 minutes) ───────────────
         if token_expires_at:
@@ -368,7 +383,12 @@ def publish_post(self, tenant_id: str, post_id: str):
         plat_lower = platform.lower()
         if plat_lower == "instagram":
             pub_kwargs.setdefault("ig_user_id", platform_user_id)
-            pub_kwargs.setdefault("video_url", clip_storage_url)
+            if "video_url" not in pub_kwargs:
+                # Instagram's servers fetch this URL themselves — clip_storage_url is
+                # just the bucket key (storage.upload() returns the key, not a URL),
+                # so it must be resolved to a fetchable signed URL first or every
+                # Instagram publish fails at Meta's own download step.
+                pub_kwargs["video_url"] = asyncio.run(storage.get_signed_url(clip_storage_url, expires_in=3600))
         elif plat_lower == "facebook":
             pub_kwargs.setdefault("page_id", platform_user_id)
         elif plat_lower == "linkedin":
@@ -448,6 +468,7 @@ def publish_post(self, tenant_id: str, post_id: str):
 
     except Exception as exc:
         logger.exception("publish_post: exception for post %s", post_id)
+        exc_msg = str(exc).strip() or type(exc).__name__
 
         if publish_attempted:
             # Publish was attempted but outcome unknown — use retry logic
@@ -459,7 +480,7 @@ def publish_post(self, tenant_id: str, post_id: str):
                 current_retries = (r[0] or 0) if r else 0
             _handle_publish_failure(
                 tenant_id, post_id, platform, current_retries,
-                error="Publish outcome unknown: " + str(exc)[:200],
+                error=f"Publish outcome unknown: {exc_msg[:200]}",
                 clip_id=str(clip_id) if clip_id else None,
                 user_id=notification_user_id,
             )
@@ -486,13 +507,10 @@ def publish_post(self, tenant_id: str, post_id: str):
                         updated_at = NOW()
                     WHERE id = CAST(:pid AS uuid)
                 """),
-                {"err": str(exc)[:1000], "pid": post_id},
+                {"err": exc_msg[:1000], "pid": post_id},
             )
 
-        if current_retries < 3:
-            raise self.retry(exc=exc, countdown=60)
-        else:
-            # Final failure
+        def _final_failure() -> None:
             try:
                 platform_name = "social"
                 with _get_session(tenant_id) as session:
@@ -506,10 +524,21 @@ def publish_post(self, tenant_id: str, post_id: str):
                 pass
             _handle_publish_failure(
                 tenant_id, post_id, platform_name, current_retries + 1,
-                error=str(exc)[:1000], already_incremented=True,
+                error=exc_msg[:1000], already_incremented=True,
                 clip_id=str(clip_id) if clip_id else None,
                 user_id=notification_user_id,
             )
+
+        if current_retries < 3:
+            try:
+                raise self.retry(exc=exc, countdown=60)
+            except self.MaxRetriesExceededError:
+                # Celery's own retry counter capped out before our DB-tracked
+                # current_retries did — fall through to final failure instead
+                # of leaving the row stuck in status='processing' forever.
+                _final_failure()
+        else:
+            _final_failure()
 
     finally:
         if tmp_path:

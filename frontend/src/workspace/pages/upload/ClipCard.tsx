@@ -105,27 +105,27 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
 
   return (
     <div
-      className="fixed inset-0 z-[500] grid place-items-center p-3 sm:p-5"
+      className="fixed inset-0 z-[500] flex flex-col sm:items-center sm:justify-center sm:p-5"
       style={{ background: "rgba(3,6,14,.82)", backdropFilter: "blur(12px)", animation: "fadeUp .14s ease" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Shell: 2-col grid, fixed height */}
+      {/* Shell: stacked on mobile, 2-col grid from md up */}
       <div
-        className="w-full overflow-hidden rounded-[22px] border border-c-border shadow-[0_48px_120px_rgba(0,0,0,.85)]"
-        style={{
-          maxWidth: 860,
-          height: "min(88vh, 580px)",
-          display: "grid",
-          gridTemplateColumns: "300px 1fr",
-          gridTemplateRows: "1fr",
-          animation: "fadeUp .22s cubic-bezier(.22,.8,.4,1)",
-          background: "rgb(var(--surface-0))",
-        }}
+        data-testid="clip-detail-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="clip-detail-title"
+        className={cn(
+          "flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden border-c-border bg-surface-0 shadow-[0_48px_120px_rgba(0,0,0,.85)]",
+          "sm:h-auto sm:max-h-[min(88vh,580px)] sm:max-w-[860px] sm:rounded-[22px] sm:border",
+          "md:grid md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] md:grid-rows-1",
+        )}
+        style={{ animation: "fadeUp .22s cubic-bezier(.22,.8,.4,1)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Left: video player ── */}
-        <div className="flex items-center justify-center border-r border-c-border bg-black overflow-hidden">
-          <div className="relative h-full w-full overflow-hidden">
+        {/* ── Video player ── */}
+        <div className="flex shrink-0 items-center justify-center overflow-hidden border-b border-c-border bg-black md:h-full md:shrink md:border-b-0 md:border-r">
+          <div className="relative mx-auto aspect-[9/16] w-full max-h-[min(38dvh,320px)] max-w-[min(72vw,240px)] overflow-hidden md:h-full md:max-h-none md:max-w-none">
             {clip.storage_url
               ? <video ref={videoRef} src={clip.storage_url} className="absolute inset-0 h-full w-full object-cover" playsInline preload="metadata" poster={clip.thumbnail_url ?? undefined} />
               : clip.thumbnail_url
@@ -188,11 +188,11 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
         </div>
 
         {/* ── Right: header + tabs + content + footer ── */}
-        <div className="flex min-w-0 flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {/* Header */}
           <div className="flex shrink-0 items-start gap-3 border-b border-c-border bg-surface-1 px-5 py-4">
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-[16px] font-bold leading-tight tracking-[-0.01em] text-c-text">
+              <h2 id="clip-detail-title" className="truncate text-[16px] font-bold leading-tight tracking-[-0.01em] text-c-text">
                 {clip.clip_metadata?.ai_title ?? clip.title ?? "Untitled clip"}
               </h2>
               {primaryDescription && (
@@ -215,10 +215,16 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
           </div>
 
           {/* Tab bar */}
-          <div className="flex shrink-0 items-center gap-1 border-b border-c-border px-4 py-2">
+          <div role="tablist" aria-label="Clip details" className="flex shrink-0 items-center gap-1 border-b border-c-border px-4 py-2">
             {TABS.map((t) => (
               <button
                 key={t.id}
+                id={`clip-detail-tab-${t.id}`}
+                role="tab"
+                type="button"
+                aria-selected={tab === t.id}
+                aria-controls={`clip-detail-panel-${t.id}`}
+                tabIndex={tab === t.id ? 0 : -1}
                 onClick={() => setTab(t.id)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer",
@@ -237,12 +243,17 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
             ))}
           </div>
 
-          {/* Tab content — fills remaining space, no overflow */}
-          <div className="min-h-0 flex-1 overflow-hidden">
+          {/* Tab content — scrollable on mobile */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 
             {/* ── INFO tab ── */}
             {tab === "info" && (
-              <div className="flex h-full flex-col gap-3 p-4">
+              <div
+                id="clip-detail-panel-info"
+                role="tabpanel"
+                aria-labelledby="clip-detail-tab-info"
+                className="flex h-full flex-col gap-3 p-4"
+              >
                 {/* Score + Duration */}
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="rounded-[12px] border border-c-border bg-surface-2 p-3">
@@ -311,7 +322,12 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
 
             {/* ── COPY tab ── */}
             {tab === "copy" && (
-              <div className="flex h-full flex-col overflow-hidden">
+              <div
+                id="clip-detail-panel-copy"
+                role="tabpanel"
+                aria-labelledby="clip-detail-tab-copy"
+                className="flex min-h-0 flex-col"
+              >
                 {allPlatformEntries.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-[12px] text-c-text-muted">No platform copy generated yet.</div>
                 ) : (
@@ -372,7 +388,12 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
 
             {/* ── ASSETS tab ── */}
             {tab === "assets" && (
-              <div className="flex h-full flex-col gap-3 overflow-hidden p-4">
+              <div
+                id="clip-detail-panel-assets"
+                role="tabpanel"
+                aria-labelledby="clip-detail-tab-assets"
+                className="flex h-full flex-col gap-3 overflow-hidden p-4"
+              >
                 {/* Caption preview */}
                 {cleanCaptionPreview && (
                   <div className="rounded-[12px] border border-c-border bg-surface-2 p-3.5">
@@ -435,7 +456,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
           </div>
 
           {/* Footer actions */}
-          <div className="shrink-0 border-t border-c-border bg-surface-1 px-4 py-3">
+          <div className="shrink-0 border-t border-c-border bg-surface-1 px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:pb-3">
             <div className="flex items-center gap-2">
               <button
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-[#ff3d6a] py-2.5 text-[13px] font-semibold text-white shadow-[0_2px_16px_rgba(255,61,106,.3)] transition hover:bg-[#e8304f] hover:shadow-[0_4px_24px_rgba(255,61,106,.4)] cursor-pointer"

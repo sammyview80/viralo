@@ -86,7 +86,9 @@ class YouTubePublisher(BasePublisher):
                     "madeForKids": made_for_kids,
                 },
             }
-            media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True, chunksize=5 * 1024 * 1024)
+            # Larger chunks = fewer HTTP round-trips for the same total upload;
+            # 5MB was overly conservative for clips that are typically <200MB.
+            media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True, chunksize=32 * 1024 * 1024)
             request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
             response = None
             while response is None:

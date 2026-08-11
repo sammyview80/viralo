@@ -89,6 +89,8 @@ class ScheduledPostResponse(BaseModel):
     retry_count: int
     last_error: str | None
     post_metadata: dict | None = None
+    clip_storage_url: str | None = None
+    clip_thumbnail_url: str | None = None
     created_at: Any
     updated_at: Any
 
