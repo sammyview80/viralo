@@ -170,9 +170,15 @@ class TikTokPublisher(BasePublisher):
             # still fail moderation/processing afterwards. Previously we returned success
             # right after the upload, which is why posts intermittently never appeared on
             # TikTok despite the task reporting success.
-            final_status, status_error = self._poll_publish_status(access_token, publish_id)
+            final_status, status_error, public_post_ids = self._poll_publish_status(access_token, publish_id)
+            # publish_id is TikTok's internal tracking ID for the status-fetch endpoint,
+            # never a real public video ID — using it to build a video URL 404s. The real
+            # public ID (if any) comes from publicaly_available_post_id once the post
+            # completes; SELF_ONLY/draft posts never get one, so fall back to None (not
+            # publish_id) and let _platform_live_url's None-guard skip the broken link.
+            real_post_id = public_post_ids[0] if public_post_ids else None
             if final_status == "PUBLISH_COMPLETE":
-                return PublishResult(success=True, platform_post_id=publish_id)
+                return PublishResult(success=True, platform_post_id=real_post_id)
             if final_status in ("FAILED", "PROCESSING_FAILED"):
                 return PublishResult(success=False, error=status_error or f"TikTok publish failed (status={final_status})")
             # Still processing after all poll attempts — treat as success-pending rather
@@ -182,16 +188,24 @@ class TikTokPublisher(BasePublisher):
                 "TikTok publish_id %s still in status '%s' after polling; assuming it will complete asynchronously",
                 publish_id, final_status,
             )
-            return PublishResult(success=True, platform_post_id=publish_id)
+            return PublishResult(success=True, platform_post_id=real_post_id)
         except requests.HTTPError as e:
             return PublishResult(success=False, error=f"HTTP {e.response.status_code}: {e.response.text[:300]}")
         except Exception as e:
             return PublishResult(success=False, error=str(e)[:500])
 
-    def _poll_publish_status(self, access_token: str, publish_id: str) -> tuple[str, Optional[str]]:
-        """Poll TikTok's status endpoint until the post completes, fails, or we time out."""
+    def _poll_publish_status(self, access_token: str, publish_id: str) -> tuple[str, Optional[str], Optional[list[str]]]:
+        """Poll TikTok's status endpoint until the post completes, fails, or we time out.
+
+        Returns (status, error_msg, publicaly_available_post_id) — the third element
+        is TikTok's real public video ID list. It is the last-seen value across all
+        poll attempts (not just the final PUBLISH_COMPLETE response), so a timeout
+        still returns an ID if TikTok surfaced one on an earlier poll. May be absent
+        entirely for SELF_ONLY/draft posts that never go public.
+        """
         status = "PROCESSING_DOWNLOAD"
         error_msg = None
+        public_post_ids = None
         for _ in range(STATUS_POLL_ATTEMPTS):
             try:
                 r = requests.post(
@@ -203,16 +217,20 @@ class TikTokPublisher(BasePublisher):
                 r.raise_for_status()
                 data = r.json().get("data", {})
                 status = data.get("status", status)
+                # Track the latest public ID we've seen even before/without a terminal
+                # status, so a poll-timeout fallback can still use a real ID if TikTok
+                # already surfaced one, instead of losing it by only checking on COMPLETE.
+                public_post_ids = data.get("publicaly_available_post_id") or public_post_ids
                 if status == "FAILED":
                     fail_reason = data.get("fail_reason") or "unknown reason"
                     error_msg = f"TikTok reported FAILED: {fail_reason}"
-                    return status, error_msg
+                    return status, error_msg, None
                 if status == "PUBLISH_COMPLETE":
-                    return status, None
+                    return status, None, public_post_ids
             except Exception as e:
                 log.warning("TikTok status poll failed for publish_id %s: %s", publish_id, e)
             time.sleep(STATUS_POLL_DELAY_SECONDS)
-        return status, error_msg
+        return status, error_msg, public_post_ids
 
     def refresh_token(self, refresh_token: str) -> dict:
         r = requests.post(TOKEN_URL, data={
