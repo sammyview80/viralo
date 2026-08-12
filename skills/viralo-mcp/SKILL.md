@@ -51,6 +51,8 @@ Example (generic `mcp.json`):
 - `import_youtube_video` — import a YouTube video and queue clip generation. Args: `url` (required), `title`, `config` (clip-generation settings, see below).
 - `upload_video` — upload a video file and queue clip generation. Args: `filename`, `content_base64` (base64-encoded raw file bytes), `title` (all required), `config`.
 - `generate_clips` — (re)generate clips for an already-imported video with a new config. Args: `video_id` (required), `config`.
+- `list_projects` — list projects/videos in the workspace. Args (all optional): `page`, `per_page` (max 100), `sort_by` (`newest`|`oldest`|`title`|`status`), `search`, `status_filter` (`all`|`ready`|`processing`|`failed`).
+- `get_project_details` — get details for a single project. Args: `project_id` (required), `include_clips` (default true — also returns the project's clips).
 
 ### `config` (clip-generation settings)
 
@@ -71,4 +73,4 @@ Shared by `import_youtube_video`, `upload_video`, `generate_clips`. All fields o
 
 ## Planned UI parity
 
-Expose tools for projects, uploads, clip editing, channels, analytics, billing, and integrations. Add each tool to `tools/list` and implement matching `tools/call` support before documenting it as available.
+Expose tools for uploads, clip editing, channels, analytics, billing, and integrations. Add each tool to `tools/list` and implement matching `tools/call` support before documenting it as available.
