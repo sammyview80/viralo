@@ -3,10 +3,12 @@ from fastapi import Depends, FastAPI
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from mcp_svc.auth import router as auth_router
+from mcp_svc.mcp import router as mcp_router
 from mcp_svc.tools import clips, publish, social, workspace, status
 
 app = FastAPI(title="Viralo MCP Service")
 app.include_router(auth_router)
+app.include_router(mcp_router)
 
 bearer_scheme = HTTPBearer()
 
