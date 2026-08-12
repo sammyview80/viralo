@@ -41,10 +41,10 @@ function CodeBlock({ children }: { children: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="relative mt-2 mx-4 mb-4 sm:mx-5">
-      <pre className="overflow-x-auto rounded-[8px] bg-surface-2 px-3 py-2.5 font-mono text-[12px] leading-5 text-c-text">{children}</pre>
+      <pre className="overflow-x-auto rounded-[8px] bg-surface-2 py-2.5 pl-3 pr-16 font-mono text-[12px] leading-5 text-c-text">{children}</pre>
       <button
         onClick={() => { navigator.clipboard.writeText(children); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-        className="absolute right-2 top-2 h-6 cursor-pointer rounded-[6px] border border-c-border bg-surface-1 px-2 text-[11px] font-medium text-c-text-muted transition hover:text-c-text"
+        className="absolute right-2 top-2 h-6 shrink-0 cursor-pointer rounded-[6px] border border-c-border bg-surface-1 px-2 text-[11px] font-medium text-c-text-muted transition hover:text-c-text"
       >
         {copied ? "Copied" : "Copy"}
       </button>
@@ -113,11 +113,11 @@ function AuthSection({ keys, generating, onGenerate, revealedKey, onDismissRevea
       {revealedKey && (
         <div className="mx-4 mt-3 rounded-[8px] border border-emerald-800/40 bg-emerald-950/20 p-3 sm:mx-5">
           <p className="mb-2 text-[12px] font-semibold text-emerald-400">Copy this key now — it won't be shown again.</p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <code className="flex-1 overflow-x-auto rounded-[6px] bg-surface-2 px-2.5 py-1.5 font-mono text-[12px] text-emerald-600 dark:text-emerald-300">{revealedKey}</code>
             <button
               onClick={() => { navigator.clipboard.writeText(revealedKey); onDismissReveal(); }}
-              className="shrink-0 h-7 cursor-pointer rounded-[6px] border border-emerald-800/40 bg-emerald-950/30 px-2.5 text-[11px] font-medium text-emerald-400 transition hover:bg-emerald-950/50"
+              className="h-7 shrink-0 cursor-pointer rounded-[6px] border border-emerald-800/40 bg-emerald-950/30 px-2.5 text-[11px] font-medium text-emerald-400 transition hover:bg-emerald-950/50"
             >
               Copy & close
             </button>
@@ -140,10 +140,10 @@ function AuthSection({ keys, generating, onGenerate, revealedKey, onDismissRevea
       ) : keys.length > 0 ? (
         <div className="border-t border-c-border">
           {keys.map((k) => (
-            <div key={k.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-c-border last:border-0 sm:px-5">
+            <div key={k.id} className="flex flex-col gap-1 px-4 py-3 border-b border-c-border last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5">
               <div className="min-w-0">
                 <p className="text-[13px] font-medium text-c-text">{k.name}</p>
-                <p className="mt-0.5 font-mono text-[11px] text-c-text-muted">{k.key_prefix}</p>
+                <p className="mt-0.5 font-mono text-[11px] text-c-text-muted break-all">{k.key_prefix}</p>
               </div>
               <p className="shrink-0 text-[12px] text-c-text-muted">{new Date(k.created_at).toLocaleDateString()}</p>
             </div>
@@ -191,8 +191,8 @@ function UseToolsSection() {
       </p>
       <div className="mt-3 border-t border-c-border">
         {TOOLS.map((t) => (
-          <div key={t.name} className="flex items-start gap-3 px-4 py-3 border-b border-c-border last:border-0 sm:px-5">
-            <code className="shrink-0 rounded-[6px] bg-surface-2 px-2 py-0.5 font-mono text-[12px] text-c-text">{t.name}</code>
+          <div key={t.name} className="flex flex-col gap-1.5 px-4 py-3 border-b border-c-border last:border-0 sm:flex-row sm:items-start sm:gap-3 sm:px-5">
+            <code className="inline-block w-fit shrink-0 rounded-[6px] bg-surface-2 px-2 py-0.5 font-mono text-[12px] text-c-text">{t.name}</code>
             <p className="text-[13px] text-c-text-muted">{t.desc}</p>
           </div>
         ))}
