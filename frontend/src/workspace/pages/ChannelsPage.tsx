@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { channelsApi, type ChannelSubscription, type ChannelVideo, type AutoPublishConfig, DEFAULT_AUTO_PUBLISH_CONFIG } from "@/lib/api";
+import { channelsApi, platformApi, type ChannelSubscription, type ChannelVideo, type AutoPublishConfig, type SocialAccount, DEFAULT_AUTO_PUBLISH_CONFIG } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 const ASPECT_RATIOS = ["9:16", "1:1", "16:9", "4:5"];
-const PLATFORM_OPTIONS = ["tiktok", "instagram", "youtube", "twitter", "linkedin", "facebook"];
 
 function AutoPublishForm({
   config,
@@ -14,13 +13,32 @@ function AutoPublishForm({
   config: AutoPublishConfig;
   onChange: (c: AutoPublishConfig) => void;
 }) {
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+
+  useEffect(() => {
+    platformApi.listAccounts()
+      .then((accs) => setAccounts(accs.filter((a) => a.is_active)))
+      .catch(() => setAccounts([]))
+      .finally(() => setLoadingAccounts(false));
+  }, []);
+
   function set<K extends keyof AutoPublishConfig>(key: K, val: AutoPublishConfig[K]) {
     onChange({ ...config, [key]: val });
   }
 
-  function togglePlatform(p: string) {
-    const has = config.platforms.includes(p);
-    set("platforms", has ? config.platforms.filter((x) => x !== p) : [...config.platforms, p]);
+  // Selecting an account is what actually determines where clips get posted server-side
+  // (workers/tasks/video/pipeline.py:_auto_schedule_clips reads social_account_ids). Keep
+  // `platforms` in sync purely so existing display/filter code that reads it still works.
+  function toggleAccount(account: SocialAccount) {
+    const has = config.social_account_ids.includes(account.id);
+    const nextIds = has
+      ? config.social_account_ids.filter((id) => id !== account.id)
+      : [...config.social_account_ids, account.id];
+    const nextPlatforms = Array.from(new Set(
+      accounts.filter((a) => nextIds.includes(a.id)).map((a) => a.platform.toLowerCase())
+    ));
+    onChange({ ...config, social_account_ids: nextIds, platforms: nextPlatforms });
   }
 
   return (
@@ -89,25 +107,33 @@ function AutoPublishForm({
         </div>
       </div>
 
-      {/* Platforms */}
+      {/* Accounts — auto-publish posts to whichever connected accounts are selected here */}
       <div>
-        <label className="mb-1.5 block text-[10px] text-c-text-muted">Publish to</label>
-        <div className="flex flex-wrap gap-1.5">
-          {PLATFORM_OPTIONS.map((p) => (
-            <button
-              key={p} type="button"
-              onClick={() => togglePlatform(p)}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[11px] font-medium capitalize transition",
-                config.platforms.includes(p)
-                  ? "border-blue-500/40 bg-blue-500/15 text-blue-300"
-                  : "border-c-border bg-surface-1 text-c-text-muted hover:text-c-text-secondary"
-              )}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        <label className="mb-1.5 block text-[10px] text-c-text-muted">Post to account(s)</label>
+        {loadingAccounts ? (
+          <Skeleton className="h-8 w-full rounded-[7px]" />
+        ) : accounts.length === 0 ? (
+          <p className="rounded-[7px] border border-dashed border-c-border bg-surface-1 px-2.5 py-2 text-[11px] text-c-text-muted">
+            No connected accounts. <a href="/integrations" className="text-blue-400 hover:underline">Connect one →</a>
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {accounts.map((a) => (
+              <button
+                key={a.id} type="button"
+                onClick={() => toggleAccount(a)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-medium transition",
+                  config.social_account_ids.includes(a.id)
+                    ? "border-blue-500/40 bg-blue-500/15 text-blue-300"
+                    : "border-c-border bg-surface-1 text-c-text-muted hover:text-c-text-secondary"
+                )}
+              >
+                <span className="capitalize">{a.platform}</span> — @{a.platform_username ?? "?"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Caption template */}
