@@ -7,11 +7,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@/lib/query";
 import { cn } from "@/lib/utils";
 import {
+  billingApi,
   platformApi,
   videoApi,
   type AnalyticsOverview,
+  type AnalyticsTimeseries,
   type ClipApiResponse,
+  type PlanInfo,
   type ScheduledPost,
+  type SubscriptionInfo,
   type VideoResponse,
 } from "@/lib/api";
 import { navigate } from "@/lib/router";
@@ -36,8 +40,6 @@ function icon(label: string): ComponentType<IconProps> {
 const ChevronRight = icon(">");
 const CircleDot = icon("o");
 const Clapperboard = icon("#");
-const Flame = icon("^");
-const Film = icon("=");
 const Inbox = icon("_");
 const MoreHorizontal = icon("...");
 const Play = icon(">");
@@ -45,32 +47,6 @@ const Sparkles = icon("+");
 const TrendingUp = icon("^");
 const Upload = icon("^");
 const WandSparkles = icon("*");
-
-const workflows = [
-  {
-    name: "Daily TikTok from Reddit trending",
-    last: "23 min ago",
-    icon: Flame,
-    tone: "text-orange-200 bg-orange-400/10 border-orange-300/20",
-    on: true,
-  },
-  {
-    name: "YouTube to 3 Shorts + captions",
-    last: "1 hr ago",
-    icon: Film,
-    tone: "text-rose-200 bg-rose-400/10 border-rose-300/20",
-    on: true,
-  },
-  {
-    name: "Comment digest to Slack",
-    last: "Yesterday",
-    icon: Inbox,
-    tone: "text-sky-200 bg-sky-400/10 border-sky-300/20",
-    on: false,
-  },
-];
-
-const chartBars = [42, 55, 38, 70, 64, 82, 74, 93, 88, 106, 98, 118, 110, 132, 126, 149, 136, 158];
 
 const GRAD_POOL = [
   "from-[#ff3d6a] to-[#ff7a3d]",
@@ -300,32 +276,12 @@ function Workflows() {
           Manage <ChevronRight className="h-3 w-3" />
         </a>
       </div>
-      <div>
-        {workflows.map((workflow, index) => (
-          <div
-            key={workflow.name}
-            className={cn(
-              "grid grid-cols-[34px_1fr_auto] items-center gap-3 px-2 py-2.5",
-              index < workflows.length - 1 && "border-b border-c-border",
-            )}
-          >
-            <div className={cn("grid h-[34px] w-[34px] place-items-center rounded-[9px] border", workflow.tone)}>
-              <workflow.icon className="h-3.5 w-3.5" />
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium">{workflow.name}</div>
-              <div className="mt-0.5 text-[11px] text-c-text-muted">Last run {workflow.last}</div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <span className={cn("min-w-5 text-[11px] font-semibold", workflow.on ? "text-emerald-300" : "text-c-text-muted")}>
-                {workflow.on ? "On" : "Off"}
-              </span>
-              <div className={cn("h-5 w-9 rounded-full border p-0.5 transition", workflow.on ? "border-[#ff3d6a]/30 bg-[#ff3d6a]/25" : "border-c-border bg-surface-3")}>
-                <div className={cn("h-4 w-4 rounded-full bg-white transition", workflow.on && "translate-x-4 bg-[#ff3d6a]")} />
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="flex flex-col items-center gap-2 py-6 text-center">
+        <Inbox className="h-5 w-5 text-c-text-muted" />
+        <p className="text-sm text-c-text-muted">No automations set up yet</p>
+        <a onClick={() => navigate("/workflows")} className="cursor-pointer text-[11.5px] font-medium text-c-text-secondary hover:underline">
+          Create one
+        </a>
       </div>
     </Card>
   );
@@ -407,30 +363,78 @@ function ViralityCard() {
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0GB";
+  const gb = bytes / 1_073_741_824;
+  return gb >= 1 ? `${gb.toFixed(1)}GB` : `${(bytes / 1_048_576).toFixed(0)}MB`;
+}
+
 function UsageBars() {
-  const quotas = [
-    ["Videos generated", "7", "50", "14%", "bg-[#ff3d6a]"],
-    ["Cloud storage", "4.2GB", "20GB", "21%", "bg-[#3daaff]"],
-    ["Brainstorm", "3", "10", "30%", "bg-[#22c55e]"],
-  ];
+  const { data: sub, loading: subLoading } = useQuery<SubscriptionInfo>(
+    "dashboard:billing:subscription",
+    () => billingApi.subscription(),
+  );
+  const { data: plans, loading: plansLoading } = useQuery<PlanInfo[]>(
+    "dashboard:billing:plans",
+    () => billingApi.plans(),
+  );
+
+  const loading = subLoading || plansLoading;
+  const plan = plans?.find((p) => p.name === sub?.plan_name);
+
+  const quotas: [string, string, string, string, string][] = sub && plan
+    ? [
+        [
+          "Videos generated",
+          String(sub.videos_used),
+          String(plan.videos_per_month),
+          `${Math.min(100, (sub.videos_used / Math.max(plan.videos_per_month, 1)) * 100)}%`,
+          "bg-[#ff3d6a]",
+        ],
+        [
+          "Cloud storage",
+          formatBytes(sub.storage_bytes_used),
+          `${plan.storage_gb}GB`,
+          `${Math.min(100, (sub.storage_bytes_used / Math.max(plan.storage_gb * 1_073_741_824, 1)) * 100)}%`,
+          "bg-[#3daaff]",
+        ],
+        [
+          "Brainstorm",
+          String(sub.brainstorm_used),
+          String(plan.brainstorm_sessions),
+          `${Math.min(100, (sub.brainstorm_used / Math.max(plan.brainstorm_sessions, 1)) * 100)}%`,
+          "bg-[#22c55e]",
+        ],
+      ]
+    : [];
+
   return (
     <Card className="p-5">
       <SectionTitle title="Usage this month" />
       <div className="space-y-4">
-        {quotas.map(([label, used, total, width, color]) => (
-          <div key={label}>
-            <div className="mb-2 flex justify-between">
-              <span className="text-xs font-medium text-c-text-secondary">{label}</span>
-              <span className="font-mono text-[11px] text-c-text-muted">
-                {used}
-                <span className="opacity-60"> / {total}</span>
-              </span>
+        {loading ? (
+          [0, 1, 2].map((i) => (
+            <div key={i}>
+              <Skeleton className="mb-2 h-3.5 w-32" />
+              <Skeleton className="h-1.5 w-full rounded-full" />
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-              <div className={cn("h-full rounded-full", color)} style={{ width }} />
+          ))
+        ) : (
+          quotas.map(([label, used, total, width, color]) => (
+            <div key={label}>
+              <div className="mb-2 flex justify-between">
+                <span className="text-xs font-medium text-c-text-secondary">{label}</span>
+                <span className="font-mono text-[11px] text-c-text-muted">
+                  {used}
+                  <span className="opacity-60"> / {total}</span>
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+                <div className={cn("h-full rounded-full", color)} style={{ width }} />
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </Card>
   );
@@ -495,7 +499,29 @@ function UpcomingPosts() {
 }
 
 function ChartCard() {
-  const max = Math.max(...chartBars);
+  const { data: series, loading: seriesLoading } = useQuery<AnalyticsTimeseries>(
+    "dashboard:analytics:timeseries",
+    () => platformApi.analyticsTimeseries("30d"),
+  );
+  const { data: overview, loading: overviewLoading } = useQuery<AnalyticsOverview>(
+    "dashboard:analytics:overview:30d",
+    () => platformApi.analyticsOverview("30d"),
+  );
+
+  const loading = seriesLoading || overviewLoading;
+  const points = series?.points ?? [];
+  const max = Math.max(1, ...points.map((p) => p.views));
+
+  const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n);
+
+  const tiles: [string, string][] = overview
+    ? [
+        [fmt(overview.total_views), "total views"],
+        [fmt(overview.total_likes), "total likes"],
+        [`${overview.engagement_rate.toFixed(1)}%`, "avg engagement"],
+      ]
+    : [];
+
   return (
     <Card>
       <CardHeader>
@@ -508,26 +534,37 @@ function ChartCard() {
         </Button>
       </CardHeader>
       <CardContent>
-        <div className="flex h-[230px] items-end gap-2 border-b border-c-border pb-4">
-          {chartBars.map((value, index) => (
-            <div
-              key={index}
-              className="flex-1 rounded-t-md bg-gradient-to-t from-[#ff3d6a]/55 to-[#ff7a3d] opacity-85 transition hover:opacity-100"
-              style={{ height: `${(value / max) * 100}%` }}
-            />
-          ))}
-        </div>
+        {loading ? (
+          <Skeleton className="h-[230px] w-full" />
+        ) : points.length === 0 ? (
+          <div className="flex h-[230px] items-center justify-center border-b border-c-border pb-4 text-sm text-c-text-muted">
+            Not enough data yet
+          </div>
+        ) : (
+          <div className="flex h-[230px] items-end gap-2 border-b border-c-border pb-4">
+            {points.map((point) => (
+              <div
+                key={point.date}
+                title={`${point.date}: ${point.views} views`}
+                className="flex-1 rounded-t-md bg-gradient-to-t from-[#ff3d6a]/55 to-[#ff7a3d] opacity-85 transition hover:opacity-100"
+                style={{ height: `${(point.views / max) * 100}%` }}
+              />
+            ))}
+          </div>
+        )}
         <div className="mt-4 grid grid-cols-3 gap-3">
-          {[
-            ["1.8M", "total views"],
-            ["91.4K", "new followers"],
-            ["6.8%", "avg engagement"],
-          ].map(([value, label]) => (
-            <div key={label} className="rounded-[10px] border border-c-border bg-surface-2 p-3">
-              <div className="font-display text-xl font-bold tracking-tight">{value}</div>
-              <div className="mt-1 text-[10px] font-semibold uppercase tracking-[.1em] text-c-text-muted">{label}</div>
-            </div>
-          ))}
+          {loading
+            ? [0, 1, 2].map((index) => (
+                <div key={index} className="rounded-[10px] border border-c-border bg-surface-2 p-3">
+                  <Skeleton className="h-6 w-16" />
+                </div>
+              ))
+            : tiles.map((item) => (
+                <div key={item[1]} className="rounded-[10px] border border-c-border bg-surface-2 p-3">
+                  <div className="font-display text-xl font-bold tracking-tight">{item[0]}</div>
+                  <div className="mt-1 text-[10px] font-semibold uppercase tracking-[.1em] text-c-text-muted">{item[1]}</div>
+                </div>
+              ))}
         </div>
       </CardContent>
     </Card>

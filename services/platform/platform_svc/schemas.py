@@ -152,6 +152,16 @@ class AnalyticsOverviewResponse(BaseModel):
     period: str
 
 
+class AnalyticsTimeseriesPoint(BaseModel):
+    date: str
+    views: int
+
+
+class AnalyticsTimeseriesResponse(BaseModel):
+    period: str
+    points: list[AnalyticsTimeseriesPoint]
+
+
 class PostAnalyticsDetail(BaseModel):
     post_id: uuid.UUID
     platform: str
