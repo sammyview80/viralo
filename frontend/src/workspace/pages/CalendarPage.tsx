@@ -1098,7 +1098,7 @@ function PostsListView({
 }
 
 /* ─── Main Page ─── */
-export function SchedulerPage() {
+export function CalendarPage() {
   const now = new Date();
 
   // URL-backed view state
@@ -1226,7 +1226,7 @@ export function SchedulerPage() {
       <div className="flex min-h-[calc(100vh-116px)] flex-col overflow-hidden rounded-[12px] border border-c-border bg-surface-2">
         {/* Header */}
         <div className="flex flex-col items-stretch gap-3 border-b border-c-border bg-surface-1 p-3 sm:p-4 lg:flex-row lg:flex-wrap lg:items-center">
-          <h1 className="font-display text-[16px] font-bold tracking-[-.01em] sm:text-[19px]">Scheduler</h1>
+          <h1 className="font-display text-[16px] font-bold tracking-[-.01em] sm:text-[19px]">Calendar</h1>
           {totalPostsThisMonth > 0 && (
             <span className="rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-[10px] font-semibold text-c-text-muted sm:text-xs">
               {totalPostsThisMonth}

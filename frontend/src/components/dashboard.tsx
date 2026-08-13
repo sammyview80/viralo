@@ -469,7 +469,7 @@ function UpcomingPosts() {
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-[13px] font-semibold text-c-text-secondary">Upcoming posts</h3>
-        <a onClick={() => navigate("/scheduler")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-c-text-muted hover:text-c-text-secondary">
+        <a onClick={() => navigate("/calendar")} className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-medium text-c-text-muted hover:text-c-text-secondary">
           Calendar <ChevronRight className="h-3 w-3" />
         </a>
       </div>
