@@ -13,6 +13,8 @@ from platform_svc.schemas import (
     AnalyticsEventResponse,
     AnalyticsOverviewResponse,
     AnalyticsSnapshotResponse,
+    AnalyticsTimeseriesPoint,
+    AnalyticsTimeseriesResponse,
     PostAnalyticsDetail,
 )
 
@@ -91,6 +93,35 @@ async def analytics_overview(
         posts_count=len(post_ids),
         period=period,
     )
+
+
+@router.get("/analytics/timeseries", response_model=AnalyticsTimeseriesResponse)
+async def analytics_timeseries(
+    period: str = Query("30d", pattern="^(7d|30d|90d)$"),
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Return daily view totals (across all tenant posts) for the given period."""
+    days = _PERIOD_DAYS[period]
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+
+    daily_q = (
+        select(
+            AnalyticsSnapshot.snapshot_date,
+            func.sum(AnalyticsSnapshot.views).label("views"),
+        )
+        .where(AnalyticsSnapshot.snapshot_date >= since)
+        .group_by(AnalyticsSnapshot.snapshot_date)
+        .order_by(AnalyticsSnapshot.snapshot_date.asc())
+    )
+    result = await db.execute(daily_q)
+    rows = result.all()
+
+    points = [
+        AnalyticsTimeseriesPoint(date=row.snapshot_date.isoformat(), views=int(row.views or 0))
+        for row in rows
+    ]
+    return AnalyticsTimeseriesResponse(period=period, points=points)
 
 
 @router.get("/analytics/posts")

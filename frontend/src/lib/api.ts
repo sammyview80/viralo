@@ -661,6 +661,16 @@ export interface AnalyticsOverview {
   period: string;
 }
 
+export interface AnalyticsTimeseriesPoint {
+  date: string;
+  views: number;
+}
+
+export interface AnalyticsTimeseries {
+  period: string;
+  points: AnalyticsTimeseriesPoint[];
+}
+
 export interface PostAnalytics {
   scheduled_post_id: string;
   platform: string;
@@ -746,6 +756,8 @@ export const platformApi = {
   // Analytics
   analyticsOverview: (period: "7d" | "30d" | "90d" = "30d") =>
     platformReq<AnalyticsOverview>("GET", `/analytics/overview?period=${period}`),
+  analyticsTimeseries: (period: "7d" | "30d" | "90d" = "30d") =>
+    platformReq<AnalyticsTimeseries>("GET", `/analytics/timeseries?period=${period}`),
   analyticsPosts: (page = 1, per_page = 10) =>
     platformReq<PaginatedResponse<PostAnalytics> | PostAnalytics[]>("GET", `/analytics/posts?page=${page}&per_page=${per_page}`)
       .then((data) => normalizePaginated<PostAnalytics>(data, page, per_page)),
@@ -947,6 +959,7 @@ export interface PlanInfo {
   videos_per_month: number;  // -1 = unlimited
   storage_gb: number;
   brainstorm: boolean;
+  brainstorm_sessions: number;
   workflows: boolean;
   channels: boolean;
   watermark: boolean;
