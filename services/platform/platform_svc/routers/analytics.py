@@ -35,9 +35,12 @@ async def analytics_overview(
     """
     days = _PERIOD_DAYS[period]
     since = datetime.now(timezone.utc) - timedelta(days=days)
+    tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
 
     # Get all scheduled posts in period that have been posted
+    # Explicit tenant_id filter — defense-in-depth, do not rely on RLS alone.
     posts_q = select(ScheduledPost.id).where(
+        ScheduledPost.tenant_id == tenant_id,
         ScheduledPost.status == "posted",
         ScheduledPost.posted_at >= since,
     )
@@ -104,13 +107,18 @@ async def analytics_timeseries(
     """Return daily view totals (across all tenant posts) for the given period."""
     days = _PERIOD_DAYS[period]
     since = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+    tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
 
+    # Explicit tenant_id filter — defense-in-depth, do not rely on RLS alone.
     daily_q = (
         select(
             AnalyticsSnapshot.snapshot_date,
             func.sum(AnalyticsSnapshot.views).label("views"),
         )
-        .where(AnalyticsSnapshot.snapshot_date >= since)
+        .where(
+            AnalyticsSnapshot.tenant_id == tenant_id,
+            AnalyticsSnapshot.snapshot_date >= since,
+        )
         .group_by(AnalyticsSnapshot.snapshot_date)
         .order_by(AnalyticsSnapshot.snapshot_date.asc())
     )
@@ -132,9 +140,13 @@ async def analytics_posts(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> dict:
     """Return per-post analytics summary (paginated)."""
+    tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
+
+    # Explicit tenant_id filter — defense-in-depth, do not rely on RLS alone.
     # Count posted posts with any analytics events
     count_sq = (
         select(func.count(func.distinct(AnalyticsEvent.scheduled_post_id)))
+        .where(AnalyticsEvent.tenant_id == tenant_id)
     )
     total_result = await db.execute(count_sq)
     total = total_result.scalar_one()
@@ -142,6 +154,7 @@ async def analytics_posts(
     # Get distinct post IDs with events, paginated
     post_ids_q = (
         select(AnalyticsEvent.scheduled_post_id)
+        .where(AnalyticsEvent.tenant_id == tenant_id)
         .distinct()
         .order_by(AnalyticsEvent.scheduled_post_id)
         .offset((page - 1) * per_page)
@@ -155,7 +168,10 @@ async def analytics_posts(
 
     # Fetch posts
     posts_result = await db.execute(
-        select(ScheduledPost).where(ScheduledPost.id.in_(post_ids))
+        select(ScheduledPost).where(
+            ScheduledPost.id.in_(post_ids),
+            ScheduledPost.tenant_id == tenant_id,
+        )
     )
     posts_map = {p.id: p for p in posts_result.scalars().all()}
 
@@ -209,8 +225,14 @@ async def analytics_post_detail(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Return full analytics detail for a single scheduled post."""
+    tenant_id = uuid.UUID(token.tenant_id) if isinstance(token.tenant_id, str) else token.tenant_id
+
+    # Explicit tenant_id filter — defense-in-depth, do not rely on RLS alone.
     post_result = await db.execute(
-        select(ScheduledPost).where(ScheduledPost.id == post_id)
+        select(ScheduledPost).where(
+            ScheduledPost.id == post_id,
+            ScheduledPost.tenant_id == tenant_id,
+        )
     )
     post = post_result.scalar_one_or_none()
     if not post:
@@ -219,7 +241,10 @@ async def analytics_post_detail(
     # Latest analytics event
     latest_event_q = (
         select(AnalyticsEvent)
-        .where(AnalyticsEvent.scheduled_post_id == post_id)
+        .where(
+            AnalyticsEvent.scheduled_post_id == post_id,
+            AnalyticsEvent.tenant_id == tenant_id,
+        )
         .order_by(AnalyticsEvent.fetched_at.desc())
         .limit(1)
     )
@@ -229,7 +254,10 @@ async def analytics_post_detail(
     # All snapshots ordered oldest first
     snapshots_q = (
         select(AnalyticsSnapshot)
-        .where(AnalyticsSnapshot.scheduled_post_id == post_id)
+        .where(
+            AnalyticsSnapshot.scheduled_post_id == post_id,
+            AnalyticsSnapshot.tenant_id == tenant_id,
+        )
         .order_by(AnalyticsSnapshot.snapshot_date.asc())
     )
     snapshots_result = await db.execute(snapshots_q)
