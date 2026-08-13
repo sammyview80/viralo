@@ -11,7 +11,7 @@ const ChannelsPage     = lazy(() => import("@/workspace/pages/ChannelsPage"));
 const IntegrationsPage = lazy(() => import("@/workspace/pages/IntegrationsPage").then((m) => ({ default: m.IntegrationsPage })));
 const OnboardingPage   = lazy(() => import("@/workspace/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 const ProjectsPage     = lazy(() => import("@/workspace/pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
-const SchedulerPage    = lazy(() => import("@/workspace/pages/SchedulerPage").then((m) => ({ default: m.SchedulerPage })));
+const CalendarPage     = lazy(() => import("@/workspace/pages/CalendarPage").then((m) => ({ default: m.CalendarPage })));
 const SettingsPage     = lazy(() => import("@/workspace/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 const McpPage          = lazy(() => import("@/workspace/pages/McpPage").then((m) => ({ default: m.McpPage })));
 const StudioPage       = lazy(() => import("@/workspace/pages/StudioPage").then((m) => ({ default: m.StudioPage })));
@@ -37,7 +37,7 @@ const pages: Record<PageKey, React.ReactNode> = {
   upload:        <UploadPage />,
   brainstorm:    <PlanGate feature="brainstorm"   minPlan="starter"><BrainstormPage /></PlanGate>,
   workflows:     <PlanGate feature="workflows"    minPlan="creator"><WorkflowsPage /></PlanGate>,
-  scheduler:     <SchedulerPage />,
+  calendar:      <CalendarPage />,
   integrations:  <PlanGate feature="integrations" minPlan="pro"><IntegrationsPage /></PlanGate>,
   channels:      <PlanGate feature="channels"     minPlan="creator"><ChannelsPage /></PlanGate>,
   onboarding:    <OnboardingPage />,

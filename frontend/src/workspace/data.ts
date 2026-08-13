@@ -15,7 +15,7 @@ export const nav: Array<{
   { key: "brainstorm",   label: "Brainstorm",    href: "/brainstorm",   icon: "Brain",    badge: "3",   group: "Create" },
   { key: "workflows",    label: "Workflows",     href: "/workflows",    icon: "Branch",                 group: "Create" },
   { key: "ranking",      label: "Video Ranking", href: "/ranking",      icon: "Chart",                  group: "Create" },
-  { key: "scheduler",    label: "Scheduler",     href: "/scheduler",    icon: "Calendar",               group: "Create" },
+  { key: "calendar",     label: "Calendar",      href: "/calendar",     icon: "Calendar",               group: "Create" },
   { key: "analytics",    label: "Analytics",     href: "/analytics",    icon: "Chart",                  group: "Measure" },
   { key: "trending",     label: "Trending",      href: "/trending",     icon: "Flame",    badge: "🔥",  group: "Measure" },
   { key: "integrations", label: "Integrations",  href: "/integrations", icon: "Globe",                  group: "Account" },

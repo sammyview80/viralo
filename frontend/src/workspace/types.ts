@@ -8,7 +8,7 @@ export type PageKey =
   | "upload"
   | "brainstorm"
   | "workflows"
-  | "scheduler"
+  | "calendar"
   | "integrations"
   | "channels"
   | "onboarding"
