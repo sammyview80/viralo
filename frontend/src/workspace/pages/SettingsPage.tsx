@@ -575,6 +575,20 @@ export function SettingsPage() {
     <nav className="hidden w-[200px] shrink-0 flex-col border-r border-c-border bg-surface-1 p-2 sm:flex">
       {SECTIONS.map((s) => <button key={s.id} onClick={() => setActive(s.id)} className={cn("rounded-[8px] px-2.5 py-2 text-left text-[13px]", active === s.id ? "bg-surface-glass text-c-text" : "text-c-text-muted")}>{s.label}</button>)}
     </nav>
+    <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-c-border bg-surface-1 p-2 sm:hidden">
+      {SECTIONS.map((s) => (
+        <button
+          key={s.id}
+          onClick={() => setActive(s.id)}
+          className={cn(
+            "shrink-0 whitespace-nowrap rounded-[8px] px-3 py-1.5 text-[13px] font-medium transition",
+            active === s.id ? "bg-surface-glass text-c-text" : "text-c-text-muted"
+          )}
+        >
+          {s.label}
+        </button>
+      ))}
+    </nav>
     <div className="flex-1 overflow-y-auto bg-surface-0"><div className="border-b border-c-border px-4 py-4"><h1 className="text-[15px] font-semibold text-c-text">{section.label}</h1><p className="text-[13px] text-c-text-muted">{section.desc}</p></div><div className="px-4 py-5">{CONTENT[active]}</div></div>
   </div>;
 }
