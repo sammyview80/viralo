@@ -45,6 +45,7 @@ export function UniversalClipCard({
   density = "comfortable",
   actions = [],
   showTags = true,
+  compactMobile = false,
   onClick,
   onSelect,
   onClipChange,
@@ -60,6 +61,8 @@ export function UniversalClipCard({
   density?: "compact" | "comfortable";
   actions?: ActionConfig[];
   showTags?: boolean;
+  /** Strip description/badges/tags/transcript to a small tile below `md` (768px, matches ClipsPage grid breakpoint). Actions row always stays visible/reachable regardless. */
+  compactMobile?: boolean;
   onClick?: (clip: ClipApiResponse) => void;
   onSelect?: (clip: ClipApiResponse) => void;
   onClipChange?: (clip: ClipApiResponse) => void;
@@ -139,7 +142,7 @@ export function UniversalClipCard({
       )}
       style={{ animation: `fadeUp .28s ${delay}ms cubic-bezier(.22,.8,.4,1) both` }}
     >
-      <div className="relative aspect-[1/0.7] overflow-hidden bg-black">
+      <div className={cn("relative overflow-hidden bg-black", compactMobile ? "aspect-video md:aspect-[1/0.7]" : "aspect-[1/0.7]")}>
         {hasVideo ? (
           <video src={localClip.storage_url!} poster={localClip.thumbnail_url ?? undefined} className="absolute inset-0 h-full w-full object-cover" playsInline muted preload="metadata" />
         ) : localClip.thumbnail_url ? (
@@ -202,19 +205,20 @@ export function UniversalClipCard({
         </div>
       </div>
 
-      <div className={cn("space-y-3", p)}>
+      <div className={cn("space-y-3", p, compactMobile && (p === "p-3.5" ? "p-2.5 space-y-1.5 md:space-y-3 md:p-3.5" : "p-2.5 space-y-1.5 md:space-y-3 md:p-4"))}>
         <div className="space-y-1.5">
           <div className="flex items-start justify-between gap-3">
-            <h3 title={title} className="line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text">{title}</h3>
-            <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-c-border bg-surface-3 px-2 py-1">
+            <h3 title={title} className={cn("line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text", compactMobile && "min-h-8 text-[12px] leading-4 md:min-h-10 md:text-[15px] md:leading-5")}>{title}</h3>
+            <div className={cn("shrink-0 items-center gap-1.5 rounded-full border border-c-border bg-surface-3 px-2 py-1", compactMobile ? "hidden md:flex" : "flex")}>
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: scoreColor }} />
               <span className="font-mono text-[11px] font-bold" style={{ color: scoreColor }}>{score}</span>
             </div>
           </div>
-          {description && <p title={description} className="line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted">{description}</p>}
+          {description && <p title={description} className={cn("line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted", compactMobile && "hidden md:block")}>{description}</p>}
+          {compactMobile && <p className="text-[10.5px] text-c-text-muted md:hidden">{new Date(localClip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted">
+        <div className={cn("flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted", compactMobile ? "hidden md:flex" : "flex")}>
           <Badge variant={localClip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(localClip.status) ? "warn" : localClip.status === "upload_failed" ? "error" : localClip.status === "processing" ? "warn" : "muted"}>{localClip.status === "pending_upload" ? "queued" : localClip.status === "upload_failed" ? "failed" : localClip.status}</Badge>
           <span className="rounded-full bg-surface-3 px-2 py-1">{tags.length} tags</span>
           <span className="rounded-full bg-surface-3 px-2 py-1">{new Date(localClip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
@@ -224,7 +228,7 @@ export function UniversalClipCard({
 
 
         {(postedPlatforms.length > 0 || (showTags && tags.length > 0)) && (
-          <div className="space-y-2 border-t border-c-border pt-3">
+          <div className={cn("space-y-2 border-t border-c-border pt-3", compactMobile ? "hidden md:block" : "block")}>
             {postedPlatforms.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {postedPlatforms.map((post) => {
@@ -249,7 +253,7 @@ export function UniversalClipCard({
         )}
 
         {showTranscript && localClip.caption_srt && (
-          <div className="max-h-28 overflow-y-auto rounded-[9px] border border-c-border bg-surface-3 px-3 py-2 font-mono text-[10.5px] leading-[1.55] text-zinc-500">
+          <div className={cn("max-h-28 overflow-y-auto rounded-[9px] border border-c-border bg-surface-3 px-3 py-2 font-mono text-[10.5px] leading-[1.55] text-zinc-500", compactMobile ? "hidden md:block" : "block")}>
             {localClip.caption_srt}
           </div>
         )}

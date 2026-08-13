@@ -909,12 +909,13 @@ export function ClipsPage() {
               <VirtualizedGrid
                 items={filtered}
                 keyForItem={(clip) => clip.id}
-                estimateRowHeight={430}
-                columns={[{ minWidth: 768, columns: 3 }]}
+                estimateRowHeight={(columnCount) => (columnCount <= 2 ? 210 : 430)}
+                columns={[{ minWidth: 0, columns: 2 }, { minWidth: 768, columns: 3 }]}
                 renderItem={(clip, i) => (
                   <div className="relative">
                     <UniversalClipCard
                       clip={clip}
+                      compactMobile
                       active={clip.id === selectedId}
                       onClick={() => openClip(clip.id)}
                       delay={(i % 12) * 35}
