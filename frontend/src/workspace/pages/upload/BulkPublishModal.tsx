@@ -5,14 +5,21 @@ import { platformApi, type ClipApiResponse, type SocialAccount } from "@/lib/api
 export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[]; onClose: () => void }) {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
-  const [groups, setGroups] = useState<Array<{ id: string; clipIds: string[]; accountId: string; scheduledAt: string }>>(() => {
+  const [groups, setGroups] = useState<Array<{ id: string; clipIds: string[]; accountId: string; scheduledAt: string; postNow: boolean }>>(() => {
     const base = new Date(Date.now() + 60 * 60 * 1000);
     const localIso = new Date(base.getTime() - base.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    return [{ id: crypto.randomUUID(), clipIds: clips.map((c) => c.id), accountId: "", scheduledAt: localIso }];
+    return [{ id: crypto.randomUUID(), clipIds: clips.map((c) => c.id), accountId: "", scheduledAt: localIso, postNow: false }];
   });
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedCount, setFailedCount] = useState(0);
+  // Per-(group, clip, account) postId so a retry never re-runs schedulePost for an assignment
+  // that already has one — only a failed publishNow (needsPublish) is retried. Account is part
+  // of the key because changing a slot's account after schedulePost succeeded but publishNow
+  // failed must not reuse the stale postId/old account on retry.
+  const [clipState, setClipState] = useState<Record<string, { postId: string; needsPublish: boolean }>>({});
+  const assignmentKey = (groupId: string, clipId: string, accountId: string) => `${groupId}:${clipId}:${accountId}`;
 
   useEffect(() => {
     platformApi.listAccounts()
@@ -29,7 +36,7 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
     const last = groups[groups.length - 1];
     const nextTime = new Date(new Date(last.scheduledAt).getTime() + 2 * 60 * 60 * 1000);
     const localIso = new Date(nextTime.getTime() - nextTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    setGroups((prev) => [...prev, { id: crypto.randomUUID(), clipIds: [], accountId: accounts[0]?.id ?? "", scheduledAt: localIso }]);
+    setGroups((prev) => [...prev, { id: crypto.randomUUID(), clipIds: [], accountId: accounts[0]?.id ?? "", scheduledAt: localIso, postNow: false }]);
   };
 
   const removeGroup = (gid: string) => setGroups((prev) => prev.filter((g) => g.id !== gid));
@@ -53,36 +60,91 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
   const handleSubmit = async () => {
     setSubmitting(true);
     setError(null);
-    try {
-      for (const g of groups) {
-        const account = accounts.find((a) => a.id === g.accountId);
-        if (!account || g.clipIds.length === 0) continue;
-        const platformKey = BULK_KEY_MAP[account.platform.toLowerCase()] ?? account.platform.toLowerCase();
-        for (const clipId of g.clipIds) {
-          const clip = clips.find((c) => c.id === clipId);
-          const content = clip?.clip_metadata?.platforms?.[platformKey];
-          const caption = content?.description ?? clip?.clip_metadata?.ai_title ?? clip?.title ?? undefined;
-          const hashtags = content?.tags ?? undefined;
-          await platformApi.schedulePost({
-            clip_id: clipId,
-            social_account_id: g.accountId,
-            platform: account.platform,
-            scheduled_at: new Date(g.scheduledAt).toISOString(),
-            caption,
-            hashtags,
-          });
+
+    const succeeded: string[] = [];
+    const failed: { label: string; reason: string; publishOnly: boolean }[] = [];
+    const nextClipState = { ...clipState };
+
+    for (const g of groups) {
+      const account = accounts.find((a) => a.id === g.accountId);
+      if (!account || g.clipIds.length === 0) continue;
+      const platformKey = BULK_KEY_MAP[account.platform.toLowerCase()] ?? account.platform.toLowerCase();
+
+      for (const clipId of g.clipIds) {
+        const clip = clips.find((c) => c.id === clipId);
+        const clipLabel = (clip as any)?.clip_metadata?.ai_title ?? clip?.title ?? clipId;
+        const key = assignmentKey(g.id, clipId, g.accountId);
+        const existing = nextClipState[key];
+
+        // Fully done in a prior submit — never touch again.
+        if (existing && !existing.needsPublish) {
+          succeeded.push(clipLabel);
+          continue;
+        }
+
+        try {
+          let postId = existing?.postId;
+
+          // Only call schedulePost if this clip doesn't already have a real post_id from a prior attempt.
+          if (!postId) {
+            const content = clip?.clip_metadata?.platforms?.[platformKey];
+            const caption = content?.description ?? clip?.clip_metadata?.ai_title ?? clip?.title ?? undefined;
+            const hashtags = content?.tags ?? undefined;
+            const scheduledAt = g.postNow ? new Date().toISOString() : new Date(g.scheduledAt).toISOString();
+            const post = await platformApi.schedulePost({
+              clip_id: clipId,
+              social_account_id: g.accountId,
+              platform: account.platform,
+              scheduled_at: scheduledAt,
+              caption,
+              hashtags,
+            });
+            postId = post.id;
+          }
+
+          if (g.postNow) {
+            try {
+              await platformApi.publishNow(postId);
+              nextClipState[key] = { postId, needsPublish: false };
+              succeeded.push(clipLabel);
+            } catch (e) {
+              nextClipState[key] = { postId, needsPublish: true };
+              failed.push({
+                label: clipLabel,
+                reason: `saved as scheduled but failed to enqueue for immediate publishing (${e instanceof Error ? e.message : "unknown error"})`,
+                publishOnly: true,
+              });
+            }
+          } else {
+            nextClipState[key] = { postId, needsPublish: false };
+            succeeded.push(clipLabel);
+          }
+        } catch (e) {
+          failed.push({ label: clipLabel, reason: e instanceof Error ? e.message : "unknown error", publishOnly: false });
         }
       }
+    }
+
+    setClipState(nextClipState);
+    setFailedCount(failed.length);
+
+    if (failed.length === 0) {
       setSuccess(true);
       setTimeout(onClose, 1500);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
-    } finally {
-      setSubmitting(false);
+    } else {
+      const failedList = failed.map((f) => `${f.label} (${f.reason})`).join("; ");
+      const succeededNote = succeeded.length > 0
+        ? ` Already succeeded and does NOT need retrying: ${succeeded.join(", ")}.`
+        : "";
+      const prefix = failed.every((f) => f.publishOnly) ? "Post saved but not enqueued: " : "";
+      setError(`${prefix}Failed: ${failedList}.${succeededNote} Click Retry to re-attempt only the failed item(s) — already-posted clips will not be duplicated.`);
     }
+    setSubmitting(false);
   };
 
   const totalScheduled = groups.reduce((n, g) => n + g.clipIds.length, 0);
+  const anyPostNow = groups.some((g) => g.postNow && g.clipIds.length > 0);
+  const allPostNow = groups.length > 0 && groups.every((g) => g.clipIds.length === 0 || g.postNow);
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4"
@@ -97,7 +159,7 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
           <div className="grid h-10 w-10 place-items-center rounded-[12px] border border-[#ff3d6a]/25 bg-[#ff3d6a]/10 text-[#ff3d6a] text-lg font-black">↗</div>
           <div>
             <h3 className="font-display text-[16px] font-bold text-c-text">Bulk Schedule</h3>
-            <p className="text-[11.5px] text-c-text-muted">Assign clips to time slots across accounts</p>
+            <p className="text-[11.5px] text-c-text-muted">Assign clips to time slots across accounts, or post them now</p>
           </div>
           <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-c-border text-c-text-muted hover:text-c-text transition">✕</button>
         </div>
@@ -107,8 +169,14 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
           {success ? (
             <div className="flex flex-col items-center gap-4 py-10 text-center">
               <div className="grid h-14 w-14 place-items-center rounded-full bg-green-500/10 text-3xl">✓</div>
-              <p className="font-display text-lg font-bold text-c-text">Scheduled!</p>
-              <p className="text-sm text-c-text-muted">{totalScheduled} clip{totalScheduled !== 1 ? "s" : ""} queued for publishing.</p>
+              <p className="font-display text-lg font-bold text-c-text">{allPostNow ? "Posting!" : "Scheduled!"}</p>
+              <p className="text-sm text-c-text-muted">
+                {allPostNow
+                  ? `${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""} enqueued to post now.`
+                  : anyPostNow
+                  ? `${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""} queued — some posting now, some scheduled.`
+                  : `${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""} queued for publishing.`}
+              </p>
               <button onClick={onClose} className="w-full sm:w-auto rounded-[10px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white transition hover:bg-[#ff3d6a]/85">
                 Done
               </button>
@@ -155,11 +223,30 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
                           </select>
                         </div>
                         <div>
-                          <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-c-text-muted">Scheduled at</label>
-                          <input type="datetime-local" value={g.scheduledAt}
-                            onChange={(e) => updateGroup(g.id, { scheduledAt: e.target.value })}
-                            className="w-full rounded-[9px] border border-c-border bg-surface-1 px-2.5 py-2 text-[12px] text-c-text focus:outline-none" />
+                          <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-[.08em] text-c-text-muted">When</label>
+                          {g.postNow ? (
+                            <div className="flex h-[35px] items-center rounded-[9px] border border-dashed border-c-border bg-surface-1 px-2.5 text-[12px] font-semibold text-c-text-muted">
+                              Posting immediately
+                            </div>
+                          ) : (
+                            <input type="datetime-local" value={g.scheduledAt}
+                              onChange={(e) => updateGroup(g.id, { scheduledAt: e.target.value })}
+                              className="w-full rounded-[9px] border border-c-border bg-surface-1 px-2.5 py-2 text-[12px] text-c-text focus:outline-none" />
+                          )}
                         </div>
+                      </div>
+
+                      <div className="flex gap-1.5 rounded-[9px] border border-c-border bg-surface-1 p-1" role="group" aria-label="Post timing mode">
+                        <button type="button" onClick={() => updateGroup(g.id, { postNow: false })}
+                          className={cn("flex-1 rounded-[7px] py-1.5 text-[11.5px] font-semibold transition",
+                            !g.postNow ? "bg-surface-2 text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>
+                          Schedule for later
+                        </button>
+                        <button type="button" onClick={() => updateGroup(g.id, { postNow: true })}
+                          className={cn("flex-1 rounded-[7px] py-1.5 text-[11.5px] font-semibold transition",
+                            g.postNow ? "bg-surface-2 text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>
+                          Post now
+                        </button>
                       </div>
 
                       <div>
@@ -188,7 +275,9 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
                 + Add time slot
               </button>
 
-              {error && <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>}
+              {error && (
+                <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>
+              )}
             </>
           )}
         </div>
@@ -207,7 +296,13 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
             </button>
             <button onClick={handleSubmit} disabled={submitting || totalScheduled === 0}
               className="col-span-2 sm:col-span-1 w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-2 rounded-[10px] bg-[#ff3d6a] px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50 transition hover:bg-[#ff3d6a]/85">
-              {submitting ? "Scheduling…" : `↗ Schedule ${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""}`}
+              {submitting
+                ? (failedCount > 0 ? "Retrying…" : allPostNow ? "Posting…" : "Scheduling…")
+                : failedCount > 0
+                ? `↗ Retry ${failedCount} failed clip${failedCount !== 1 ? "s" : ""}`
+                : allPostNow
+                ? `↗ Post ${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""} now`
+                : `↗ Schedule ${totalScheduled} clip${totalScheduled !== 1 ? "s" : ""}`}
             </button>
           </div>
         )}
