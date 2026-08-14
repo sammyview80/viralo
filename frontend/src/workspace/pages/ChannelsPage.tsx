@@ -976,7 +976,7 @@ export default function ChannelsPage() {
           {selectedChannel && (
             <div
               className={cn(
-                "fixed inset-0 z-40 h-full border-c-border bg-surface-0 overflow-hidden",
+                "fixed inset-0 z-40 h-[100dvh] border-c-border bg-surface-0 overflow-hidden",
                 "sm:sticky sm:top-0 sm:z-auto sm:h-[calc(100vh-180px)] sm:w-[340px] sm:border-l sm:transition-[width] sm:duration-200 xl:sm:w-[360px]"
               )}
             >
