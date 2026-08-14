@@ -592,6 +592,7 @@ export function ClipsPage() {
   const [published, setPublished] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortMode>("newest");
   const [showFilters, setShowFilters] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestResponse | null>(null);
   const [suggestingTags, setSuggestingTags] = useState(false);
   const [tagSuggestError, setTagSuggestError] = useState<string | null>(null);
@@ -815,45 +816,121 @@ export function ClipsPage() {
         {/* Header */}
         <div className="border-b border-c-border bg-surface-0/95 px-3 py-3 sm:px-5 sm:py-4">
           <div className="mx-auto flex w-full max-w-[1240px] flex-col px-3 sm:px-4 xl:px-5">
-            <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
-              <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
-                <div className="flex items-center gap-2">
-                  <h1 className="font-display text-[20px] font-bold tracking-[-.02em]">Clips</h1>
-                  <span className="rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-xs font-medium text-c-text-muted">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
+            {/* Mobile-only native toolbar — icon-first, minimal text, hidden on desktop */}
+            <div className="flex flex-col gap-2 md:hidden">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <h1 className="font-display text-[17px] font-bold tracking-[-.02em]">Clips</h1>
+                    <span className="rounded-full border border-c-border bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-c-text-muted">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
+                  </div>
                 </div>
-                <p className="mt-1 text-[11px] text-c-text-muted">Search, review, and publish shorts.</p>
-              </div>
-              <div className="relative min-w-0 max-w-none flex-1 lg:min-w-[240px] lg:max-w-[520px]">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-c-text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                <input className="h-10 w-full rounded-[11px] border border-c-border bg-surface-1 pl-9 pr-8 text-sm text-c-text placeholder:text-c-text-muted focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted hover:text-c-text-secondary transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 shrink-0 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-secondary hover:text-c-text")}>
-                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
-                  Filters
-                  {activeFilterCount > 0 && <span className="rounded-full bg-[#ff3d6a] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span>}
+                <button
+                  aria-label="Search"
+                  onClick={() => setMobileSearchOpen((v) => !v)}
+                  className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border transition cursor-pointer", mobileSearchOpen || search ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-secondary")}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                 </button>
-                <div className="flex shrink-0 rounded-[11px] border border-c-border bg-surface-1 p-1">
-                  {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-surface-2 text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>{v === "grid" ? "Grid" : "List"}</button>)}
+                <button
+                  aria-label="Filters"
+                  onClick={() => setShowFilters((v) => !v)}
+                  className={cn("relative grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-secondary")}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+                  {activeFilterCount > 0 && <span className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-[#ff3d6a] text-[9px] font-bold text-white">{activeFilterCount}</span>}
+                </button>
+                <button
+                  aria-label={viewMode === "grid" ? "Switch to list view" : "Switch to grid view"}
+                  onClick={() => setViewMode((v) => (v === "grid" ? "list" : "grid"))}
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-c-border bg-surface-1 text-c-text-secondary transition cursor-pointer"
+                >
+                  {viewMode === "grid" ? (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                  ) : (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+                  )}
+                </button>
+                <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-c-border bg-surface-1 text-c-text-secondary">
+                  <svg className="pointer-events-none h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 7h10M3 12h7M3 17h4"/><path d="m17 5 3 3-3 3M20 8h-6"/><path d="m17 19-3-3 3-3M14 16h6"/></svg>
+                  <select
+                    aria-label="Sort"
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as SortMode)}
+                    className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
+                  >
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="score_desc">Highest score</option>
+                    <option value="score_asc">Lowest score</option>
+                    <option value="duration_desc">Longest first</option>
+                  </select>
                 </div>
-                <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 shrink-0 rounded-[11px] border border-c-border bg-surface-1 px-3 text-xs font-semibold text-c-text-secondary focus:outline-none transition cursor-pointer">
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="score_desc">Highest score</option>
-                  <option value="score_asc">Lowest score</option>
-                  <option value="duration_desc">Longest first</option>
-                </select>
-
-                <Button size="sm" className="h-10 shrink-0 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
+                <button
+                  aria-label="New video"
+                  onClick={() => window.location.href = "/studio"}
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-[#ff3d6a] text-white shadow-[0_2px_10px_rgba(255,61,106,.28)] transition cursor-pointer hover:bg-[#e8304f]"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6}><path d="M12 5v14M5 12h14"/></svg>
+                </button>
               </div>
+              {mobileSearchOpen && (
+                <div className="relative">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-c-text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  <input autoFocus className="h-10 w-full rounded-[11px] border border-c-border bg-surface-1 pl-9 pr-8 text-sm text-c-text placeholder:text-c-text-muted focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                  {search && <button aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted hover:text-c-text-secondary transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+                </div>
+              )}
+              {activeFilterCount > 0 && !showFilters && (
+                <div className="flex items-center gap-2 text-[11px] text-c-text-muted">
+                  <span>{activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active</span>
+                  <button onClick={clearFilters} className="font-semibold text-rose-300/80 hover:text-rose-200">Clear all</button>
+                </div>
+              )}
             </div>
-            {activeFilterCount > 0 && !showFilters && (
-              <div className="mt-3 flex items-center gap-2 text-[11px] text-c-text-muted">
-                <span>{activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active</span>
-                <button onClick={clearFilters} className="font-semibold text-rose-300/80 hover:text-rose-200">Clear all</button>
+
+            {/* Desktop toolbar — unchanged */}
+            <div className="hidden md:flex md:flex-col md:gap-3">
+              <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+                <div className="min-w-0 lg:mr-2 lg:min-w-[140px]">
+                  <div className="flex items-center gap-2">
+                    <h1 className="font-display text-[20px] font-bold tracking-[-.02em]">Clips</h1>
+                    <span className="rounded-full border border-c-border bg-surface-3 px-2 py-0.5 text-xs font-medium text-c-text-muted">{loading ? "…" : `${filtered.length}${filtered.length !== clips.length ? `/${clips.length}` : ""}`}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-c-text-muted">Search, review, and publish shorts.</p>
+                </div>
+                <div className="relative min-w-0 max-w-none flex-1 lg:min-w-[240px] lg:max-w-[520px]">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-c-text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  <input className="h-10 w-full rounded-[11px] border border-c-border bg-surface-1 pl-9 pr-8 text-sm text-c-text placeholder:text-c-text-muted focus:border-[#ff3d6a]/30 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20 transition" placeholder="Search clips…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                  {search && <button aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-c-text-muted hover:text-c-text-secondary transition cursor-pointer"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={() => setShowFilters((v) => !v)} className={cn("flex h-10 shrink-0 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold transition cursor-pointer", showFilters || activeFilterCount > 0 ? "border-[#ff3d6a]/35 bg-[#ff3d6a]/10 text-rose-100" : "border-c-border bg-surface-1 text-c-text-secondary hover:text-c-text")}>
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+                    Filters
+                    {activeFilterCount > 0 && <span className="rounded-full bg-[#ff3d6a] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span>}
+                  </button>
+                  <div className="flex shrink-0 rounded-[11px] border border-c-border bg-surface-1 p-1">
+                    {(["grid", "list"] as const).map((v) => <button key={v} onClick={() => setViewMode(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition cursor-pointer", viewMode === v ? "bg-surface-2 text-c-text" : "text-c-text-muted hover:text-c-text-secondary")}>{v === "grid" ? "Grid" : "List"}</button>)}
+                  </div>
+                  <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-10 shrink-0 rounded-[11px] border border-c-border bg-surface-1 px-3 text-xs font-semibold text-c-text-secondary focus:outline-none transition cursor-pointer">
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="score_desc">Highest score</option>
+                    <option value="score_asc">Lowest score</option>
+                    <option value="duration_desc">Longest first</option>
+                  </select>
+
+                  <Button size="sm" className="h-10 shrink-0 rounded-[11px] bg-[#ff3d6a] px-4 text-white hover:bg-[#e8304f]" onClick={() => window.location.href = "/studio"}>+ New video</Button>
+                </div>
               </div>
-            )}
+              {activeFilterCount > 0 && !showFilters && (
+                <div className="flex items-center gap-2 text-[11px] text-c-text-muted">
+                  <span>{activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active</span>
+                  <button onClick={clearFilters} className="font-semibold text-rose-300/80 hover:text-rose-200">Clear all</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

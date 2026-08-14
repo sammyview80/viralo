@@ -205,17 +205,24 @@ export function UniversalClipCard({
         </div>
       </div>
 
-      <div className={cn("space-y-3", p, compactMobile && (p === "p-3.5" ? "p-2.5 space-y-1.5 md:space-y-3 md:p-3.5" : "p-2.5 space-y-1.5 md:space-y-3 md:p-4"))}>
-        <div className="space-y-1.5">
+      <div className={cn(compactMobile ? (p === "p-3.5" ? "space-y-1 p-2 md:space-y-3 md:p-3.5" : "space-y-1 p-2 md:space-y-3 md:p-4") : cn("space-y-3", p))}>
+        <div className={cn(compactMobile ? "space-y-1" : "space-y-1.5")}>
           <div className="flex items-start justify-between gap-3">
-            <h3 title={title} className={cn("line-clamp-2 min-h-10 flex-1 text-[15px] font-bold leading-5 tracking-[-.01em] text-c-text", compactMobile && "min-h-8 text-[12px] leading-4 md:min-h-10 md:text-[15px] md:leading-5")}>{title}</h3>
+            <h3 title={title} className={cn("line-clamp-2 flex-1 font-bold tracking-[-.01em] text-c-text", compactMobile ? "min-h-[26px] text-[11px] leading-[13px] md:min-h-10 md:text-[15px] md:leading-5" : "min-h-10 text-[15px] leading-5")}>{title}</h3>
             <div className={cn("shrink-0 items-center gap-1.5 rounded-full border border-c-border bg-surface-3 px-2 py-1", compactMobile ? "hidden md:flex" : "flex")}>
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: scoreColor }} />
               <span className="font-mono text-[11px] font-bold" style={{ color: scoreColor }}>{score}</span>
             </div>
           </div>
           {description && <p title={description} className={cn("line-clamp-2 min-h-9 text-[12px] leading-[1.45] text-c-text-muted", compactMobile && "hidden md:block")}>{description}</p>}
-          {compactMobile && <p className="text-[10.5px] text-c-text-muted md:hidden">{new Date(localClip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>}
+          {compactMobile && (
+            <div className="flex flex-wrap items-center gap-1 md:hidden">
+              <Badge variant={localClip.status === "ready" ? "ready" : ["pending_upload","uploading"].includes(localClip.status) ? "warn" : localClip.status === "upload_failed" ? "error" : localClip.status === "processing" ? "warn" : "muted"} className="!px-1.5 !py-0 !text-[8.5px]">{localClip.status === "pending_upload" ? "queued" : localClip.status === "upload_failed" ? "failed" : localClip.status}</Badge>
+              <span className="flex items-center gap-0.5 rounded-full bg-surface-3 px-1.5 py-0.5 text-[8.5px] font-bold capitalize text-c-text-muted" style={{ color: platCfg.color }}>{platCfg.icon}<span className="text-c-text-muted">{platCfg.label}</span></span>
+              <span className="rounded-full bg-surface-3 px-1.5 py-0.5 text-[8.5px] font-semibold text-c-text-muted" style={{ color: scoreColor }}>{score}</span>
+              <span className="text-[8.5px] text-c-text-muted">{new Date(localClip.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+            </div>
+          )}
         </div>
 
         <div className={cn("flex-wrap items-center gap-1.5 text-[10px] text-c-text-muted", compactMobile ? "hidden md:flex" : "flex")}>
