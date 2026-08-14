@@ -134,7 +134,7 @@ export function VirtualizedGrid<T>({
   items: T[];
   keyForItem: (item: T, index: number) => string;
   renderItem: (item: T, index: number) => React.ReactNode;
-  estimateRowHeight?: number;
+  estimateRowHeight?: number | ((columnCount: number) => number);
   gap?: number;
   overscan?: number;
   columns?: Breakpoint[];
@@ -143,7 +143,8 @@ export function VirtualizedGrid<T>({
   const { ref: widthRef, width } = useElementWidth<HTMLDivElement>();
   const columnCount = getColumns(width, columns, 1);
   const rows = Math.ceil(items.length / columnCount);
-  const rowSize = estimateRowHeight + gap;
+  const resolvedRowHeight = typeof estimateRowHeight === "function" ? estimateRowHeight(columnCount) : estimateRowHeight;
+  const rowSize = resolvedRowHeight + gap;
   const [virtualRef, range] = useVirtualRange(rows, rowSize, overscan);
 
   const visibleRows = useMemo(() => {
