@@ -474,10 +474,11 @@ function parseDuration(iso: string | null | undefined): string {
 }
 
 /* ─── Right detail panel ─── */
-function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
+function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh, onClose }: {
   channel: ChannelSubscription;
   onUnsubscribe: (id: string) => void;
   onRefresh: () => void;
+  onClose: () => void;
 }) {
   const [removing, setRemoving] = useState(false);
   const [renewing, setRenewing] = useState(false);
@@ -573,6 +574,13 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
             </div>
             <p className="mt-0.5 truncate font-mono text-[11px] text-c-text-muted">{channel.channel_id}</p>
           </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-c-text-muted transition hover:bg-surface-2 hover:text-c-text"
+          >
+            ✕
+          </button>
         </div>
 
         {/* Stat grid */}
@@ -597,21 +605,21 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
       <div className="border-b border-c-border px-5 py-4 space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-[11px] font-bold uppercase tracking-[.1em] text-c-text-muted">Auto-Publish</p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {editingConfig ? (
               <>
                 <button onClick={() => setEditingConfig(false)}
-                  className="rounded-[7px] border border-c-border px-2.5 py-1 text-[11px] text-c-text-muted hover:text-c-text-secondary transition">
+                  className="rounded-[7px] border border-c-border px-3 py-1.5 text-[11px] text-c-text-muted hover:text-c-text-secondary transition">
                   Cancel
                 </button>
                 <button onClick={handleSaveConfig} disabled={savingConfig}
-                  className="rounded-[7px] bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-50 transition">
+                  className="rounded-[7px] bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-50 transition">
                   {savingConfig ? "Saving…" : "Save"}
                 </button>
               </>
             ) : (
               <button onClick={() => setEditingConfig(true)}
-                className="rounded-[7px] border border-c-border bg-surface-2 px-2.5 py-1 text-[11px] text-c-text-muted hover:text-c-text transition">
+                className="rounded-[7px] border border-c-border bg-surface-2 px-3 py-1.5 text-[11px] text-c-text-muted hover:text-c-text transition">
                 Edit
               </button>
             )}
@@ -628,7 +636,7 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
           </>
         ) : (
           <div className="space-y-1.5 text-[12px]">
-            <div className="flex justify-between text-c-text-muted">
+            <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-c-text-muted">
               <span>Status</span>
               {apEnabled
                 ? <span className="text-blue-400 font-medium">Enabled</span>
@@ -636,17 +644,17 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
             </div>
             {apEnabled && (
               <>
-                <div className="flex justify-between text-c-text-muted">
+                <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-c-text-muted">
                   <span>Clips</span><span className="text-c-text-secondary">{apConfig.num_clips} · {apConfig.aspect_ratio}</span>
                 </div>
-                <div className="flex justify-between text-c-text-muted">
+                <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-c-text-muted">
                   <span>Per day</span><span className="text-c-text-secondary">{apConfig.publish_per_day} posts · every {apConfig.publish_interval_hours}h</span>
                 </div>
-                <div className="flex justify-between text-c-text-muted">
+                <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-c-text-muted">
                   <span>Clip length</span><span className="text-c-text-secondary">{apConfig.min_clip_duration}–{apConfig.max_clip_duration}s</span>
                 </div>
                 {apConfig.platforms.length > 0 && (
-                  <div className="flex justify-between text-c-text-muted">
+                  <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-c-text-muted">
                     <span>Platforms</span>
                     <span className="text-c-text-secondary capitalize">{apConfig.platforms.join(", ")}</span>
                   </div>
@@ -660,7 +668,7 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
       {/* Videos tabs */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Tab bar + controls */}
-        <div className="flex items-center gap-2 border-b border-c-border px-5 py-2.5">
+        <div className="flex flex-wrap items-center gap-2 border-b border-c-border px-5 py-2.5">
           <div className="flex rounded-[8px] border border-c-border bg-surface-1 p-0.5">
             {(["top", "recent"] as const).map((t) => (
               <button
@@ -680,7 +688,7 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
               <select
                 value={orderBy}
                 onChange={(e) => setOrderBy(e.target.value as "viewCount" | "date" | "rating")}
-                className="ml-auto rounded-[7px] border border-c-border bg-surface-2 px-2 py-1 text-[11px] text-c-text-muted outline-none"
+                className="sm:ml-auto rounded-[7px] border border-c-border bg-surface-2 px-2 py-1 text-[11px] text-c-text-muted outline-none"
               >
                 <option value="viewCount">Most Viewed</option>
                 <option value="date">Newest</option>
@@ -742,13 +750,16 @@ function ChannelDetailPanel({ channel, onUnsubscribe, onRefresh }: {
       </div>
 
       {/* Actions */}
-      <div className="space-y-2 border-t border-c-border px-5 py-4">
+      <div
+        className="space-y-2 border-t border-c-border px-5 pt-4"
+        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+      >
         <button onClick={handleRenew} disabled={renewing}
-          className="w-full rounded-[10px] bg-[#ff3d6a] py-2.5 text-[13px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f] disabled:opacity-50">
+          className="w-full rounded-[10px] bg-[#ff3d6a] py-3 text-[13px] font-semibold text-white shadow-[0_2px_12px_rgba(255,61,106,.25)] transition hover:bg-[#e8304f] disabled:opacity-50">
           {renewing ? "Renewing…" : "↻ Renew Subscription"}
         </button>
         <button onClick={handleUnsubscribe} disabled={removing}
-          className="w-full rounded-[10px] border border-red-500/20 bg-red-500/[.06] py-2.5 text-[13px] font-medium text-red-400 transition hover:bg-red-500/10 disabled:opacity-50">
+          className="w-full rounded-[10px] border border-red-500/20 bg-red-500/[.06] py-3 text-[13px] font-medium text-red-400 transition hover:bg-red-500/10 disabled:opacity-50">
           {removing ? "Removing…" : "Remove Channel"}
         </button>
       </div>
@@ -962,22 +973,22 @@ export default function ChannelsPage() {
           </div>
 
           {/* Detail panel */}
-          <div
-            className={cn(
-              "border-l border-c-border bg-surface-0 transition-[width] duration-200 overflow-hidden",
-              selectedChannel ? "w-[340px] xl:w-[360px]" : "w-0"
-            )}
-            style={{ position: "sticky", top: 0, height: "calc(100vh - 180px)" }}
-          >
-            {selectedChannel && (
+          {selectedChannel && (
+            <div
+              className={cn(
+                "fixed inset-0 z-40 h-full border-c-border bg-surface-0 overflow-hidden",
+                "sm:sticky sm:top-0 sm:z-auto sm:h-[calc(100vh-180px)] sm:w-[340px] sm:border-l sm:transition-[width] sm:duration-200 xl:sm:w-[360px]"
+              )}
+            >
               <ChannelDetailPanel
                 key={selectedChannel.id}
                 channel={selectedChannel}
                 onUnsubscribe={handleUnsubscribe}
                 onRefresh={load}
+                onClose={() => setSelectedId(null)}
               />
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
