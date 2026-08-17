@@ -3,5 +3,6 @@ from shared.models.public.user import User
 from shared.models.public.plan import Plan
 from shared.models.public.subscription import Subscription
 from shared.models.public.usage_quota import UsageQuota
+from shared.models.public.admin_magic_link import AdminMagicLink
 
-__all__ = ["Tenant", "User", "Plan", "Subscription", "UsageQuota"]
+__all__ = ["Tenant", "User", "Plan", "Subscription", "UsageQuota", "AdminMagicLink"]

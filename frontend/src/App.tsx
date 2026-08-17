@@ -8,6 +8,10 @@ import { OAuthCallbackPage } from "@/workspace/pages/OAuthCallbackPage";
 import { CliAuthPage } from "@/workspace/pages/CliAuthPage";
 import { useAuth, hydrate } from "@/stores/auth";
 import { usePathname } from "@/lib/router";
+import { adminToken } from "@/lib/api";
+import { AdminLoginPage } from "@/app/admin/AdminLoginPage";
+import { AdminVerifyPage } from "@/app/admin/AdminVerifyPage";
+import { AdminDashboardPage } from "@/app/admin/AdminDashboardPage";
 import { ViraloIcon } from "@/components/ViraloLogo";
 import { Shell } from "@/workspace/Shell";
 import { VeroagenListPage } from "@/veroagen/ProjectListPage";
@@ -27,6 +31,17 @@ export default function App() {
   const path = usePathname();
 
   useEffect(() => { hydrate(); }, []);
+
+  /* ── Admin panel — fully independent of tenant-user auth/session ── */
+  if (path === "/admin/verify") return <AdminVerifyPage />;
+  if (path === "/admin/dashboard") {
+    if (!adminToken.get()) { window.location.replace("/admin"); return null; }
+    return <AdminDashboardPage />;
+  }
+  if (path === "/admin") {
+    if (adminToken.get()) { window.location.replace("/admin/dashboard"); return null; }
+    return <AdminLoginPage />;
+  }
 
   /* ── Splash while restoring session ── */
   if (!ready) return <Splash />;

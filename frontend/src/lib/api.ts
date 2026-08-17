@@ -1131,6 +1131,83 @@ export interface ApiKeyCreated extends ApiKeyInfo {
 
 export interface UpdateMePayload { full_name?: string; avatar_url?: string }
 
+// ── Admin panel ──────────────────────────────────────────────────────────────
+
+const LS_ADMIN_TOKEN = "viralo_admin_token";
+
+export const adminToken = {
+  get: () => sessionStorage.getItem(LS_ADMIN_TOKEN),
+  set: (t: string) => sessionStorage.setItem(LS_ADMIN_TOKEN, t),
+  clear: () => sessionStorage.removeItem(LS_ADMIN_TOKEN),
+};
+
+async function adminReq<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const t = adminToken.get();
+  if (t) headers["Authorization"] = `Bearer ${t}`;
+
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (res.status === 204) return undefined as T;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const raw = data?.detail ?? data?.message ?? `HTTP ${res.status}`;
+    const msg = Array.isArray(raw) ? (raw[0]?.msg ?? String(raw)) : String(raw);
+    if (res.status === 401 || res.status === 403) adminToken.clear();
+    throw new ApiError(res.status, msg);
+  }
+  return data as T;
+}
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+  is_admin: boolean;
+  tier: string;
+  subscription_status: string | null;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface AdminUserListResponse {
+  items: AdminUserRow[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface AdminUserStats {
+  total_users: number;
+  active_users: number;
+  paid_users: number;
+  by_tier: Record<string, number>;
+}
+
+export const adminApi = {
+  requestLogin: (email: string) =>
+    adminReq<{ message: string }>("POST", "/admin/login/request", { email }),
+  // This fetch call sends the token in a POST body, not a query string, so
+  // this specific request never appears in server/proxy access logs or
+  // Referer headers. The emailed link itself carries the token in the URL
+  // fragment (see AdminVerifyPage) — that part is a separate concern.
+  verifyLogin: (token: string) =>
+    adminReq<{ access_token: string; token_type: string }>("POST", "/admin/login/verify", { token }),
+  listUsers: (params: { page?: number; per_page?: number; search?: string; sort_by?: string; order?: string } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+    return adminReq<AdminUserListResponse>("GET", `/admin/users${qs.toString() ? `?${qs}` : ""}`);
+  },
+  userStats: () => adminReq<AdminUserStats>("GET", "/admin/users/stats"),
+  changeTier: (userId: string, planName: string) =>
+    adminReq<AdminUserRow>("POST", `/admin/users/${userId}/tier`, { plan_name: planName }),
+};
+
 export const settingsApi = {
   getMe:                 ()                              => req<UserResponse>("GET",   "/auth/me"),
   updateMe:              (body: UpdateMePayload)         => req<UserResponse>("PATCH", "/auth/me", body),
