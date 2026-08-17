@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     # Gmail 535 "Bad Credentials" even though the actual password is correct.
     smtp_password: str = Field(default="", validation_alias="SMTP_PASS")
     smtp_from: str = "Viralo <no-reply@viralo.app>"
+
+    @field_validator("frontend_url", mode="after")
+    @classmethod
+    def _strip_trailing_slash(cls, v: str) -> str:
+        # Every call site builds URLs as f"{frontend_url}/some/path" - a
+        # trailing slash in the env var (e.g. "https://app.example.com/")
+        # produces a double slash ("https://app.example.com//some/path").
+        # Normalize once here instead of trusting every call site to strip it.
+        return v.rstrip("/")
 
 
 settings = Settings()
