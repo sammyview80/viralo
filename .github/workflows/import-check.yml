@@ -1,0 +1,62 @@
+name: docker-build-check
+
+# Catches "works on my machine, crashes in prod" bugs (e.g. a dependency
+# used in code but missing from pyproject.toml) by building the REAL
+# Docker image for every backend service on every PR into dev/main — the
+# same image that actually ships. If a service can't build+boot here, it
+# can't build+boot in prod either. This is what would have caught the
+# missing-aiosmtplib incident before merge.
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: core
+            target: production
+            module: core.main
+          - service: video
+            target: production
+            module: video.main
+          - service: agent
+            target: production
+            module: agent.main
+          - service: workflow
+            target: production
+            module: workflow.main
+          - service: platform
+            target: production
+            module: platform_svc.main
+          - service: mcp
+            target: ""
+            module: mcp_svc.server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image for ${{ matrix.service }}
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            docker build --target "${{ matrix.target }}" -f services/${{ matrix.service }}/Dockerfile -t viralo-${{ matrix.service }}:ci .
+          else
+            docker build -f services/${{ matrix.service }}/Dockerfile -t viralo-${{ matrix.service }}:ci .
+          fi
+
+      - name: Boot-check ${{ matrix.service }} (import the real app module)
+        run: |
+          docker run --rm \
+            -e DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/db" \
+            -e REDIS_URL="redis://localhost:6379/0" \
+            -e RABBITMQ_URL="amqp://user:pass@localhost:5672//" \
+            -e SECRET_KEY="ci-dummy-secret-key-not-real" \
+            -e ENCRYPTION_KEY="0000000000000000000000000000000000000000=" \
+            --entrypoint python \
+            viralo-${{ matrix.service }}:ci \
+            -c "import ${{ matrix.module }}; print('${{ matrix.service }}: import OK')"
