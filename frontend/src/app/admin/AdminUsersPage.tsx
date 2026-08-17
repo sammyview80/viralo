@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { adminApi, ADMIN_PLAN_TIERS, ApiError, type AdminUserRow } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -36,8 +36,10 @@ export function AdminUsersPage() {
   const [meId, setMeId] = useState<string | null>(null);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const requestSeq = useRef(0);
 
   const load = useCallback(() => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError("");
     Promise.all([
@@ -45,19 +47,23 @@ export function AdminUsersPage() {
       adminApi.listUsers({ page, per_page: PER_PAGE, search, sort_by: sortBy, order }),
     ])
       .then(([me, u]) => {
+        if (seq !== requestSeq.current) return;
         setMeId(me.id);
         setIsSuperadmin(me.is_superadmin);
         setUsers(u.items);
         setTotal(u.total);
       })
       .catch((err) => {
+        if (seq !== requestSeq.current) return;
         if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
           navigate("/admin");
           return;
         }
         setError(err instanceof ApiError ? err.message : "Failed to load admin data");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (seq === requestSeq.current) setLoading(false);
+      });
   }, [page, search, sortBy, order]);
 
   useEffect(() => { load(); }, [load]);
@@ -65,6 +71,21 @@ export function AdminUsersPage() {
   function toggleSort(col: string) {
     if (sortBy === col) { setOrder((o) => (o === "asc" ? "desc" : "asc")); }
     else { setSortBy(col); setOrder("desc"); }
+  }
+
+  function handleSortKeyDown(e: React.KeyboardEvent, col: string) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleSort(col);
+    }
+  }
+
+  function handleRowKeyDown(e: React.KeyboardEvent, userId: string) {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      navigate(`/admin/users/${userId}`);
+    }
   }
 
   async function confirmPendingAction() {
@@ -120,13 +141,31 @@ export function AdminUsersPage() {
         <table className="w-full text-left text-[13px]">
           <thead>
             <tr className="border-b border-c-border text-[11px] uppercase tracking-[.06em] text-c-text-muted">
-              <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("email")}>Email</th>
+              <th
+                className="cursor-pointer px-4 py-3"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleSort("email")}
+                onKeyDown={(e) => handleSortKeyDown(e, "email")}
+              >Email</th>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Tier</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Active</th>
-              <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("created_at")}>Signed up</th>
-              <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("last_login_at")}>Last active</th>
+              <th
+                className="cursor-pointer px-4 py-3"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleSort("created_at")}
+                onKeyDown={(e) => handleSortKeyDown(e, "created_at")}
+              >Signed up</th>
+              <th
+                className="cursor-pointer px-4 py-3"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleSort("last_login_at")}
+                onKeyDown={(e) => handleSortKeyDown(e, "last_login_at")}
+              >Last active</th>
               <th className="px-4 py-3">Change tier</th>
               {isSuperadmin && <th className="px-4 py-3">Admin access</th>}
             </tr>
@@ -141,8 +180,11 @@ export function AdminUsersPage() {
             {!loading && users.map((u) => (
               <tr
                 key={u.id}
-                className="cursor-pointer border-b border-c-border/60 last:border-0 hover:bg-surface-3"
+                className="cursor-pointer border-b border-c-border/60 last:border-0 hover:bg-surface-3 focus-visible:bg-surface-3 focus-visible:outline-none"
+                role="button"
+                tabIndex={0}
                 onClick={() => navigate(`/admin/users/${u.id}`)}
+                onKeyDown={(e) => handleRowKeyDown(e, u.id)}
               >
                 <td className="px-4 py-3 text-c-text">{u.email}{u.is_admin && <span className="ml-1.5 text-[10px] text-[#ff3d6a]">ADMIN</span>}</td>
                 <td className="px-4 py-3 text-c-text-secondary">{u.full_name ?? "—"}</td>
@@ -165,7 +207,7 @@ export function AdminUsersPage() {
                       }
                       e.target.value = "";
                     }}
-                    className="rounded-[8px] border border-c-border bg-surface-3 px-2 py-1.5 text-[12px] text-c-text outline-none disabled:opacity-50"
+                    className="min-h-[38px] rounded-[8px] border border-c-border bg-surface-3 px-2 py-1.5 text-[12px] text-c-text outline-none disabled:opacity-50"
                   >
                     <option value="" disabled>{updatingId === u.id ? "Updating…" : "Set plan…"}</option>
                     {ADMIN_PLAN_TIERS.map((p) => (
@@ -199,20 +241,20 @@ export function AdminUsersPage() {
         </table>
       </div>
 
-      <div className="mt-4 flex items-center justify-between text-[12.5px] text-c-text-muted">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-c-text-muted">
         <span>{total} user{total === 1 ? "" : "s"} · page {page} of {totalPages}</span>
         <div className="flex gap-2">
           <button
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
+            className="min-h-[40px] rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
           >
             Prev
           </button>
           <button
             disabled={page >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
+            className="min-h-[40px] rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
           >
             Next
           </button>

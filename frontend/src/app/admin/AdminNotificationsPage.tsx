@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { adminApi, ApiError, type AdminNotificationRow } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -14,8 +14,10 @@ export function AdminNotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const requestSeq = useRef(0);
 
   const load = useCallback(() => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError("");
     adminApi
@@ -26,17 +28,21 @@ export function AdminNotificationsPage() {
         is_read: readFilter === "" ? undefined : readFilter === "true",
       })
       .then((res) => {
+        if (seq !== requestSeq.current) return;
         setItems(res.items);
         setTotal(res.total);
       })
       .catch((err) => {
+        if (seq !== requestSeq.current) return;
         if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
           navigate("/admin");
           return;
         }
         setError(err instanceof ApiError ? err.message : "Failed to load notifications");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (seq === requestSeq.current) setLoading(false);
+      });
   }, [page, type, readFilter]);
 
   useEffect(() => { load(); }, [load]);
@@ -47,6 +53,10 @@ export function AdminNotificationsPage() {
       const updated = await adminApi.markNotificationRead(id);
       setItems((prev) => prev.map((n) => (n.id === id ? updated : n)));
     } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        navigate("/admin");
+        return;
+      }
       setError(err instanceof ApiError ? err.message : "Failed to update notification");
     } finally {
       setUpdatingId(null);
@@ -68,11 +78,11 @@ export function AdminNotificationsPage() {
         </div>
       )}
 
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <select
           value={type}
           onChange={(e) => { setPage(1); setType(e.target.value); }}
-          className="rounded-[10px] border border-c-border bg-surface-2 px-3 py-2 text-[13px] text-c-text outline-none"
+          className="min-h-[42px] rounded-[10px] border border-c-border bg-surface-2 px-3 py-2 text-[13px] text-c-text outline-none"
         >
           <option value="">All types</option>
           <option value="new_signup">New signup</option>
@@ -80,7 +90,7 @@ export function AdminNotificationsPage() {
         <select
           value={readFilter}
           onChange={(e) => { setPage(1); setReadFilter(e.target.value as "" | "true" | "false"); }}
-          className="rounded-[10px] border border-c-border bg-surface-2 px-3 py-2 text-[13px] text-c-text outline-none"
+          className="min-h-[42px] rounded-[10px] border border-c-border bg-surface-2 px-3 py-2 text-[13px] text-c-text outline-none"
         >
           <option value="">All</option>
           <option value="false">Unread</option>
@@ -126,7 +136,7 @@ export function AdminNotificationsPage() {
                     <button
                       disabled={updatingId === n.id}
                       onClick={() => handleMarkRead(n.id)}
-                      className="rounded-[8px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[12px] font-semibold text-c-text hover:bg-surface-2 disabled:opacity-50"
+                      className="min-h-[36px] whitespace-nowrap rounded-[8px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[12px] font-semibold text-c-text hover:bg-surface-2 disabled:opacity-50"
                     >
                       {updatingId === n.id ? "Updating…" : "Mark read"}
                     </button>
@@ -138,20 +148,20 @@ export function AdminNotificationsPage() {
         </table>
       </div>
 
-      <div className="mt-4 flex items-center justify-between text-[12.5px] text-c-text-muted">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-c-text-muted">
         <span>{total} notification{total === 1 ? "" : "s"} · page {page} of {totalPages}</span>
         <div className="flex gap-2">
           <button
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
+            className="min-h-[40px] rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
           >
             Prev
           </button>
           <button
             disabled={page >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
+            className="min-h-[40px] rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40"
           >
             Next
           </button>
