@@ -3376,6 +3376,7 @@ source = { editable = "shared" }
 dependencies = [
     { name = "aio-pika" },
     { name = "aiofiles" },
+    { name = "aiosmtplib" },
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "bcrypt" },
@@ -3398,6 +3399,7 @@ dependencies = [
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.4" },
     { name = "aiofiles", specifier = ">=24.1" },
+    { name = "aiosmtplib", specifier = ">=3.0" },
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "bcrypt", specifier = ">=4.0" },

@@ -21,6 +21,7 @@ dependencies = [
     "cloudinary>=1.41",
     "psycopg2-binary>=2.9",
     "pyyaml>=6.0",
+    "aiosmtplib>=3.0",
 ]
 
 [build-system]
