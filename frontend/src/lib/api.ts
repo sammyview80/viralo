@@ -1172,6 +1172,8 @@ export interface AdminUserRow {
   is_superadmin: boolean;
   tier: string;
   subscription_status: string | null;
+  billing_cycle: string | null;
+  current_period_end: string | null;
   created_at: string;
   last_login_at: string | null;
 }
@@ -1197,6 +1199,79 @@ export interface AdminMeResponse {
   is_superadmin: boolean;
 }
 
+export const ADMIN_PLAN_TIERS = ["free", "starter", "pro", "creator", "unlimited"];
+
+export interface SignupTrendPoint {
+  date: string;
+  count: number;
+}
+
+export interface SignupTrendResponse {
+  points: SignupTrendPoint[];
+}
+
+export interface VideoSummary {
+  id: string;
+  title: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface SocialAccountSummary {
+  platform: string;
+  platform_username: string | null;
+  is_active: boolean;
+  connected_at: string;
+}
+
+export interface ScheduledPostBreakdownRow {
+  platform: string;
+  status: string;
+  count: number;
+}
+
+export interface UserDetailProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  tenant_id: string | null;
+  is_active: boolean;
+  is_admin: boolean;
+  is_superadmin: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  tier: string;
+  subscription_status: string | null;
+  billing_cycle: string | null;
+  current_period_end: string | null;
+}
+
+export interface UserDetailResponse {
+  profile: UserDetailProfile;
+  videos_count: number;
+  videos: VideoSummary[];
+  clips_count: number;
+  storage_bytes_used: number | null;
+  social_accounts: SocialAccountSummary[];
+  scheduled_posts_by_platform: ScheduledPostBreakdownRow[];
+  has_active_api_key: boolean;
+}
+
+export interface RevenueByTierRow {
+  tier: string;
+  mrr: number;
+  subscriber_count: number;
+}
+
+export interface RevenueSummaryResponse {
+  mrr: number;
+  by_tier: RevenueByTierRow[];
+  upgrades_last_30d: number | null;
+  downgrades_last_30d: number | null;
+  cancellations_last_30d: number;
+  change_tracking_note: string;
+}
+
 export const adminApi = {
   requestLogin: (email: string) =>
     adminReq<{ message: string }>("POST", "/admin/login/request", { email }),
@@ -1207,12 +1282,15 @@ export const adminApi = {
   // fragment (see AdminVerifyPage) — that part is a separate concern.
   verifyLogin: (token: string) =>
     adminReq<{ access_token: string; token_type: string }>("POST", "/admin/login/verify", { token }),
-  listUsers: (params: { page?: number; per_page?: number; search?: string; sort_by?: string; order?: string } = {}) => {
+  listUsers: (params: { page?: number; per_page?: number; search?: string; sort_by?: string; order?: string; subscription_status?: string } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
     return adminReq<AdminUserListResponse>("GET", `/admin/users${qs.toString() ? `?${qs}` : ""}`);
   },
   userStats: () => adminReq<AdminUserStats>("GET", "/admin/users/stats"),
+  signupTrend: (days = 30) => adminReq<SignupTrendResponse>("GET", `/admin/dashboard/signups?days=${days}`),
+  userDetail: (userId: string) => adminReq<UserDetailResponse>("GET", `/admin/users/${userId}/detail`),
+  revenueSummary: () => adminReq<RevenueSummaryResponse>("GET", "/admin/revenue/summary"),
   changeTier: (userId: string, planName: string) =>
     adminReq<AdminUserRow>("POST", `/admin/users/${userId}/tier`, { plan_name: planName }),
   changeAdminRole: (userId: string, isAdmin: boolean) =>
