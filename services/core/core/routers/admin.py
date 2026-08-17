@@ -27,6 +27,7 @@ from sqlalchemy import Date, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.admin_readonly_models import (
+    AdminBrainstormSessionView,
     AdminClipView,
     AdminScheduledPostView,
     AdminSocialAccountView,
@@ -400,6 +401,64 @@ async def signup_trend(
     return SignupTrendResponse(points=points)
 
 
+class BrainstormStatsResponse(BaseModel):
+    total_sessions: int
+    converted_sessions: int
+    conversion_rate: float | None  # None = no sessions yet, avoid 0/0 → NaN
+    trend: list[SignupTrendPoint]
+
+
+@router.get("/dashboard/brainstorm", response_model=BrainstormStatsResponse)
+async def brainstorm_stats(
+    days: int = 30,
+    db: AsyncSession = Depends(get_db_no_rls),
+    _admin: User = Depends(require_admin),
+):
+    days = min(max(days, 1), 365)
+    since = datetime.now(timezone.utc) - timedelta(days=days - 1)
+
+    # Single aggregate query: func.count() counts all rows, func.count(col)
+    # counts only non-null values of that column — one round trip instead
+    # of two separate COUNT queries for the same table. Excludes
+    # soft-deleted sessions (status="deleted") — the agent service never
+    # hard-deletes these rows, so counting them would inflate metrics for
+    # sessions the user considers gone.
+    total_sessions, converted_sessions = (
+        await db.execute(
+            select(
+                func.count(),
+                func.count(AdminBrainstormSessionView.generated_video_id),
+            )
+            .select_from(AdminBrainstormSessionView)
+            .where(AdminBrainstormSessionView.status != "deleted")
+        )
+    ).one()
+    conversion_rate = (converted_sessions / total_sessions) if total_sessions > 0 else None
+
+    day_col = cast(AdminBrainstormSessionView.created_at, Date)
+    trend_query = (
+        select(day_col.label("day"), func.count(AdminBrainstormSessionView.id))
+        .where(
+            AdminBrainstormSessionView.created_at >= since,
+            AdminBrainstormSessionView.status != "deleted",
+        )
+        .group_by("day")
+        .order_by("day")
+    )
+    counts = {str(day): count for day, count in (await db.execute(trend_query)).all()}
+    trend = []
+    for i in range(days):
+        d = (since + timedelta(days=i)).date()
+        trend.append(SignupTrendPoint(date=str(d), count=counts.get(str(d), 0)))
+
+    return BrainstormStatsResponse(
+        total_sessions=total_sessions,
+        converted_sessions=converted_sessions,
+        conversion_rate=conversion_rate,
+        trend=trend,
+    )
+
+
 # ─── User detail (drill-down) ───────────────────────────────────────────────
 
 class UserDetailProfile(BaseModel):
@@ -447,6 +506,9 @@ class UserDetailResponse(BaseModel):
     social_accounts: list[SocialAccountSummary]
     scheduled_posts_by_platform: list[ScheduledPostBreakdownRow]
     has_active_api_key: bool
+    brainstorm_sessions_count: int
+    brainstorm_sessions_converted: int
+    brainstorm_conversion_rate: float | None  # None = no sessions yet, avoid 0/0 → NaN
 
 
 @router.get("/users/{user_id}/detail", response_model=UserDetailResponse)
@@ -475,6 +537,8 @@ async def get_user_detail(
     social_accounts: list[SocialAccountSummary] = []
     scheduled_breakdown: list[ScheduledPostBreakdownRow] = []
     has_active_api_key = False
+    brainstorm_sessions_count = 0
+    brainstorm_sessions_converted = 0
 
     if tenant_id:
         videos_count = (
@@ -539,6 +603,20 @@ async def get_user_detail(
             )
         ).scalar_one() > 0
 
+        brainstorm_sessions_count, brainstorm_sessions_converted = (
+            await db.execute(
+                select(
+                    func.count(),
+                    func.count(AdminBrainstormSessionView.generated_video_id),
+                )
+                .select_from(AdminBrainstormSessionView)
+                .where(
+                    AdminBrainstormSessionView.tenant_id == tenant_id,
+                    AdminBrainstormSessionView.status != "deleted",
+                )
+            )
+        ).one()
+
     profile = UserDetailProfile(
         id=user.id,
         email=user.email,
@@ -555,6 +633,10 @@ async def get_user_detail(
         current_period_end=subscription.current_period_end if subscription else None,
     )
 
+    brainstorm_conversion_rate = (
+        (brainstorm_sessions_converted / brainstorm_sessions_count) if brainstorm_sessions_count > 0 else None
+    )
+
     return UserDetailResponse(
         profile=profile,
         videos_count=videos_count,
@@ -564,6 +646,9 @@ async def get_user_detail(
         social_accounts=social_accounts,
         scheduled_posts_by_platform=scheduled_breakdown,
         has_active_api_key=has_active_api_key,
+        brainstorm_sessions_count=brainstorm_sessions_count,
+        brainstorm_conversion_rate=brainstorm_conversion_rate,
+        brainstorm_sessions_converted=brainstorm_sessions_converted,
     )
 
 

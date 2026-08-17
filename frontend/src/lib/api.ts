@@ -1255,6 +1255,16 @@ export interface UserDetailResponse {
   social_accounts: SocialAccountSummary[];
   scheduled_posts_by_platform: ScheduledPostBreakdownRow[];
   has_active_api_key: boolean;
+  brainstorm_sessions_count: number;
+  brainstorm_sessions_converted: number;
+  brainstorm_conversion_rate: number | null;
+}
+
+export interface BrainstormStatsResponse {
+  total_sessions: number;
+  converted_sessions: number;
+  conversion_rate: number | null;
+  trend: SignupTrendPoint[];
 }
 
 export interface RevenueByTierRow {
@@ -1306,6 +1316,7 @@ export const adminApi = {
   },
   userStats: () => adminReq<AdminUserStats>("GET", "/admin/users/stats"),
   signupTrend: (days = 30) => adminReq<SignupTrendResponse>("GET", `/admin/dashboard/signups?days=${days}`),
+  brainstormStats: (days = 30) => adminReq<BrainstormStatsResponse>("GET", `/admin/dashboard/brainstorm?days=${days}`),
   userDetail: (userId: string) => adminReq<UserDetailResponse>("GET", `/admin/users/${userId}/detail`),
   revenueSummary: () => adminReq<RevenueSummaryResponse>("GET", "/admin/revenue/summary"),
   changeTier: (userId: string, planName: string) =>

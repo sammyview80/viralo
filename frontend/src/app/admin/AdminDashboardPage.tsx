@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { adminApi, ApiError, type AdminUserStats, type SignupTrendPoint } from "@/lib/api";
+import { adminApi, ApiError, type AdminUserStats, type SignupTrendPoint, type BrainstormStatsResponse } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { SimpleLineChart } from "./charts/SimpleLineChart";
 import { SimpleBarChart } from "./charts/SimpleBarChart";
@@ -25,16 +25,18 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 export function AdminDashboardPage() {
   const [stats, setStats] = useState<AdminUserStats | null>(null);
   const [signups, setSignups] = useState<SignupTrendPoint[]>([]);
+  const [brainstorm, setBrainstorm] = useState<BrainstormStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     setLoading(true);
     setError("");
-    Promise.all([adminApi.me(), adminApi.userStats(), adminApi.signupTrend(30)])
-      .then(([, s, trend]) => {
+    Promise.all([adminApi.me(), adminApi.userStats(), adminApi.signupTrend(30), adminApi.brainstormStats(30)])
+      .then(([, s, trend, brainstormStats]) => {
         setStats(s);
         setSignups(trend.points);
+        setBrainstorm(brainstormStats);
       })
       .catch((err) => {
         if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
@@ -74,6 +76,17 @@ export function AdminDashboardPage() {
         </div>
       )}
 
+      {brainstorm && (
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <StatCard label="Brainstorm sessions" value={brainstorm.total_sessions} />
+          <StatCard label="Converted to video" value={brainstorm.converted_sessions} />
+          <StatCard
+            label="Conversion rate"
+            value={brainstorm.conversion_rate == null ? "no data yet" : `${Math.round(brainstorm.conversion_rate * 100)}% converted to video`}
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel title={`Signups — last 30 days (${signupTotal} total)`}>
           {signups.length > 0 ? (
@@ -88,6 +101,14 @@ export function AdminDashboardPage() {
             <SimpleBarChart bars={Object.entries(stats.by_tier).map(([tier, count]) => ({ label: tier, value: count }))} />
           ) : (
             <p className="text-[12.5px] text-c-text-muted">No tier data yet.</p>
+          )}
+        </Panel>
+
+        <Panel title={`Brainstorm sessions — last 30 days (${brainstorm?.trend.reduce((sum, p) => sum + p.count, 0) ?? 0} total)`}>
+          {brainstorm && brainstorm.trend.length > 0 ? (
+            <SimpleLineChart points={brainstorm.trend.map((p) => ({ label: p.date, value: p.count }))} />
+          ) : (
+            <p className="text-[12.5px] text-c-text-muted">No brainstorm session data yet.</p>
           )}
         </Panel>
       </div>

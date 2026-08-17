@@ -124,6 +124,22 @@ export function AdminUserDetailPage({ userId }: { userId: string }) {
             <Panel title="Social accounts"><p className="font-display text-[26px] font-bold text-c-text">{data.social_accounts.length}</p></Panel>
           </div>
 
+          <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-2">
+            <Panel title="Brainstorm sessions"><p className="font-display text-[26px] font-bold text-c-text">{data.brainstorm_sessions_count}</p></Panel>
+            <Panel title="Converted to video">
+              <p className="font-display text-[26px] font-bold text-c-text">
+                {data.brainstorm_conversion_rate === null
+                  ? "no data yet"
+                  : `${Math.round(data.brainstorm_conversion_rate * 100)}%`}
+              </p>
+              {data.brainstorm_sessions_count > 0 && (
+                <p className="mt-1 text-[11px] text-c-text-muted">
+                  {data.brainstorm_sessions_converted} / {data.brainstorm_sessions_count} sessions
+                </p>
+              )}
+            </Panel>
+          </div>
+
           <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Panel title="Connected social accounts">
               {data.social_accounts.length === 0 ? (
