@@ -39,15 +39,20 @@ export function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [meId, setMeId] = useState<string | null>(null);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError("");
     Promise.all([
+      adminApi.me(),
       adminApi.userStats(),
       adminApi.listUsers({ page, per_page: PER_PAGE, search, sort_by: sortBy, order }),
     ])
-      .then(([s, u]) => {
+      .then(([me, s, u]) => {
+        setMeId(me.id);
+        setIsSuperadmin(me.is_superadmin);
         setStats(s);
         setUsers(u.items);
         setTotal(u.total);
@@ -76,6 +81,18 @@ export function AdminDashboardPage() {
       setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update tier");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function handleAdminRoleToggle(userId: string, nextIsAdmin: boolean) {
+    setUpdatingId(userId);
+    try {
+      const updated = await adminApi.changeAdminRole(userId, nextIsAdmin);
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update admin role");
     } finally {
       setUpdatingId(null);
     }
@@ -142,14 +159,15 @@ export function AdminDashboardPage() {
                 <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("created_at")}>Signed up</th>
                 <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("last_login_at")}>Last active</th>
                 <th className="px-4 py-3">Change tier</th>
+                {isSuperadmin && <th className="px-4 py-3">Admin access</th>}
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-c-text-muted">Loading…</td></tr>
+                <tr><td colSpan={isSuperadmin ? 9 : 8} className="px-4 py-6 text-center text-c-text-muted">Loading…</td></tr>
               )}
               {!loading && users.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-c-text-muted">No users found.</td></tr>
+                <tr><td colSpan={isSuperadmin ? 9 : 8} className="px-4 py-6 text-center text-c-text-muted">No users found.</td></tr>
               )}
               {!loading && users.map((u) => (
                 <tr key={u.id} className="border-b border-c-border/60 last:border-0">
@@ -177,6 +195,26 @@ export function AdminDashboardPage() {
                       ))}
                     </select>
                   </td>
+                  {isSuperadmin && (
+                    <td className="px-4 py-3">
+                      {u.id === meId ? (
+                        <span className="text-c-text-muted">—</span>
+                      ) : (
+                        <button
+                          disabled={updatingId === u.id}
+                          onClick={() => handleAdminRoleToggle(u.id, !u.is_admin)}
+                          className={cn(
+                            "rounded-[8px] border px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-50",
+                            u.is_admin
+                              ? "border-red-500/20 bg-red-500/[.08] text-red-300 hover:bg-red-500/[.14]"
+                              : "border-c-border bg-surface-3 text-c-text hover:bg-surface-2"
+                          )}
+                        >
+                          {updatingId === u.id ? "Updating…" : u.is_admin ? "Revoke admin" : "Grant admin"}
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

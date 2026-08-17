@@ -67,6 +67,14 @@ async def require_admin(
     return user
 
 
+async def require_superadmin(admin: User = Depends(require_admin)) -> User:
+    """Same token/active/is_admin checks as require_admin, plus is_superadmin.
+    Only used to gate grant/revoke of admin access itself."""
+    if not admin.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin access required")
+    return admin
+
+
 # ─── Magic-link login ───────────────────────────────────────────────────────
 
 class MagicLinkRequest(BaseModel):
@@ -194,12 +202,27 @@ class AdminUserRow(BaseModel):
     full_name: str | None
     is_active: bool
     is_admin: bool
+    is_superadmin: bool
     tier: str
     subscription_status: str | None
     created_at: datetime
     last_login_at: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class AdminMeResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    is_admin: bool
+    is_superadmin: bool
+
+
+@router.get("/me", response_model=AdminMeResponse)
+async def get_admin_me(admin: User = Depends(require_admin)):
+    return AdminMeResponse(
+        id=admin.id, email=admin.email, is_admin=admin.is_admin, is_superadmin=admin.is_superadmin
+    )
 
 
 class AdminUserListResponse(BaseModel):
@@ -255,6 +278,7 @@ async def list_users(
             full_name=user.full_name,
             is_active=user.is_active,
             is_admin=user.is_admin,
+            is_superadmin=user.is_superadmin,
             tier=plan_name or "free",
             subscription_status=subscription_status,
             created_at=user.created_at,
@@ -365,8 +389,59 @@ async def change_user_tier(
         full_name=user.full_name,
         is_active=user.is_active,
         is_admin=user.is_admin,
+        is_superadmin=user.is_superadmin,
         tier=plan.name,
         subscription_status=subscription.status,
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
+    )
+
+
+# ─── Admin role grant/revoke (superadmin only) ──────────────────────────────
+
+class AdminRoleChangeRequest(BaseModel):
+    is_admin: bool
+
+
+@router.post("/users/{user_id}/admin-role", response_model=AdminUserRow)
+async def change_admin_role(
+    user_id: uuid.UUID,
+    body: AdminRoleChangeRequest,
+    db: AsyncSession = Depends(get_db_no_rls),
+    superadmin: User = Depends(require_superadmin),
+):
+    """Grants or revokes is_admin on a target user. Restricted to
+    superadmins — regular admins cannot mint or demote other admins.
+    Self-modification is blocked to prevent locking out the only
+    superadmin/admin session in flight."""
+    if user_id == superadmin.id:
+        raise HTTPException(status_code=400, detail="Cannot change your own admin role")
+
+    user_result = await db.execute(
+        select(User, Subscription.status.label("subscription_status"), Plan.name.label("plan_name"))
+        .outerjoin(Subscription, Subscription.tenant_id == User.tenant_id)
+        .outerjoin(Plan, Plan.id == Subscription.plan_id)
+        .where(User.id == user_id)
+    )
+    row = user_result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    user, subscription_status, plan_name = row
+
+    user.is_admin = body.is_admin
+    if not body.is_admin:
+        user.is_superadmin = False
+    await db.commit()
+
+    return AdminUserRow(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        is_active=user.is_active,
+        is_admin=user.is_admin,
+        is_superadmin=user.is_superadmin,
+        tier=plan_name or "free",
+        subscription_status=subscription_status,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     )

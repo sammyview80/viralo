@@ -1169,6 +1169,7 @@ export interface AdminUserRow {
   full_name: string | null;
   is_active: boolean;
   is_admin: boolean;
+  is_superadmin: boolean;
   tier: string;
   subscription_status: string | null;
   created_at: string;
@@ -1189,9 +1190,17 @@ export interface AdminUserStats {
   by_tier: Record<string, number>;
 }
 
+export interface AdminMeResponse {
+  id: string;
+  email: string;
+  is_admin: boolean;
+  is_superadmin: boolean;
+}
+
 export const adminApi = {
   requestLogin: (email: string) =>
     adminReq<{ message: string }>("POST", "/admin/login/request", { email }),
+  me: () => adminReq<AdminMeResponse>("GET", "/admin/me"),
   // This fetch call sends the token in a POST body, not a query string, so
   // this specific request never appears in server/proxy access logs or
   // Referer headers. The emailed link itself carries the token in the URL
@@ -1206,6 +1215,8 @@ export const adminApi = {
   userStats: () => adminReq<AdminUserStats>("GET", "/admin/users/stats"),
   changeTier: (userId: string, planName: string) =>
     adminReq<AdminUserRow>("POST", `/admin/users/${userId}/tier`, { plan_name: planName }),
+  changeAdminRole: (userId: string, isAdmin: boolean) =>
+    adminReq<AdminUserRow>("POST", `/admin/users/${userId}/admin-role`, { is_admin: isAdmin }),
 };
 
 export const settingsApi = {
