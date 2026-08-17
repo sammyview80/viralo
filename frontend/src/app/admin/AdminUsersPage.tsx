@@ -2,6 +2,11 @@ import { useEffect, useState, useCallback } from "react";
 import { adminApi, ADMIN_PLAN_TIERS, ApiError, type AdminUserRow } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+
+type PendingAction =
+  | { kind: "tier"; userId: string; email: string; fromTier: string; toTier: string }
+  | { kind: "admin-role"; userId: string; email: string; nextIsAdmin: boolean };
 
 const PER_PAGE = 25;
 
@@ -30,6 +35,7 @@ export function AdminUsersPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -61,27 +67,28 @@ export function AdminUsersPage() {
     else { setSortBy(col); setOrder("desc"); }
   }
 
-  async function handleTierChange(userId: string, planName: string) {
-    setUpdatingId(userId);
+  async function confirmPendingAction() {
+    if (!pendingAction) return;
+    setUpdatingId(pendingAction.userId);
     try {
-      const updated = await adminApi.changeTier(userId, planName);
-      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+      if (pendingAction.kind === "tier") {
+        const updated = await adminApi.changeTier(pendingAction.userId, pendingAction.toTier);
+        setUsers((prev) => prev.map((u) => (u.id === pendingAction.userId ? updated : u)));
+      } else {
+        const updated = await adminApi.changeAdminRole(pendingAction.userId, pendingAction.nextIsAdmin);
+        setUsers((prev) => prev.map((u) => (u.id === pendingAction.userId ? updated : u)));
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update tier");
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : pendingAction.kind === "tier"
+            ? "Failed to update tier"
+            : "Failed to update admin role"
+      );
     } finally {
       setUpdatingId(null);
-    }
-  }
-
-  async function handleAdminRoleToggle(userId: string, nextIsAdmin: boolean) {
-    setUpdatingId(userId);
-    try {
-      const updated = await adminApi.changeAdminRole(userId, nextIsAdmin);
-      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update admin role");
-    } finally {
-      setUpdatingId(null);
+      setPendingAction(null);
     }
   }
 
@@ -152,7 +159,12 @@ export function AdminUsersPage() {
                   <select
                     defaultValue=""
                     disabled={updatingId === u.id}
-                    onChange={(e) => { if (e.target.value) handleTierChange(u.id, e.target.value); e.target.value = ""; }}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setPendingAction({ kind: "tier", userId: u.id, email: u.email, fromTier: u.tier, toTier: e.target.value });
+                      }
+                      e.target.value = "";
+                    }}
                     className="rounded-[8px] border border-c-border bg-surface-3 px-2 py-1.5 text-[12px] text-c-text outline-none disabled:opacity-50"
                   >
                     <option value="" disabled>{updatingId === u.id ? "Updating…" : "Set plan…"}</option>
@@ -168,7 +180,7 @@ export function AdminUsersPage() {
                     ) : (
                       <button
                         disabled={updatingId === u.id}
-                        onClick={() => handleAdminRoleToggle(u.id, !u.is_admin)}
+                        onClick={() => setPendingAction({ kind: "admin-role", userId: u.id, email: u.email, nextIsAdmin: !u.is_admin })}
                         className={cn(
                           "rounded-[8px] border px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-50",
                           u.is_admin
@@ -206,6 +218,24 @@ export function AdminUsersPage() {
           </button>
         </div>
       </div>
+
+      {pendingAction && (
+        <ConfirmDialog
+          title={pendingAction.kind === "tier" ? "Change plan tier" : pendingAction.nextIsAdmin ? "Grant admin access" : "Revoke admin access"}
+          message={
+            pendingAction.kind === "tier"
+              ? `Change ${pendingAction.email} from ${pendingAction.fromTier} to ${pendingAction.toTier}?`
+              : pendingAction.nextIsAdmin
+                ? `Grant admin access to ${pendingAction.email}?`
+                : `Revoke admin access from ${pendingAction.email}?`
+          }
+          confirmLabel={pendingAction.kind === "tier" ? "Change tier" : pendingAction.nextIsAdmin ? "Grant access" : "Revoke access"}
+          danger={pendingAction.kind === "admin-role" && !pendingAction.nextIsAdmin}
+          busy={updatingId === pendingAction.userId}
+          onConfirm={confirmPendingAction}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
     </div>
   );
 }

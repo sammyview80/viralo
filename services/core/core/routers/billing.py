@@ -17,6 +17,7 @@ from shared.models.public.plan import Plan
 from shared.models.public.subscription import Subscription
 from shared.models.public.usage_quota import UsageQuota
 from shared.schemas.auth import TokenPayload
+from shared.subscription_events import log_subscription_event
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -50,6 +51,16 @@ async def _upsert_subscription(
     stripe_subscription_id: str | None = None,
     stripe_customer_id: str | None = None,
 ) -> None:
+    # Snapshot the prior plan/subscription (for the subscription_events audit
+    # log) before the upsert overwrites it — this must be read first, there's
+    # no way to recover the "from" plan after the UPDATE lands.
+    existing_result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    existing_sub = existing_result.scalar_one_or_none()
+    from_plan_name: str | None = None
+    if existing_sub:
+        old_plan_result = await db.execute(select(Plan.name).where(Plan.id == existing_sub.plan_id))
+        from_plan_name = old_plan_result.scalar_one_or_none()
+
     values: dict[str, object] = {
         "id": uuid.uuid4(),
         "tenant_id": tenant_id,
@@ -70,6 +81,42 @@ async def _upsert_subscription(
         .values(**values)
         .on_conflict_do_update(index_elements=[Subscription.tenant_id], set_=updates)
     )
+    await db.commit()
+
+    # Audit-log the change in its own commit, after the subscription change
+    # is already durably committed above — a failure here (or inside
+    # log_subscription_event, which never raises) can't roll back or block
+    # the subscription mutation that just succeeded.
+    try:
+        to_plan_result = await db.execute(select(Plan.name).where(Plan.id == plan_id))
+        to_plan_name = to_plan_result.scalar_one_or_none()
+
+        sub_id_result = await db.execute(select(Subscription.id).where(Subscription.tenant_id == tenant_id))
+        subscription_id = sub_id_result.scalar_one_or_none()
+        if subscription_id is None:
+            return
+
+        if not existing_sub:
+            event_type = "created"
+        elif from_plan_name != to_plan_name and from_plan_name and to_plan_name:
+            event_type = (
+                "upgraded"
+                if PLAN_ORDER.index(to_plan_name) > PLAN_ORDER.index(from_plan_name)
+                else "downgraded"
+            )
+        else:
+            event_type = "renewed"
+
+        await log_subscription_event(
+            db,
+            tenant_id=tenant_id,
+            subscription_id=subscription_id,
+            event_type=event_type,
+            from_plan_name=from_plan_name,
+            to_plan_name=to_plan_name,
+        )
+    except Exception:
+        pass
 
 
 @router.get("/plans")

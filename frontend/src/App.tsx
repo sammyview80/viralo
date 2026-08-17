@@ -17,6 +17,7 @@ import { AdminUsersPage } from "@/app/admin/AdminUsersPage";
 import { AdminUserDetailPage } from "@/app/admin/AdminUserDetailPage";
 import { AdminRevenuePage } from "@/app/admin/AdminRevenuePage";
 import { AdminPaymentsPage } from "@/app/admin/AdminPaymentsPage";
+import { AdminNotificationsPage } from "@/app/admin/AdminNotificationsPage";
 import { ViraloIcon } from "@/components/ViraloLogo";
 import { Shell } from "@/workspace/Shell";
 import { VeroagenListPage } from "@/veroagen/ProjectListPage";
@@ -47,6 +48,7 @@ export default function App() {
     if (userDetailMatch) return <AdminLayout><AdminUserDetailPage userId={userDetailMatch[1]} /></AdminLayout>;
     if (path === "/admin/revenue") return <AdminLayout><AdminRevenuePage /></AdminLayout>;
     if (path === "/admin/payments") return <AdminLayout><AdminPaymentsPage /></AdminLayout>;
+    if (path === "/admin/notifications") return <AdminLayout><AdminNotificationsPage /></AdminLayout>;
     window.location.replace("/admin/dashboard");
     return null;
   }
