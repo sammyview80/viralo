@@ -38,7 +38,7 @@ flush time instead of silently succeeding.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, event
+from sqlalchemy import DateTime, ForeignKey, String, Text, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -80,6 +80,22 @@ class AdminSocialAccountView(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AdminBrainstormSessionView(Base):
+    __tablename__ = "brainstorm_sessions"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # Needed to exclude soft-deleted sessions from admin metrics — the agent
+    # service never hard-deletes a BrainstormSession row, it sets
+    # status="deleted" (see services/agent/agent/routers/sessions.py), so
+    # admin aggregate queries must filter status != "deleted" or they'll
+    # keep counting sessions the user considers gone.
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    generated_video_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AdminScheduledPostView(Base):
     __tablename__ = "scheduled_posts"
     __table_args__ = {"extend_existing": True}
@@ -103,7 +119,13 @@ def _reject_write(mapper, connection, target) -> None:
 # Guardrail against accidental ORM writes (session.add/delete + commit) -
 # NOT a security boundary. Raw Core statements and bulk operations bypass
 # these mapper events entirely; see the module docstring WARNING above.
-for _view_cls in (AdminVideoView, AdminClipView, AdminSocialAccountView, AdminScheduledPostView):
+for _view_cls in (
+    AdminVideoView,
+    AdminClipView,
+    AdminSocialAccountView,
+    AdminScheduledPostView,
+    AdminBrainstormSessionView,
+):
     event.listen(_view_cls, "before_insert", _reject_write)
     event.listen(_view_cls, "before_update", _reject_write)
     event.listen(_view_cls, "before_delete", _reject_write)
