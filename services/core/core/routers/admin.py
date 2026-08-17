@@ -15,26 +15,39 @@ import hashlib
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select, update
+from sqlalchemy import Date, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.admin_readonly_models import (
+    AdminClipView,
+    AdminScheduledPostView,
+    AdminSocialAccountView,
+    AdminVideoView,
+)
 from core.routers.auth import _client_ip
 from shared.auth import AdminAuthNotConfigured, create_admin_token, decode_admin_token, ensure_admin_auth_configured
 from shared.config import settings
 from shared.deps import get_db_no_rls, get_redis
 from shared.email import send_email
 from shared.models.public.admin_magic_link import AdminMagicLink
+from shared.models.public.api_key import TenantApiKey
 from shared.models.public.plan import Plan
 from shared.models.public.subscription import Subscription
+from shared.models.public.usage_quota import UsageQuota
 from shared.models.public.user import User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Real tier list — do not invent tiers. Kept in sync with
+# shared.plan_gate.PLAN_FEATURES / _PLAN_ORDER.
+PLAN_TIERS = ["free", "starter", "pro", "creator", "unlimited"]
 
 _bearer = HTTPBearer()
 
@@ -205,6 +218,8 @@ class AdminUserRow(BaseModel):
     is_superadmin: bool
     tier: str
     subscription_status: str | None
+    billing_cycle: str | None = None
+    current_period_end: datetime | None = None
     created_at: datetime
     last_login_at: datetime | None
 
@@ -239,6 +254,7 @@ async def list_users(
     search: str | None = None,
     sort_by: str = "created_at",
     order: str = "desc",
+    subscription_status: str | None = None,
     db: AsyncSession = Depends(get_db_no_rls),
     _admin: User = Depends(require_admin),
 ):
@@ -249,6 +265,8 @@ async def list_users(
         select(
             User,
             Subscription.status.label("subscription_status"),
+            Subscription.billing_cycle.label("billing_cycle"),
+            Subscription.current_period_end.label("current_period_end"),
             Plan.name.label("plan_name"),
         )
         .outerjoin(Subscription, Subscription.tenant_id == User.tenant_id)
@@ -259,6 +277,12 @@ async def list_users(
         query = query.where(
             func.lower(User.email).like(like) | func.lower(func.coalesce(User.full_name, "")).like(like)
         )
+    if subscription_status:
+        # Filter server-side so pagination/total stay correct — filtering
+        # only the already-fetched page client-side (as the Payments tab
+        # used to do) silently drops rows from view while "total" and page
+        # count still reflect the unfiltered set.
+        query = query.where(Subscription.status == subscription_status)
 
     sort_column = {
         "created_at": User.created_at,
@@ -281,10 +305,12 @@ async def list_users(
             is_superadmin=user.is_superadmin,
             tier=plan_name or "free",
             subscription_status=subscription_status,
+            billing_cycle=billing_cycle,
+            current_period_end=current_period_end,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
         )
-        for user, subscription_status, plan_name in rows_result.all()
+        for user, subscription_status, billing_cycle, current_period_end, plan_name in rows_result.all()
     ]
     return AdminUserListResponse(items=items, total=total, page=page, per_page=per_page)
 
@@ -313,7 +339,9 @@ async def user_stats(
         .outerjoin(Plan, Plan.id == Subscription.plan_id)
         .group_by("tier")
     )
-    by_tier = {tier: count for tier, count in (await db.execute(tier_query)).all()}
+    by_tier = {tier: 0 for tier in PLAN_TIERS}
+    for tier, count in (await db.execute(tier_query)).all():
+        by_tier[tier] = count
 
     paid_users = (
         await db.execute(
@@ -330,6 +358,283 @@ async def user_stats(
         active_users=active_users,
         paid_users=paid_users,
         by_tier=by_tier,
+    )
+
+
+class SignupTrendPoint(BaseModel):
+    date: str
+    count: int
+
+
+class SignupTrendResponse(BaseModel):
+    points: list[SignupTrendPoint]
+
+
+@router.get("/dashboard/signups", response_model=SignupTrendResponse)
+async def signup_trend(
+    days: int = 30,
+    db: AsyncSession = Depends(get_db_no_rls),
+    _admin: User = Depends(require_admin),
+):
+    days = min(max(days, 1), 365)
+    since = datetime.now(timezone.utc) - timedelta(days=days - 1)
+    day_col = cast(User.created_at, Date)
+    query = (
+        select(day_col.label("day"), func.count(User.id))
+        .where(User.created_at >= since)
+        .group_by("day")
+        .order_by("day")
+    )
+    counts = {str(day): count for day, count in (await db.execute(query)).all()}
+
+    points = []
+    for i in range(days):
+        d = (since + timedelta(days=i)).date()
+        points.append(SignupTrendPoint(date=str(d), count=counts.get(str(d), 0)))
+    return SignupTrendResponse(points=points)
+
+
+# ─── User detail (drill-down) ───────────────────────────────────────────────
+
+class UserDetailProfile(BaseModel):
+    id: uuid.UUID
+    email: str
+    full_name: str | None
+    tenant_id: uuid.UUID | None
+    is_active: bool
+    is_admin: bool
+    is_superadmin: bool
+    created_at: datetime
+    last_login_at: datetime | None
+    tier: str
+    subscription_status: str | None
+    billing_cycle: str | None
+    current_period_end: datetime | None
+
+
+class VideoSummary(BaseModel):
+    id: uuid.UUID
+    title: str | None
+    status: str
+    created_at: datetime
+
+
+class SocialAccountSummary(BaseModel):
+    platform: str
+    platform_username: str | None
+    is_active: bool
+    connected_at: datetime
+
+
+class ScheduledPostBreakdownRow(BaseModel):
+    platform: str
+    status: str
+    count: int
+
+
+class UserDetailResponse(BaseModel):
+    profile: UserDetailProfile
+    videos_count: int
+    videos: list[VideoSummary]
+    clips_count: int
+    storage_bytes_used: int | None
+    social_accounts: list[SocialAccountSummary]
+    scheduled_posts_by_platform: list[ScheduledPostBreakdownRow]
+    has_active_api_key: bool
+
+
+@router.get("/users/{user_id}/detail", response_model=UserDetailResponse)
+async def get_user_detail(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_no_rls),
+    _admin: User = Depends(require_admin),
+):
+    row = (
+        await db.execute(
+            select(User, Subscription, Plan.name.label("plan_name"))
+            .outerjoin(Subscription, Subscription.tenant_id == User.tenant_id)
+            .outerjoin(Plan, Plan.id == Subscription.plan_id)
+            .where(User.id == user_id)
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    user, subscription, plan_name = row
+
+    tenant_id = user.tenant_id
+    videos: list[VideoSummary] = []
+    videos_count = 0
+    clips_count = 0
+    storage_bytes_used: int | None = None
+    social_accounts: list[SocialAccountSummary] = []
+    scheduled_breakdown: list[ScheduledPostBreakdownRow] = []
+    has_active_api_key = False
+
+    if tenant_id:
+        videos_count = (
+            await db.execute(
+                select(func.count()).select_from(AdminVideoView).where(AdminVideoView.tenant_id == tenant_id)
+            )
+        ).scalar_one()
+
+        video_rows = (
+            await db.execute(
+                select(AdminVideoView)
+                .where(AdminVideoView.tenant_id == tenant_id)
+                .order_by(AdminVideoView.created_at.desc())
+                .limit(50)
+            )
+        ).scalars().all()
+        videos = [
+            VideoSummary(id=v.id, title=v.title, status=v.status, created_at=v.created_at) for v in video_rows
+        ]
+
+        clips_count = (
+            await db.execute(
+                select(func.count()).select_from(AdminClipView).where(AdminClipView.tenant_id == tenant_id)
+            )
+        ).scalar_one()
+
+        quota = (
+            await db.execute(select(UsageQuota).where(UsageQuota.tenant_id == tenant_id))
+        ).scalar_one_or_none()
+        storage_bytes_used = quota.storage_bytes_used if quota else None
+
+        sa_rows = (
+            await db.execute(
+                select(AdminSocialAccountView).where(AdminSocialAccountView.tenant_id == tenant_id)
+            )
+        ).scalars().all()
+        social_accounts = [
+            SocialAccountSummary(
+                platform=sa.platform,
+                platform_username=sa.platform_username,
+                is_active=sa.is_active,
+                connected_at=sa.created_at,
+            )
+            for sa in sa_rows
+        ]
+
+        sp_query = (
+            select(AdminScheduledPostView.platform, AdminScheduledPostView.status, func.count())
+            .where(AdminScheduledPostView.tenant_id == tenant_id)
+            .group_by(AdminScheduledPostView.platform, AdminScheduledPostView.status)
+        )
+        scheduled_breakdown = [
+            ScheduledPostBreakdownRow(platform=platform, status=status_, count=count)
+            for platform, status_, count in (await db.execute(sp_query)).all()
+        ]
+
+        # TenantApiKey has no active/revoked flag (see shared/models/public/api_key.py) —
+        # existence of any key row is the closest available proxy for "uses MCP".
+        has_active_api_key = (
+            await db.execute(
+                select(func.count()).select_from(TenantApiKey).where(TenantApiKey.tenant_id == tenant_id)
+            )
+        ).scalar_one() > 0
+
+    profile = UserDetailProfile(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        tenant_id=user.tenant_id,
+        is_active=user.is_active,
+        is_admin=user.is_admin,
+        is_superadmin=user.is_superadmin,
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
+        tier=plan_name or "free",
+        subscription_status=subscription.status if subscription else None,
+        billing_cycle=subscription.billing_cycle if subscription else None,
+        current_period_end=subscription.current_period_end if subscription else None,
+    )
+
+    return UserDetailResponse(
+        profile=profile,
+        videos_count=videos_count,
+        videos=videos,
+        clips_count=clips_count,
+        storage_bytes_used=storage_bytes_used,
+        social_accounts=social_accounts,
+        scheduled_posts_by_platform=scheduled_breakdown,
+        has_active_api_key=has_active_api_key,
+    )
+
+
+# ─── Revenue ─────────────────────────────────────────────────────────────────
+
+class RevenueByTierRow(BaseModel):
+    tier: str
+    mrr: float
+    subscriber_count: int
+
+
+class RevenueSummaryResponse(BaseModel):
+    mrr: float
+    by_tier: list[RevenueByTierRow]
+    upgrades_last_30d: int | None
+    downgrades_last_30d: int | None
+    cancellations_last_30d: int
+    change_tracking_note: str
+
+
+@router.get("/revenue/summary", response_model=RevenueSummaryResponse)
+async def revenue_summary(
+    db: AsyncSession = Depends(get_db_no_rls),
+    _admin: User = Depends(require_admin),
+):
+    rows = (
+        await db.execute(
+            select(Plan.name, Subscription.billing_cycle, Plan.price_monthly, Plan.price_yearly)
+            .join(Plan, Plan.id == Subscription.plan_id)
+            .where(Subscription.status.in_(["active", "trialing"]))
+        )
+    ).all()
+
+    mrr_by_tier: dict[str, Decimal] = {tier: Decimal("0") for tier in PLAN_TIERS}
+    count_by_tier: dict[str, int] = {tier: 0 for tier in PLAN_TIERS}
+    total_mrr = Decimal("0")
+    for tier, billing_cycle, price_monthly, price_yearly in rows:
+        monthly_value = price_yearly / Decimal("12") if billing_cycle == "yearly" else price_monthly
+        mrr_by_tier.setdefault(tier, Decimal("0"))
+        count_by_tier.setdefault(tier, 0)
+        mrr_by_tier[tier] += monthly_value
+        count_by_tier[tier] += 1
+        total_mrr += monthly_value
+
+    by_tier = [
+        RevenueByTierRow(tier=tier, mrr=float(mrr_by_tier[tier]), subscriber_count=count_by_tier[tier])
+        for tier in PLAN_TIERS
+    ]
+
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    cancellations_last_30d = (
+        await db.execute(
+            select(func.count())
+            .select_from(Subscription)
+            .where(Subscription.status == "cancelled", Subscription.updated_at >= since)
+        )
+    ).scalar_one()
+
+    return RevenueSummaryResponse(
+        mrr=float(total_mrr),
+        by_tier=by_tier,
+        # Subscriptions only store the CURRENT plan_id/status — there is no
+        # audit-log of prior plan/status transitions, so upgrade/downgrade
+        # counts can't be derived from Subscription.updated_at alone (it
+        # can't distinguish "upgraded" from "downgraded" from "renewed").
+        # Cancellations are inferable (status == cancelled + recent
+        # updated_at) but upgrades/downgrades are not — surfacing None
+        # rather than a fabricated number.
+        upgrades_last_30d=None,
+        downgrades_last_30d=None,
+        cancellations_last_30d=cancellations_last_30d,
+        change_tracking_note=(
+            "Upgrade/downgrade counts aren't tracked — Subscription has no plan-change "
+            "history, only current plan_id/status. Cancellations are best-effort "
+            "(status=cancelled AND updated_at within 30d). A future audit-log table "
+            "(subscription_events) would be needed for accurate upgrade/downgrade metrics."
+        ),
     )
 
 

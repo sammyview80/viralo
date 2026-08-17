@@ -12,6 +12,11 @@ import { adminToken } from "@/lib/api";
 import { AdminLoginPage } from "@/app/admin/AdminLoginPage";
 import { AdminVerifyPage } from "@/app/admin/AdminVerifyPage";
 import { AdminDashboardPage } from "@/app/admin/AdminDashboardPage";
+import { AdminLayout } from "@/app/admin/AdminLayout";
+import { AdminUsersPage } from "@/app/admin/AdminUsersPage";
+import { AdminUserDetailPage } from "@/app/admin/AdminUserDetailPage";
+import { AdminRevenuePage } from "@/app/admin/AdminRevenuePage";
+import { AdminPaymentsPage } from "@/app/admin/AdminPaymentsPage";
 import { ViraloIcon } from "@/components/ViraloLogo";
 import { Shell } from "@/workspace/Shell";
 import { VeroagenListPage } from "@/veroagen/ProjectListPage";
@@ -34,9 +39,16 @@ export default function App() {
 
   /* ── Admin panel — fully independent of tenant-user auth/session ── */
   if (path === "/admin/verify") return <AdminVerifyPage />;
-  if (path === "/admin/dashboard") {
+  if (path.startsWith("/admin/") && path !== "/admin/verify") {
     if (!adminToken.get()) { window.location.replace("/admin"); return null; }
-    return <AdminDashboardPage />;
+    if (path === "/admin/dashboard") return <AdminLayout><AdminDashboardPage /></AdminLayout>;
+    if (path === "/admin/users") return <AdminLayout><AdminUsersPage /></AdminLayout>;
+    const userDetailMatch = path.match(/^\/admin\/users\/([^/]+)$/);
+    if (userDetailMatch) return <AdminLayout><AdminUserDetailPage userId={userDetailMatch[1]} /></AdminLayout>;
+    if (path === "/admin/revenue") return <AdminLayout><AdminRevenuePage /></AdminLayout>;
+    if (path === "/admin/payments") return <AdminLayout><AdminPaymentsPage /></AdminLayout>;
+    window.location.replace("/admin/dashboard");
+    return null;
   }
   if (path === "/admin") {
     if (adminToken.get()) { window.location.replace("/admin/dashboard"); return null; }
