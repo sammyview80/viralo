@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,7 +29,11 @@ class Settings(BaseSettings):
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
-    smtp_password: str = ""
+    # env var is SMTP_PASS (matches .env.example and workers/tasks/notification.py's
+    # convention) - without this alias, pydantic-settings looks for SMTP_PASSWORD
+    # instead, silently resolves to "", and SMTP auth fails with a misleading
+    # Gmail 535 "Bad Credentials" even though the actual password is correct.
+    smtp_password: str = Field(default="", validation_alias="SMTP_PASS")
     smtp_from: str = "Viralo <no-reply@viralo.app>"
 
 
