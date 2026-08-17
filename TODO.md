@@ -41,11 +41,18 @@ why, where. Remove when done (git history keeps the "when done" record).
   codebase yet). Current Payments tab shows local subscription state only
   (status, plan, billing cycle, period end).
 
-- Revenue tab's upgrade/downgrade/cancellation-over-time metrics are
-  best-effort or explicitly `None` — there's no audit-log table tracking
-  subscription status transitions over time, only the current state. A
-  real trend requires either a `subscription_history` table or deriving
-  it from Stripe webhook event logs.
+- Revenue tab's upgrade/downgrade counts are now real, sourced from a
+  `subscription_events` audit log (added 2026-08-19, migration
+  `20260819_0001_subscription_events.py`), logged by `admin.py`'s
+  tier-change endpoint and `billing.py`'s subscription upsert path.
+  **Cancellation count is always 0** and NOT actually tracked — there is
+  no cancellation endpoint or Stripe webhook handler for
+  `customer.subscription.deleted`/`customer.subscription.updated` in this
+  codebase, so a cancelled subscription never gets logged as an event at
+  all. To fix: add a Stripe webhook handler for those event types in
+  `billing.py`'s `stripe_webhook()` (currently only handles
+  `checkout.session.completed`) that calls `log_subscription_event(...,
+  event_type="cancelled")`.
 
 - `services/core/core/admin_readonly_models.py` defines read-only ORM
   mirrors of tables owned by the video/platform services (core doesn't

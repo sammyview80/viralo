@@ -12,6 +12,7 @@ Known limitations (accepted, not bugs):
 """
 
 import hashlib
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -37,11 +38,16 @@ from shared.config import settings
 from shared.deps import get_db_no_rls, get_redis
 from shared.email import send_email
 from shared.models.public.admin_magic_link import AdminMagicLink
+from shared.models.public.admin_notification import AdminNotification
 from shared.models.public.api_key import TenantApiKey
 from shared.models.public.plan import Plan
 from shared.models.public.subscription import Subscription
+from shared.models.public.subscription_event import SubscriptionEvent
 from shared.models.public.usage_quota import UsageQuota
 from shared.models.public.user import User
+from shared.subscription_events import log_subscription_event
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -572,8 +578,8 @@ class RevenueByTierRow(BaseModel):
 class RevenueSummaryResponse(BaseModel):
     mrr: float
     by_tier: list[RevenueByTierRow]
-    upgrades_last_30d: int | None
-    downgrades_last_30d: int | None
+    upgrades_last_30d: int
+    downgrades_last_30d: int
     cancellations_last_30d: int
     change_tracking_note: str
 
@@ -608,33 +614,41 @@ async def revenue_summary(
     ]
 
     since = datetime.now(timezone.utc) - timedelta(days=30)
-    cancellations_last_30d = (
+
+    total_events = (await db.execute(select(func.count()).select_from(SubscriptionEvent))).scalar_one()
+
+    event_counts_rows = (
         await db.execute(
-            select(func.count())
-            .select_from(Subscription)
-            .where(Subscription.status == "cancelled", Subscription.updated_at >= since)
+            select(SubscriptionEvent.event_type, func.count())
+            .where(SubscriptionEvent.created_at >= since)
+            .group_by(SubscriptionEvent.event_type)
         )
-    ).scalar_one()
+    ).all()
+    event_counts = {event_type: count for event_type, count in event_counts_rows}
+
+    if total_events == 0:
+        change_tracking_note = (
+            "subscription_events audit log has no rows yet — data collection just "
+            "started (see migration 20260819_0001). Counts below are real (0), not "
+            "yet-populated history, not a fabricated estimate."
+        )
+    else:
+        change_tracking_note = (
+            "Upgrade/downgrade counts are sourced from the subscription_events "
+            "audit log (last 30 days). Cancellation count is always 0: there is "
+            "no cancellation endpoint or Stripe webhook handler for "
+            "customer.subscription.deleted/updated in this codebase yet, so "
+            "cancellations are never logged as an event, not because none occurred. "
+            "Implementing real cancellation tracking needs that handler added first."
+        )
 
     return RevenueSummaryResponse(
         mrr=float(total_mrr),
         by_tier=by_tier,
-        # Subscriptions only store the CURRENT plan_id/status — there is no
-        # audit-log of prior plan/status transitions, so upgrade/downgrade
-        # counts can't be derived from Subscription.updated_at alone (it
-        # can't distinguish "upgraded" from "downgraded" from "renewed").
-        # Cancellations are inferable (status == cancelled + recent
-        # updated_at) but upgrades/downgrades are not — surfacing None
-        # rather than a fabricated number.
-        upgrades_last_30d=None,
-        downgrades_last_30d=None,
-        cancellations_last_30d=cancellations_last_30d,
-        change_tracking_note=(
-            "Upgrade/downgrade counts aren't tracked — Subscription has no plan-change "
-            "history, only current plan_id/status. Cancellations are best-effort "
-            "(status=cancelled AND updated_at within 30d). A future audit-log table "
-            "(subscription_events) would be needed for accurate upgrade/downgrade metrics."
-        ),
+        upgrades_last_30d=event_counts.get("upgraded", 0),
+        downgrades_last_30d=event_counts.get("downgraded", 0),
+        cancellations_last_30d=event_counts.get("cancelled", 0),
+        change_tracking_note=change_tracking_note,
     )
 
 
@@ -674,7 +688,12 @@ async def change_user_tier(
     sub_result = await db.execute(select(Subscription).where(Subscription.tenant_id == user.tenant_id))
     subscription = sub_result.scalar_one_or_none()
     now = datetime.now(timezone.utc)
+
+    from_plan_name: str | None = None
+    is_new_subscription = subscription is None
     if subscription:
+        old_plan_result = await db.execute(select(Plan.name).where(Plan.id == subscription.plan_id))
+        from_plan_name = old_plan_result.scalar_one_or_none()
         subscription.plan_id = plan.id
         subscription.status = "active"
     else:
@@ -687,6 +706,33 @@ async def change_user_tier(
         )
         db.add(subscription)
     await db.commit()
+    await db.refresh(subscription)
+
+    # Audit-log this ops override in its own step, after the plan change
+    # above is already committed — log_subscription_event never raises, so
+    # a logging failure here can't undo or block the tier change that just
+    # succeeded.
+    try:
+        if is_new_subscription:
+            event_type = "created"
+        elif from_plan_name != plan.name and from_plan_name:
+            event_type = (
+                "upgraded"
+                if PLAN_TIERS.index(plan.name) > PLAN_TIERS.index(from_plan_name)
+                else "downgraded"
+            )
+        else:
+            event_type = "renewed"
+        await log_subscription_event(
+            db,
+            tenant_id=user.tenant_id,
+            subscription_id=subscription.id,
+            event_type=event_type,
+            from_plan_name=from_plan_name,
+            to_plan_name=plan.name,
+        )
+    except Exception:
+        logger.exception("Failed to log subscription_event for tier change user_id=%s", user_id)
 
     return AdminUserRow(
         id=user.id,
@@ -750,3 +796,86 @@ async def change_admin_role(
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     )
+
+
+# ─── Admin notifications ────────────────────────────────────────────────────
+
+class AdminNotificationRow(BaseModel):
+    id: uuid.UUID
+    type: str
+    title: str
+    body: str
+    related_user_id: uuid.UUID | None
+    is_read: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminNotificationListResponse(BaseModel):
+    items: list[AdminNotificationRow]
+    total: int
+    page: int
+    per_page: int
+
+
+@router.get("/notifications", response_model=AdminNotificationListResponse)
+async def list_notifications(
+    page: int = 1,
+    per_page: int = 25,
+    type: str | None = None,
+    is_read: bool | None = None,
+    db: AsyncSession = Depends(get_db_no_rls),
+    _admin: User = Depends(require_admin),
+):
+    per_page = min(max(per_page, 1), 100)
+    page = max(page, 1)
+
+    query = select(AdminNotification)
+    if type:
+        query = query.where(AdminNotification.type == type)
+    if is_read is not None:
+        query = query.where(AdminNotification.is_read == is_read)
+
+    count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total = count_result.scalar_one()
+
+    rows_result = await db.execute(
+        query.order_by(AdminNotification.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    )
+    items = [AdminNotificationRow.model_validate(row) for row in rows_result.scalars().all()]
+    return AdminNotificationListResponse(items=items, total=total, page=page, per_page=per_page)
+
+
+class UnreadCountResponse(BaseModel):
+    count: int
+
+
+@router.get("/notifications/unread-count", response_model=UnreadCountResponse)
+async def unread_notification_count(
+    db: AsyncSession = Depends(get_db_no_rls),
+    _admin: User = Depends(require_admin),
+):
+    count = (
+        await db.execute(
+            select(func.count()).select_from(AdminNotification).where(AdminNotification.is_read.is_(False))
+        )
+    ).scalar_one()
+    return UnreadCountResponse(count=count)
+
+
+@router.post("/notifications/{notification_id}/read", response_model=AdminNotificationRow)
+async def mark_notification_read(
+    notification_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_no_rls),
+    _admin: User = Depends(require_admin),
+):
+    result = await db.execute(select(AdminNotification).where(AdminNotification.id == notification_id))
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = True
+    await db.commit()
+    await db.refresh(notification)
+    return AdminNotificationRow.model_validate(notification)

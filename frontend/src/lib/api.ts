@@ -1266,10 +1266,27 @@ export interface RevenueByTierRow {
 export interface RevenueSummaryResponse {
   mrr: number;
   by_tier: RevenueByTierRow[];
-  upgrades_last_30d: number | null;
-  downgrades_last_30d: number | null;
+  upgrades_last_30d: number;
+  downgrades_last_30d: number;
   cancellations_last_30d: number;
   change_tracking_note: string;
+}
+
+export interface AdminNotificationRow {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  related_user_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface AdminNotificationListResponse {
+  items: AdminNotificationRow[];
+  total: number;
+  page: number;
+  per_page: number;
 }
 
 export const adminApi = {
@@ -1295,6 +1312,14 @@ export const adminApi = {
     adminReq<AdminUserRow>("POST", `/admin/users/${userId}/tier`, { plan_name: planName }),
   changeAdminRole: (userId: string, isAdmin: boolean) =>
     adminReq<AdminUserRow>("POST", `/admin/users/${userId}/admin-role`, { is_admin: isAdmin }),
+  listNotifications: (params: { page?: number; per_page?: number; type?: string; is_read?: boolean } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined) qs.set(k, String(v)); });
+    return adminReq<AdminNotificationListResponse>("GET", `/admin/notifications${qs.toString() ? `?${qs}` : ""}`);
+  },
+  unreadNotificationCount: () => adminReq<{ count: number }>("GET", "/admin/notifications/unread-count"),
+  markNotificationRead: (id: string) =>
+    adminReq<AdminNotificationRow>("POST", `/admin/notifications/${id}/read`),
 };
 
 export const settingsApi = {

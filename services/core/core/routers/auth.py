@@ -1,6 +1,7 @@
+import logging
 from datetime import datetime, timezone
 from ipaddress import ip_address
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as aioredis
@@ -10,6 +11,7 @@ from shared.auth import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, decode_token,
 )
+from shared.admin_notify import notify_new_signup
 from shared.deps import get_current_user, get_db_no_rls, get_redis
 from pydantic import BaseModel
 from shared.schemas.auth import (
@@ -18,6 +20,8 @@ from shared.schemas.auth import (
 from shared.models.public.user import User
 from shared.models.public.tenant import Tenant
 from shared.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -65,6 +69,7 @@ async def register(
     body: RegisterRequest,
     request: Request,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_no_rls),
     redis: aioredis.Redis = Depends(get_redis),
 ):
@@ -98,6 +103,14 @@ async def register(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Best-effort admin alert — must never block/fail registration itself.
+    # Scheduled as a background task (runs after the HTTP response is sent)
+    # rather than awaited inline, so registration latency is never coupled
+    # to email delivery speed or superadmin count. notify_new_signup opens
+    # its own DB session since this request's session will already be
+    # closed by the time the background task runs.
+    background_tasks.add_task(notify_new_signup, user_id=user.id, user_email=user.email)
 
     # Issue tokens with empty tenant_id until onboarding complete
     access_token = create_access_token(

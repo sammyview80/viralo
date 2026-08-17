@@ -1,6 +1,7 @@
-import { LayoutDashboard, Users, DollarSign, CreditCard, LogOut } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LayoutDashboard, Users, DollarSign, CreditCard, Bell, LogOut } from "lucide-react";
 import { navigate, usePathname } from "@/lib/router";
-import { adminToken } from "@/lib/api";
+import { adminApi, adminToken } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ViraloLogo } from "@/components/ViraloLogo";
 
@@ -9,7 +10,10 @@ const TABS = [
   { key: "users", label: "Users", href: "/admin/users", icon: Users },
   { key: "revenue", label: "Revenue", href: "/admin/revenue", icon: DollarSign },
   { key: "payments", label: "Payments", href: "/admin/payments", icon: CreditCard },
+  { key: "notifications", label: "Notifications", href: "/admin/notifications", icon: Bell },
 ];
+
+const UNREAD_POLL_MS = 30_000;
 
 function isActive(pathname: string, href: string) {
   if (href === "/admin/users") return pathname === "/admin/users" || pathname.startsWith("/admin/users/");
@@ -18,6 +22,19 @@ function isActive(pathname: string, href: string) {
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    function poll() {
+      adminApi.unreadNotificationCount()
+        .then((res) => { if (!cancelled) setUnreadCount(res.count); })
+        .catch(() => {});
+    }
+    poll();
+    const interval = setInterval(poll, UNREAD_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   function handleLogout() {
     adminToken.clear();
@@ -47,7 +64,14 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                     : "text-c-text-secondary hover:bg-surface-2 hover:text-c-text"
                 )}
               >
-                <Icon size={16} className={active ? "opacity-100" : "opacity-75"} />
+                <span className="relative">
+                  <Icon size={16} className={active ? "opacity-100" : "opacity-75"} />
+                  {tab.key === "notifications" && unreadCount > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-[#ff3d6a] px-[3px] text-[9px] font-bold leading-none text-white">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </span>
                 {tab.label}
               </a>
             );
