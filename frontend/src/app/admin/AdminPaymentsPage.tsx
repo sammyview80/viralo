@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { adminApi, ApiError, type AdminUserRow } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -33,24 +33,30 @@ export function AdminPaymentsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestSeq = useRef(0);
 
   const load = useCallback(() => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError("");
     adminApi
       .listUsers({ page, per_page: PER_PAGE, sort_by: "created_at", order: "desc", subscription_status: statusFilter || undefined })
       .then((u) => {
+        if (seq !== requestSeq.current) return;
         setUsers(u.items);
         setTotal(u.total);
       })
       .catch((err) => {
+        if (seq !== requestSeq.current) return;
         if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
           navigate("/admin");
           return;
         }
         setError(err instanceof ApiError ? err.message : "Failed to load payments data");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (seq === requestSeq.current) setLoading(false);
+      });
   }, [page, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
@@ -85,7 +91,7 @@ export function AdminPaymentsPage() {
         <select
           value={statusFilter}
           onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }}
-          className="rounded-[10px] border border-c-border bg-surface-2 px-3 py-2.5 text-[13px] text-c-text outline-none"
+          className="min-h-[42px] w-full max-w-xs rounded-[10px] border border-c-border bg-surface-2 px-3 py-2.5 text-[13px] text-c-text outline-none sm:w-auto"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -127,11 +133,11 @@ export function AdminPaymentsPage() {
         </table>
       </div>
 
-      <div className="mt-4 flex items-center justify-between text-[12.5px] text-c-text-muted">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-c-text-muted">
         <span>{total} subscription{total === 1 ? "" : "s"} · page {page} of {totalPages}</span>
         <div className="flex gap-2">
-          <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40">Prev</button>
-          <button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40">Next</button>
+          <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="min-h-[40px] rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40">Prev</button>
+          <button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="min-h-[40px] rounded-[8px] border border-c-border px-3 py-1.5 disabled:opacity-40">Next</button>
         </div>
       </div>
     </div>

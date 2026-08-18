@@ -59,7 +59,7 @@ export function AdminUserDetailPage({ userId }: { userId: string }) {
     <div>
       <button
         onClick={() => navigate("/admin/users")}
-        className="mb-6 flex items-center gap-1.5 text-[12.5px] font-medium text-c-text-secondary hover:text-c-text"
+        className="mb-6 flex min-h-[40px] items-center gap-1.5 text-[12.5px] font-medium text-c-text-secondary hover:text-c-text"
       >
         <ArrowLeft size={14} /> Back to users
       </button>
