@@ -243,7 +243,7 @@ function MobileNav({ active }: { active: ActiveKey }) {
               <span className="text-[13px] font-semibold text-c-text">All pages</span>
               <button
                 onClick={() => setMoreOpen(false)}
-                className="grid h-7 w-7 place-items-center rounded-full text-c-text-muted hover:bg-surface-2 hover:text-c-text"
+                className="grid h-11 w-11 place-items-center rounded-full text-c-text-muted hover:bg-surface-2 hover:text-c-text"
                 aria-label="Close"
               >
                 ✕
@@ -369,7 +369,7 @@ export function Shell({ active, children, fullBleed = false }: { active: ActiveK
           <button
             onClick={openCommandPalette}
             aria-label="Search"
-            className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-c-border bg-surface-2 text-c-text-muted transition hover:border-c-border-hover hover:text-c-text sm:hidden"
+            className="grid h-11 w-11 flex-none place-items-center rounded-[9px] border border-c-border bg-surface-2 text-c-text-muted transition hover:border-c-border-hover hover:text-c-text sm:hidden"
           >
             <Icons.Search size={15} />
           </button>

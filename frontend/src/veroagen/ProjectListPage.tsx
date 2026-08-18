@@ -25,17 +25,17 @@ export function VeroagenListPage() {
 
   return (
     <Shell active={VEROAGEN_ACTIVE}>
-      <div className="mx-auto max-w-2xl p-8">
-        <h1 className="mb-6 text-2xl font-semibold">Veroagen — AI Video Agent</h1>
-        <div className="mb-8 flex gap-2">
+      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+        <h1 className="mb-6 text-xl font-semibold sm:text-2xl">Veroagen — AI Video Agent</h1>
+        <div className="mb-8 flex flex-col gap-2 sm:flex-row">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && create()}
             placeholder="Describe your video project…"
-            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+            className="min-h-[44px] flex-1 rounded-md border bg-background px-3 py-2 text-sm"
           />
-          <button onClick={create} className="rounded-md bg-[#ff3d6a] px-4 py-2 text-sm text-white">
+          <button onClick={create} className="min-h-[44px] rounded-md bg-[#ff3d6a] px-4 py-2 text-sm text-white">
             Create
           </button>
         </div>

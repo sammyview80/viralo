@@ -575,7 +575,7 @@ function StudioPanel() {
   return (
     <Card className="overflow-hidden">
       <div>
-        <div className="flex items-center justify-between gap-8 p-4 sm:p-6">
+        <div className="flex flex-col items-start justify-between gap-6 p-4 sm:flex-row sm:items-center sm:gap-8 sm:p-6">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#ff3d6a]/20 bg-[#ff3d6a]/10 px-3 py-1 text-[11px] font-semibold text-rose-200">
               <WandSparkles className="h-3 w-3" />

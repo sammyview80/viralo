@@ -87,7 +87,7 @@ export function StepLanguageVoice({ voices, draft, set }: StepLanguageVoiceProps
                       window.speechSynthesis.speak(u);
                     }
                   }}
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-c-border bg-surface-2 text-c-text transition hover:border-[#ff3d6a] hover:text-[#ff3d6a]"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-c-border bg-surface-2 text-c-text transition hover:border-[#ff3d6a] hover:text-[#ff3d6a]"
                   title="Preview voice"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">

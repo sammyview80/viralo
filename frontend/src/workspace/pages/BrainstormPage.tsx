@@ -121,7 +121,7 @@ export function BrainstormPage() {
 
         {/* Top input row */}
         <div className="border-b border-c-border px-5 py-4 sm:px-6">
-          <div className="flex items-start gap-3">
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start">
             <div className="flex-1">
               <textarea
                 value={topic}
@@ -140,11 +140,11 @@ export function BrainstormPage() {
                 ))}
               </div>
             </div>
-            <div className="flex flex-col items-end gap-1.5 pt-0.5">
+            <div className="flex flex-row items-center justify-between gap-1.5 sm:flex-col sm:items-end sm:justify-start sm:pt-0.5">
               <button
                 onClick={handleCreate}
                 disabled={creating || !topic.trim()}
-                className="flex items-center gap-2 rounded-[14px] bg-[#ff3d6a] px-5 py-3 text-[12px] font-black text-white transition hover:bg-[#ff5580] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap"
+                className="flex min-h-[44px] items-center gap-2 rounded-[14px] bg-[#ff3d6a] px-5 py-3 text-[12px] font-black text-white transition hover:bg-[#ff5580] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap"
               >
                 {creating ? (
                   <><span className="inline-block h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" /> Starting...</>
@@ -155,9 +155,9 @@ export function BrainstormPage() {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
           {/* Left sidebar: history */}
-          <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-r border-c-border p-4">
+          <div className="flex max-h-48 w-full shrink-0 flex-col gap-3 overflow-y-auto border-b border-c-border p-4 sm:max-h-none sm:w-72 sm:border-b-0 sm:border-r">
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-bold uppercase tracking-widest text-c-text-muted">History</p>
               <span className="text-[10px] text-c-text-muted">{sessions.length}</span>

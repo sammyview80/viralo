@@ -20,7 +20,7 @@ export function ChatPanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-l">
+    <div className="flex h-full min-h-0 flex-col border-t md:border-l md:border-t-0">
       <div className="flex items-center gap-2 border-b p-3">
         <span className="text-sm font-semibold">Director</span>
         <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -74,7 +74,7 @@ export function ChatPanel({
         <button
           onClick={submit}
           disabled={sending}
-          className="rounded-md bg-[#ff3d6a] px-3 py-2 text-sm text-white outline-none disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[#ff3d6a] focus-visible:ring-offset-2"
+          className="min-h-[44px] rounded-md bg-[#ff3d6a] px-3 py-2 text-sm text-white outline-none disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[#ff3d6a] focus-visible:ring-offset-2"
         >
           Send
         </button>

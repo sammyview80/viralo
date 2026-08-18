@@ -377,7 +377,7 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
                 <h2 className="font-display text-[15px] font-bold text-c-text">Import from YouTube</h2>
                 <p className="text-[11.5px] text-c-text-muted">Paste a link to preview the video.</p>
               </div>
-              <button onClick={onClose} className="ml-auto grid h-8 w-8 place-items-center rounded-[9px] border border-c-border bg-surface-2 text-c-text-muted transition hover:bg-surface-3 hover:text-c-text">
+              <button onClick={onClose} className="ml-auto grid h-11 w-11 place-items-center rounded-[9px] border border-c-border bg-surface-2 text-c-text-muted transition hover:bg-surface-3 hover:text-c-text">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
@@ -435,7 +435,7 @@ export function YoutubeImportModal({ onClose, initialUrl = "", prefetched = null
                 <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3}><path d="M20 6L9 17l-5-5"/></svg>
                 </span>
-                <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] text-c-text-muted transition hover:bg-surface-2 hover:text-c-text">
+                <button onClick={onClose} className="grid h-11 w-11 shrink-0 place-items-center rounded-[9px] text-c-text-muted transition hover:bg-surface-2 hover:text-c-text">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>

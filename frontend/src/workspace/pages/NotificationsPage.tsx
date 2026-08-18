@@ -186,8 +186,8 @@ function NotifRow({
         )}
       </div>
 
-      {/* Actions (hover) */}
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+      {/* Actions (hover on desktop, always visible on touch) */}
+      <div className="flex shrink-0 items-center gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
         {isUnread && (
           <button
             onClick={(e) => { e.stopPropagation(); markRead(n.id); }}
@@ -324,7 +324,7 @@ export function NotificationsPage() {
       <div className="mx-auto max-w-3xl">
 
         {/* Header */}
-        <div className="mb-6 flex items-start justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="font-display text-[22px] font-bold tracking-[-0.01em] text-c-text">
               Notifications
@@ -333,7 +333,7 @@ export function NotificationsPage() {
               {total > 0 ? `${total} total${unreadTotal > 0 ? ` · ${unreadTotal} unread` : ""}` : "Activity from your videos, posts, and workflows"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => load(1, true)}
               className="flex h-8 items-center gap-1.5 rounded-[8px] border border-c-border bg-transparent px-3 text-[12px] font-medium text-c-text-muted transition hover:border-c-border-hover hover:text-c-text"

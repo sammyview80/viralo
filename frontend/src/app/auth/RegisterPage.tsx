@@ -76,7 +76,7 @@ export function RegisterPage() {
             />
             <button
               type="button" tabIndex={-1}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[16px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="absolute right-1.5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-[16px] text-zinc-500 hover:text-zinc-300 transition-colors"
               onClick={() => setShowPw((v) => !v)}
             >
               {showPw ? "🙈" : "👁"}

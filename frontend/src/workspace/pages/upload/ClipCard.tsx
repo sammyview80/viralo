@@ -207,7 +207,7 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
               <button
                 onClick={onClose}
                 aria-label="Close"
-                className="grid h-7 w-7 place-items-center rounded-full border border-c-border text-c-text-muted transition hover:border-c-border-hover hover:text-c-text cursor-pointer"
+                className="grid h-11 w-11 place-items-center rounded-full border border-c-border text-c-text-muted transition hover:border-c-border-hover hover:text-c-text cursor-pointer sm:h-7 sm:w-7"
               >
                 <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
@@ -466,13 +466,13 @@ export function ClipDetailModal({ clip, isPosted, isScheduled, posts = [], onClo
                 {isPosted ? "Publish again" : isScheduled ? "Reschedule" : "Publish"}
               </button>
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-c-border bg-surface-2 text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border border-c-border bg-surface-2 text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer sm:h-10 sm:w-10"
                 aria-label="Edit clip"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-c-border bg-surface-2 text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border border-c-border bg-surface-2 text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-3 hover:text-c-text cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed sm:h-10 sm:w-10"
                 disabled={!clip.storage_url}
                 aria-label="Download"
                 onClick={() => { if (clip.storage_url) void downloadUrl(clip.storage_url, safeFilename(clip.title, "mp4")); }}

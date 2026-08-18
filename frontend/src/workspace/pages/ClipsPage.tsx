@@ -289,7 +289,7 @@ function PublishModal({ clip, onClose }: { clip: ClipApiResponse; onClose: () =>
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="relative w-full max-w-[440px] rounded-[18px] border border-c-border bg-surface-1 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-c-border px-5 py-4"><h2 className="font-display text-[15px] font-bold">Schedule Post</h2><button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-full text-c-text-muted hover:bg-surface-2 hover:text-c-text transition cursor-pointer">✕</button></div>
+        <div className="flex items-center justify-between border-b border-c-border px-5 py-4"><h2 className="font-display text-[15px] font-bold">Schedule Post</h2><button onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full text-c-text-muted hover:bg-surface-2 hover:text-c-text transition cursor-pointer">✕</button></div>
         <div className="space-y-4 p-5">
           {success ? (<div className="flex flex-col items-center gap-3 py-6 text-center"><div className="grid h-12 w-12 place-items-center rounded-full bg-green-500/10 text-2xl">✓</div><p className="font-semibold text-green-400">Scheduled!</p><p className="text-xs text-c-text-muted">Your post has been queued.</p></div>) : (
             <>
@@ -1104,7 +1104,7 @@ export function ClipsPage() {
                 <button
                   onClick={() => setMobileDrawerOpen(false)}
                   aria-label="Close clip details"
-                  className="grid h-8 w-8 place-items-center rounded-full bg-surface-2 text-c-text-secondary transition hover:bg-surface-3 hover:text-c-text"
+                  className="grid h-11 w-11 place-items-center rounded-full bg-surface-2 text-c-text-secondary transition hover:bg-surface-3 hover:text-c-text"
                 >
                   ✕
                 </button>

@@ -69,7 +69,7 @@ function Toast({ id, notification }: { id: string; notification: Notification })
     <div
       onClick={handleClick}
       className={cn(
-        "flex w-[320px] cursor-pointer items-start gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5 shadow-[0_12px_40px_rgba(0,0,0,.25)] dark:shadow-[0_12px_40px_rgba(0,0,0,.55)] transition-[opacity,transform] duration-300",
+        "flex w-[calc(100vw-2rem)] max-w-[320px] cursor-pointer items-start gap-3 rounded-[12px] border border-c-border bg-surface-1 p-3.5 shadow-[0_12px_40px_rgba(0,0,0,.25)] dark:shadow-[0_12px_40px_rgba(0,0,0,.55)] transition-[opacity,transform] duration-300",
         visible ? "translate-x-0 opacity-100" : "translate-x-4 opacity-0"
       )}
     >
@@ -83,7 +83,7 @@ function Toast({ id, notification }: { id: string; notification: Notification })
       </div>
       <button
         onClick={handleDismiss}
-        className="flex-none text-c-text-muted transition hover:text-c-text-secondary"
+        className="flex-none p-2.5 -m-2.5 text-c-text-muted transition hover:text-c-text-secondary"
       >
         <XIcon size={14} />
       </button>
@@ -97,7 +97,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-[max(env(safe-area-inset-bottom),80px)] right-4 z-[100] flex flex-col gap-2 lg:bottom-6 lg:right-6">
+    <div className="fixed bottom-[max(env(safe-area-inset-bottom),80px)] left-4 right-4 z-[100] flex flex-col items-end gap-2 lg:left-auto lg:bottom-6 lg:right-6">
       {toasts.map(({ id, notification }) => (
         <Toast key={id} id={id} notification={notification} />
       ))}

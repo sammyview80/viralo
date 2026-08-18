@@ -80,7 +80,8 @@ export function AdminRevenuePage() {
             </Panel>
 
             <Panel title="Subscribers by tier">
-              <table className="w-full text-left text-[13px]">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[420px] text-left text-[13px]">
                 <thead>
                   <tr className="border-b border-c-border text-[11px] uppercase tracking-[.06em] text-c-text-muted">
                     <th className="py-2 pr-4">Tier</th>
@@ -98,6 +99,7 @@ export function AdminRevenuePage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </Panel>
           </div>
         </>

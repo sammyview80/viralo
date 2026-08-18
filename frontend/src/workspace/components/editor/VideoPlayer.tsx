@@ -39,8 +39,8 @@ export function VideoPlayer({
     <div className="flex flex-col items-center gap-4 h-full justify-center py-6">
       {/* 9:16 preview */}
       <div
-        className="relative overflow-hidden rounded-[20px] bg-black shadow-[0_0_0_2px_rgba(255,255,255,.08),0_20px_60px_rgba(0,0,0,.8)]"
-        style={{ width: 180, aspectRatio: "9/16" }}
+        className="relative w-full max-w-[180px] overflow-hidden rounded-[20px] bg-black shadow-[0_0_0_2px_rgba(255,255,255,.08),0_20px_60px_rgba(0,0,0,.8)]"
+        style={{ aspectRatio: "9/16" }}
       >
         {thumbnailUrl && (
           <img
@@ -77,7 +77,7 @@ export function VideoPlayer({
       <div className="flex items-center gap-3">
         <button
           onClick={() => onSeekDelta(-5)}
-          className="grid h-9 w-9 place-items-center rounded-full bg-white/[.05] text-zinc-400 hover:bg-white/[.09] hover:text-white transition cursor-pointer text-[11px] font-bold"
+          className="grid h-11 w-11 place-items-center rounded-full bg-white/[.05] text-zinc-400 hover:bg-white/[.09] hover:text-white transition cursor-pointer text-[11px] font-bold"
         >
           −5
         </button>
@@ -97,7 +97,7 @@ export function VideoPlayer({
         </button>
         <button
           onClick={() => onSeekDelta(5)}
-          className="grid h-9 w-9 place-items-center rounded-full bg-white/[.05] text-zinc-400 hover:bg-white/[.09] hover:text-white transition cursor-pointer text-[11px] font-bold"
+          className="grid h-11 w-11 place-items-center rounded-full bg-white/[.05] text-zinc-400 hover:bg-white/[.09] hover:text-white transition cursor-pointer text-[11px] font-bold"
         >
           +5
         </button>
