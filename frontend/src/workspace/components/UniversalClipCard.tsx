@@ -153,7 +153,7 @@ export function UniversalClipCard({
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-black/20" />
 
         {selectable && (
-          <button onClick={(e) => { e.stopPropagation(); onSelect?.(localClip); }} className={cn("absolute left-3 top-3 z-[2] grid h-7 w-7 place-items-center rounded-[8px] border text-[12px] font-black transition", selected ? "border-[#ff3d6a] bg-[#ff3d6a] text-white" : "border-white/20 bg-black/45 text-transparent hover:text-white")}>
+          <button onClick={(e) => { e.stopPropagation(); onSelect?.(localClip); }} className={cn("absolute left-3 top-3 z-[2] grid h-11 w-11 place-items-center rounded-[8px] border text-[12px] font-black transition sm:h-7 sm:w-7", selected ? "border-[#ff3d6a] bg-[#ff3d6a] text-white" : "border-white/20 bg-black/45 text-transparent hover:text-white")}>
             ✓
           </button>
         )}
@@ -268,18 +268,18 @@ export function UniversalClipCard({
         {actions.length > 0 && (
           <div className="flex items-center gap-2 border-t border-c-border pt-3">
             {displayPrimary && (
-              <button onClick={(e) => runAction(displayPrimary, e)} disabled={displayPrimary.disabled} className="flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.22)] transition hover:bg-[#ff527a] disabled:opacity-50">
+              <button onClick={(e) => runAction(displayPrimary, e)} disabled={displayPrimary.disabled} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#ff3d6a] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-[0_2px_10px_rgba(255,61,106,.22)] transition hover:bg-[#ff527a] disabled:opacity-50 sm:min-h-8">
                 <span>{displayPrimary.icon ?? defaultIcon(displayPrimary.id)}</span>{displayPrimary.label ?? displayPrimary.id}
               </button>
             )}
             {secondaryActions.slice(0, 2).map((action) => (
-              <button key={action.id} onClick={(e) => runAction(action, e)} disabled={action.disabled} className="min-h-8 rounded-[9px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-surface-2 hover:text-white disabled:opacity-50">
+              <button key={action.id} onClick={(e) => runAction(action, e)} disabled={action.disabled} className="min-h-11 min-w-11 rounded-[9px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-surface-2 hover:text-white disabled:opacity-50 sm:min-h-8 sm:min-w-0">
                 <span>{action.icon ?? defaultIcon(action.id)}</span><span className="sr-only">{action.label ?? action.id}</span>
               </button>
             ))}
             {secondaryActions.length > 2 && (
               <div className="relative">
-                <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className="min-h-8 rounded-[9px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-surface-2 hover:text-white">•••</button>
+                <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className="min-h-11 min-w-11 rounded-[9px] border border-c-border bg-surface-3 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:bg-surface-2 hover:text-white sm:min-h-8 sm:min-w-0">•••</button>
                 {menuOpen && (
                   <div className="absolute bottom-full right-0 z-30 mb-2 w-40 overflow-hidden rounded-[10px] border border-c-border bg-white dark:bg-[#080b12] shadow-[0_8px_32px_rgba(0,0,0,.18)]">
                     {secondaryActions.slice(2).map((action) => (

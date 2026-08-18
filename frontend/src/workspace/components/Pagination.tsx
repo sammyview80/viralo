@@ -29,7 +29,7 @@ export function Pagination({
           type="button"
           disabled={page <= 1}
           onClick={() => onPageChange(1)}
-          className="rounded-[8px] border border-c-border bg-surface-1 px-2.5 py-1.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-[8px] border border-c-border bg-surface-1 px-2.5 py-2.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40 sm:py-1.5"
         >
           First
         </button>
@@ -37,7 +37,7 @@ export function Pagination({
           type="button"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
-          className="rounded-[8px] border border-c-border bg-surface-1 px-3 py-1.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-[8px] border border-c-border bg-surface-1 px-3 py-2.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40 sm:py-1.5"
         >
           Previous
         </button>
@@ -45,7 +45,7 @@ export function Pagination({
           type="button"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
-          className="rounded-[8px] border border-c-border bg-surface-1 px-3 py-1.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-[8px] border border-c-border bg-surface-1 px-3 py-2.5 font-semibold text-c-text-secondary transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40 sm:py-1.5"
         >
           Next
         </button>

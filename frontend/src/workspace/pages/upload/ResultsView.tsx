@@ -110,7 +110,7 @@ export function ZipDownloadModal({ clips, videoTitle, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-[340px] rounded-[16px] border border-c-border bg-surface-2 p-6 shadow-[0_24px_60px_rgba(0,0,0,.7)]"
+      <div className="w-[calc(100vw-2rem)] max-w-[340px] rounded-[16px] border border-c-border bg-surface-2 p-6 shadow-[0_24px_60px_rgba(0,0,0,.7)]"
         onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <span className="text-[14px] font-semibold text-c-text">
@@ -566,7 +566,7 @@ export function ResultsView({
                 <h3 className="font-display text-[16px] font-bold text-c-text">Regenerate clips</h3>
                 <p className="text-[12px] text-c-text-muted">Choose what to optimize in the new batch</p>
               </div>
-              <button onClick={() => setRegenModal(false)} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-c-border text-[13px] text-c-text-muted hover:text-c-text">✕</button>
+              <button onClick={() => setRegenModal(false)} className="ml-auto grid h-11 w-11 place-items-center rounded-[7px] border border-c-border text-[13px] text-c-text-muted hover:text-c-text sm:h-7 sm:w-7">✕</button>
             </div>
 
             <div className="mb-2 text-[10.5px] font-bold uppercase tracking-[.1em] text-c-text-muted">Optimization options</div>

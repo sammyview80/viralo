@@ -161,7 +161,7 @@ export function BulkPublishModal({ clips, onClose }: { clips: ClipApiResponse[];
             <h3 className="font-display text-[16px] font-bold text-c-text">Bulk Schedule</h3>
             <p className="text-[11.5px] text-c-text-muted">Assign clips to time slots across accounts, or post them now</p>
           </div>
-          <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-c-border text-c-text-muted hover:text-c-text transition">✕</button>
+          <button onClick={onClose} className="ml-auto grid h-11 w-11 place-items-center rounded-[7px] border border-c-border text-c-text-muted hover:text-c-text transition sm:h-7 sm:w-7">✕</button>
         </div>
 
         {/* Body */}

@@ -41,7 +41,7 @@ export function ScriptView({ scenes, onSave }: { scenes: Scene[]; onSave: (s: Sc
       <div className="sticky bottom-0 border-t bg-background p-3">
         <button
           onClick={() => onSave(local)}
-          className="rounded-md border px-3 py-1.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-[#ff3d6a]"
+          className="min-h-[44px] rounded-md border px-3 py-1.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-[#ff3d6a]"
         >
           Save script
         </button>

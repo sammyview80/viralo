@@ -44,16 +44,16 @@ export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
 
   return (
     <Shell active={VEROAGEN_ACTIVE} fullBleed>
-      <div className="grid h-full min-h-0 grid-cols-[1fr_380px]">
+      <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[1fr_380px]">
         <div className="flex min-h-0 flex-col overflow-hidden">
-          <div className="flex items-center gap-1 border-b px-4 py-2">
-            <span className="mr-4 truncate text-sm font-semibold">{doc.title}</span>
-            <div className="flex items-center gap-0.5 rounded-full bg-muted p-0.5">
+          <div className="flex flex-wrap items-center gap-1 border-b px-3 py-2 sm:px-4">
+            <span className="mr-2 max-w-full truncate text-sm font-semibold sm:mr-4">{doc.title}</span>
+            <div className="flex items-center gap-0.5 overflow-x-auto rounded-full bg-muted p-0.5">
               {TABS.map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className={`rounded-full px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a] ${
+                  className={`min-h-[44px] shrink-0 rounded-full px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a] ${
                     tab === t ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -98,7 +98,9 @@ export function VeroagenWorkspacePage({ projectId }: { projectId: string }) {
             )}
           </div>
         </div>
-        <ChatPanel messages={doc.chat.messages} onSend={sendMessage} sending={sending} />
+        <div className="min-h-[280px] md:min-h-0">
+          <ChatPanel messages={doc.chat.messages} onSend={sendMessage} sending={sending} />
+        </div>
       </div>
     </Shell>
   );

@@ -22,8 +22,8 @@ function SeriesCard({ s, options, onChanged, onDeleted }: {
 
   return (
     <div className="rounded-[14px] border border-c-border bg-surface-1">
-      <div className="flex items-center gap-3 p-4">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-3 p-4">
+        <div className="min-w-0 flex-1 basis-full sm:basis-auto">
           <p className="truncate text-[14px] font-bold text-c-text">{s.name}</p>
           <p className="text-[11.5px] text-c-text-muted">
             {nicheLabel} · {s.art_style} · {s.cadence.replace("_", " ")} at {s.publish_time} UTC

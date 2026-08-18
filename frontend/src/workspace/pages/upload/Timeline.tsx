@@ -114,7 +114,7 @@ export function TimelineEditor({
             <h3 className="font-display text-[15px] font-bold">Clip Editor</h3>
             <p className="text-[11.5px] text-c-text-muted">{clip.title ?? "Untitled clip"}</p>
           </div>
-          <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] border border-c-border bg-surface-3 text-[13px] text-c-text-muted transition hover:text-c-text">✕</button>
+          <button onClick={onClose} className="ml-auto grid h-11 w-11 place-items-center rounded-[7px] border border-c-border bg-surface-3 text-[13px] text-c-text-muted transition hover:text-c-text sm:h-7 sm:w-7">✕</button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 pb-6 pt-5 space-y-5">

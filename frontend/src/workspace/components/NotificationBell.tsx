@@ -250,7 +250,7 @@ export function NotificationBell() {
       {/* Bell button */}
       <button
         onClick={() => setOpen(!open)}
-        className="relative grid h-[34px] w-[34px] place-items-center rounded-[8px] border border-c-border text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-1 hover:text-c-text"
+        className="relative grid h-11 w-11 place-items-center rounded-[8px] border border-c-border text-c-text-secondary transition hover:border-c-border-hover hover:bg-surface-1 hover:text-c-text sm:h-[34px] sm:w-[34px]"
       >
         <BellIcon size={15} />
         {unreadCount > 0 && (
@@ -261,7 +261,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[340px] overflow-hidden rounded-[14px] border border-c-border bg-surface-1 shadow-[0_20px_60px_rgba(0,0,0,.25)] dark:shadow-[0_20px_60px_rgba(0,0,0,.65)]">
+        <div className="fixed inset-x-4 top-[60px] z-50 w-auto overflow-hidden rounded-[14px] border border-c-border bg-surface-1 shadow-[0_20px_60px_rgba(0,0,0,.25)] dark:shadow-[0_20px_60px_rgba(0,0,0,.65)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-[calc(100%+8px)] sm:w-[340px]">
 
           {/* Header */}
           <div className="flex items-center justify-between border-b border-c-border px-4 py-3">

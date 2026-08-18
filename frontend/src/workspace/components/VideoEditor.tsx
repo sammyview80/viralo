@@ -411,7 +411,7 @@ export function VideoEditor({
     <div className="fixed inset-0 flex flex-col bg-[#0a0a0f]" style={{ zIndex: 9999 }}>
 
       {/* ── Header ── */}
-      <div className="flex shrink-0 items-center justify-between border-b border-white/[.06] bg-[#0f0f17] px-5 py-2.5 h-14">
+      <div className="flex shrink-0 items-center justify-between gap-3 overflow-x-auto border-b border-white/[.06] bg-[#0f0f17] px-5 py-2.5 h-14">
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onClose}
@@ -512,10 +512,10 @@ export function VideoEditor({
       </div>
 
       {/* ── Body ── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
 
         {/* ── Left: Video preview ── */}
-        <div className="flex flex-col items-center justify-between bg-[#0a0a0f] border-r border-white/[.05] py-6 px-6 w-[300px] shrink-0">
+        <div className="flex w-full flex-col items-center justify-between border-b border-white/[.05] bg-[#0a0a0f] px-4 py-4 shrink-0 md:w-[300px] md:border-b-0 md:border-r md:px-6 md:py-6">
 
           {/* Canvas / preview */}
           <div className="flex-1 flex items-center justify-center w-full min-h-0">
@@ -611,10 +611,10 @@ export function VideoEditor({
         </div>
 
         {/* ── Right: Tool panel ── */}
-        <div className="flex flex-1 min-w-0 min-h-0 overflow-hidden">
+        <div className="flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden md:flex-row">
 
-          {/* Vertical tab nav */}
-          <div className="flex flex-col gap-1 border-r border-white/[.05] bg-[#0f0f17] px-2 py-4 w-[80px] shrink-0">
+          {/* Vertical tab nav (horizontal scroller on mobile) */}
+          <div className="flex flex-row gap-1 overflow-x-auto border-b border-white/[.05] bg-[#0f0f17] px-2 py-2 shrink-0 md:w-[80px] md:flex-col md:overflow-x-visible md:border-b-0 md:border-r md:py-4">
             {TABS.map((tab) => (
               <button
                 key={tab.id}

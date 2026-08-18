@@ -199,7 +199,7 @@ export function CaptionEditor({ captions, duration, onChange }: CaptionEditorPro
                 onClick={() => setEditing({ ...editing, color: c })}
                 style={{ background: c }}
                 className={cn(
-                  "h-7 w-7 rounded-full border-2 transition cursor-pointer",
+                  "h-11 w-11 rounded-full border-2 transition cursor-pointer",
                   editing.color === c ? "border-white scale-110" : "border-transparent hover:border-white/40"
                 )}
               />
@@ -282,7 +282,7 @@ export function CaptionEditor({ captions, duration, onChange }: CaptionEditorPro
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); remove(cap.id); }}
-                className="opacity-0 group-hover:opacity-100 shrink-0 text-c-text-muted hover:text-red-400 transition cursor-pointer text-xs"
+                className="grid h-8 w-8 shrink-0 place-items-center opacity-60 sm:opacity-0 sm:group-hover:opacity-100 text-c-text-muted hover:text-red-400 transition cursor-pointer text-xs"
               >
                 ✕
               </button>
