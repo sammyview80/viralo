@@ -116,15 +116,29 @@ async def update_notification_prefs(
 
 # ── Webhooks ──────────────────────────────────────────────────────────────────
 
+# Source of truth for which webhook event names a tenant can opt into. Any new
+# event a worker task fires (see workers/tasks/webhook.py / post.py / video/tasks.py)
+# must be added here too, or tenants can never enable it.
+ALL_WEBHOOK_EVENTS = [
+    "video.completed",
+    "video.failed",
+    "post.published",
+    "post.failed",
+    "clip.ready",
+    "clip.upload_failed",
+]
+
 DEFAULT_WEBHOOK_CONFIG = {
     "url": None,
     "enabled": False,
+    "events": ALL_WEBHOOK_EVENTS,
 }
 
 
 class WebhookConfigUpdate(BaseModel):
     url: str | None = None
     enabled: bool | None = None
+    events: list[str] | None = None
 
 
 @router.get("/webhook")
@@ -150,6 +164,10 @@ async def update_webhook_config(
 ):
     if body.url is not None and body.url and not (body.url.startswith("https://") or body.url.startswith("http://")):
         raise HTTPException(status_code=400, detail="webhook url must be http(s)")
+    if body.events is not None:
+        invalid = sorted(set(body.events) - set(ALL_WEBHOOK_EVENTS))
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"unknown webhook event(s): {', '.join(invalid)}")
 
     result = await db.execute(select(Tenant).where(Tenant.id == uuid.UUID(token.tenant_id)))
     tenant = result.scalar_one_or_none()
