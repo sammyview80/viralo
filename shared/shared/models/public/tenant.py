@@ -24,3 +24,4 @@ class Tenant(Base, TimestampMixin):
     referral_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
     brand_kit: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     notification_prefs: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    webhook_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # {"url", "secret", "enabled"}
