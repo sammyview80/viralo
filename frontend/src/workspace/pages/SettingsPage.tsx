@@ -6,12 +6,14 @@ import {
   settingsApi,
   billingApi,
   mcpSettings,
+  ApiError,
   type WorkspaceInfo,
   type BrandKit,
   type NotificationPrefs,
   type ApiKeyInfo,
   type SubscriptionInfo,
   type UserResponse,
+  type WebhookConfig,
 } from "@/lib/api";
 
 /* ─── Icons ─────────────────────────────────────────────────────────────── */
@@ -34,6 +36,9 @@ function IconNotifications() {
 function IconApi() {
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><path d="M2 8h3M11 8h3M5 5l-2 3 2 3M11 5l2 3-2 3"/></svg>;
 }
+function IconWebhook() {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]"><circle cx="4.5" cy="11.5" r="1.8"/><circle cx="11.5" cy="4.5" r="1.8"/><circle cx="11.5" cy="11.5" r="1.8"/><path d="M4.5 9.7V6a2.5 2.5 0 012.5-2.5h2.7M6.3 11.5H9.7"/></svg>;
+}
 
 /* ─── Primitives ─────────────────────────────────────────────────────────── */
 
@@ -43,15 +48,17 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={cn(
-        "relative h-[22px] w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a]/40",
-        checked ? "bg-[#ff3d6a]" : "bg-surface-3"
-      )}
+      className="relative flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff3d6a]/40 rounded-full"
     >
       <span className={cn(
-        "absolute top-[3px] h-4 w-4 rounded-full bg-white shadow transition-all duration-200",
-        checked ? "left-[22px]" : "left-[3px]"
-      )} />
+        "relative h-[22px] w-10 rounded-full transition-colors duration-200",
+        checked ? "bg-[#ff3d6a]" : "bg-surface-3"
+      )}>
+        <span className={cn(
+          "absolute top-[3px] h-4 w-4 rounded-full bg-white shadow transition-all duration-200",
+          checked ? "left-[22px]" : "left-[3px]"
+        )} />
+      </span>
     </button>
   );
 }
@@ -85,7 +92,7 @@ function TextInput({ placeholder, value, onChange, mono, className }: {
       placeholder={placeholder}
       onChange={e => onChange?.(e.target.value)}
       className={cn(
-        "h-8 rounded-[8px] border border-c-border bg-surface-1 px-3 text-[13px] text-c-text placeholder:text-c-text-muted",
+        "min-h-[44px] rounded-[8px] border border-c-border bg-surface-1 px-3 text-[13px] text-c-text placeholder:text-c-text-muted",
         "transition-colors focus:border-[#ff3d6a]/50 focus:outline-none focus:ring-1 focus:ring-[#ff3d6a]/20",
         mono && "font-mono text-xs tracking-tight",
         className
@@ -101,7 +108,7 @@ function OutlineBtn({ children, onClick, disabled }: {
     <button
       onClick={onClick}
       disabled={disabled}
-      className="h-8 cursor-pointer rounded-[8px] border border-c-border px-3 text-[13px] font-medium text-c-text-muted transition-colors hover:border-c-border-hover hover:text-c-text disabled:opacity-40"
+      className="min-h-[44px] cursor-pointer rounded-[8px] border border-c-border px-3 text-[13px] font-medium text-c-text-muted transition-colors hover:border-c-border-hover hover:text-c-text disabled:opacity-40"
     >
       {children}
     </button>
@@ -116,7 +123,7 @@ function PrimaryBtn({ children, onClick, disabled, className }: {
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "h-8 cursor-pointer rounded-[8px] bg-[#ff3d6a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#e8304f] active:scale-[.98] disabled:opacity-40",
+        "min-h-[44px] cursor-pointer rounded-[8px] bg-[#ff3d6a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#e8304f] active:scale-[.98] disabled:opacity-40",
         className
       )}
     >
@@ -149,10 +156,10 @@ function FieldSkeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-function SaveBar({ onSave, saving }: { onSave: () => void; saving: boolean }) {
+function SaveBar({ onSave, saving, disabled }: { onSave: () => void; saving: boolean; disabled?: boolean }) {
   return (
     <div className="pt-3">
-      <PrimaryBtn onClick={onSave} disabled={saving}>
+      <PrimaryBtn onClick={onSave} disabled={saving || disabled}>
         {saving ? "Saving…" : "Save changes"}
       </PrimaryBtn>
     </div>
@@ -552,7 +559,156 @@ function ApiKeysSection() {
   );
 }
 
-type SectionId = "profile" | "workspace" | "brand" | "billing" | "notifications" | "api";
+/* ─── Webhooks ───────────────────────────────────────────────────────────── */
+
+function validateWebhookUrl(url: string): string | null {
+  if (!url.trim()) return "Webhook URL is required.";
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "Enter a valid URL.";
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "URL must use http:// or https://.";
+  return null;
+}
+
+function WebhooksSection() {
+  const [config, setConfig] = useState<WebhookConfig | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchConfig = () => settingsApi.getWebhook();
+
+  const loadInitial = () => {
+    setLoadError(null);
+    fetchConfig()
+      .then(setConfig)
+      .catch(err => setLoadError(err instanceof ApiError ? err.message : "Failed to load webhook settings."));
+  };
+  useEffect(() => { loadInitial(); }, []);
+
+  const urlError = validateWebhookUrl(config?.url ?? "");
+
+  const save = async () => {
+    if (!config || urlError) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await settingsApi.updateWebhook({ url: config.url ?? "", enabled: config.enabled });
+      setConfig(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save webhook settings.");
+    } finally { setSaving(false); }
+  };
+
+  const rotate = async () => {
+    setRotating(true);
+    setError(null);
+    try {
+      const res = await settingsApi.rotateWebhookSecret();
+      setRevealedSecret(res.secret);
+      try {
+        setConfig(await fetchConfig());
+      } catch {
+        setError("Secret rotated, but refreshing webhook status failed — reload the page to confirm.");
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to rotate secret.");
+    } finally { setRotating(false); }
+  };
+
+  if (!config && loadError) {
+    return (
+      <div className="rounded-[10px] border border-red-800/40 bg-red-950/20 p-4">
+        <p className="mb-3 text-[12px] font-medium text-red-400">{loadError}</p>
+        <OutlineBtn onClick={loadInitial}>Retry</OutlineBtn>
+      </div>
+    );
+  }
+
+  if (!config) return <FieldSkeleton rows={3} />;
+
+  return (
+    <div className="space-y-3">
+      {error && (
+        <div className="rounded-[10px] border border-red-800/40 bg-red-950/20 p-3.5">
+          <p className="text-[12px] font-medium text-red-400">{error}</p>
+        </div>
+      )}
+
+      {revealedSecret && (
+        <div className="rounded-[10px] border border-emerald-800/40 bg-emerald-950/20 p-4">
+          <p className="mb-2.5 text-[12px] font-semibold text-emerald-400">Copy this signing secret — it won't be shown again.</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 overflow-x-auto rounded-[8px] bg-surface-2 px-3 py-2 font-mono text-[12px] text-emerald-600 dark:text-emerald-300">
+              {revealedSecret}
+            </code>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(revealedSecret);
+                setRevealedSecret(null);
+              }}
+              className="shrink-0 min-h-[44px] cursor-pointer rounded-[8px] border border-emerald-800/40 bg-emerald-950/30 px-3 text-[12px] font-medium text-emerald-400 transition hover:bg-emerald-950/50"
+            >
+              Copy & close
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Card>
+        <FieldRow label="Enable webhook" hint="Send an event to your URL when a video finishes or fails.">
+          <Toggle checked={config.enabled} onChange={v => setConfig(c => c && { ...c, enabled: v })} />
+        </FieldRow>
+        <FieldRow label="Endpoint URL" hint="Must be http(s). Receives a POST for each event." border={false}>
+          <div className="w-full sm:w-72">
+            <TextInput
+              placeholder="https://your-app.com/webhooks/viralo"
+              value={config.url ?? ""}
+              onChange={v => setConfig(c => c && { ...c, url: v })}
+              mono
+              className="w-full"
+            />
+            {urlError && <p className="mt-1.5 text-[12px] text-red-400">{urlError}</p>}
+          </div>
+        </FieldRow>
+      </Card>
+      <SaveBar onSave={save} saving={saving} disabled={!!urlError} />
+
+      <Card>
+        <FieldRow label="Signing secret" hint={config.secret_set ? "whsec_•••••••••••••••••••••• — never shown after creation." : "No secret generated yet."} border={false}>
+          <OutlineBtn onClick={rotate} disabled={rotating}>
+            {rotating ? "Rotating…" : config.secret_set ? "Rotate secret" : "Generate secret"}
+          </OutlineBtn>
+        </FieldRow>
+      </Card>
+
+      <div className="rounded-[10px] border border-c-border bg-surface-1 p-4 space-y-2">
+        <p className="text-[12px] font-semibold text-c-text">Payload & verification</p>
+        <p className="text-[12px] leading-relaxed text-c-text-muted">
+          Each event is a POST with JSON body: <code className="font-mono text-[11px]">event</code>,{" "}
+          <code className="font-mono text-[11px]">video_id</code>, <code className="font-mono text-[11px]">status</code>,{" "}
+          <code className="font-mono text-[11px]">error_reason</code>, <code className="font-mono text-[11px]">timestamps</code>,{" "}
+          and <code className="font-mono text-[11px]">metadata</code>.
+        </p>
+        <p className="text-[12px] leading-relaxed text-c-text-muted">
+          Verify authenticity via the <code className="font-mono text-[11px]">X-Viralo-Signature</code> header — an HMAC-SHA256
+          of the raw request body, signed with your webhook secret. Rotate the secret if it's ever exposed.
+        </p>
+        <p className="text-[12px] leading-relaxed text-c-text-muted">
+          Send-test-webhook isn't available yet — the backend has no test-trigger endpoint. To verify delivery, trigger a real
+          video job and check your endpoint logs.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+type SectionId = "profile" | "workspace" | "brand" | "billing" | "notifications" | "api" | "webhooks";
 
 const SECTIONS: { id: SectionId; label: string; desc: string; icon: React.ReactNode }[] = [
   { id: "profile", label: "Profile", desc: "Your personal information.", icon: <IconProfile /> },
@@ -561,11 +717,13 @@ const SECTIONS: { id: SectionId; label: string; desc: string; icon: React.ReactN
   { id: "billing", label: "Billing", desc: "Plan and usage.", icon: <IconBilling /> },
   { id: "notifications", label: "Notifications", desc: "Choose notification preferences.", icon: <IconNotifications /> },
   { id: "api", label: "API keys", desc: "Create and revoke access keys.", icon: <IconApi /> },
+  { id: "webhooks", label: "Webhooks", desc: "Get notified when video jobs finish.", icon: <IconWebhook /> },
 ];
 
 const CONTENT: Record<SectionId, React.ReactNode> = {
   profile: <ProfileSection />, workspace: <WorkspaceSection />, brand: <BrandSection />,
   billing: <BillingSection />, notifications: <NotificationsSection />, api: <ApiKeysSection />,
+  webhooks: <WebhooksSection />,
 };
 
 export function SettingsPage() {

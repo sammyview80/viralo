@@ -1131,6 +1131,12 @@ export interface ApiKeyCreated extends ApiKeyInfo {
 
 export interface UpdateMePayload { full_name?: string; avatar_url?: string }
 
+export interface WebhookConfig {
+  url: string | null;
+  enabled: boolean;
+  secret_set: boolean;
+}
+
 // ── Admin panel ──────────────────────────────────────────────────────────────
 
 const LS_ADMIN_TOKEN = "viralo_admin_token";
@@ -1349,4 +1355,8 @@ export const settingsApi = {
   listApiKeys:           ()                              => req<ApiKeyInfo[]>("GET",    "/settings/api-keys"),
   createApiKey:          (name: string)                  => req<ApiKeyCreated>("POST",  "/settings/api-keys", { name }),
   revokeApiKey:          (id: string)                    => req<void>("DELETE", `/settings/api-keys/${id}`),
+
+  getWebhook:            ()                              => req<WebhookConfig>("GET",   "/settings/webhook"),
+  updateWebhook:         (body: { url?: string; enabled?: boolean }) => req<WebhookConfig>("PATCH", "/settings/webhook", body),
+  rotateWebhookSecret:   ()                              => req<{ secret: string }>("POST", "/settings/webhook/rotate-secret"),
 };
