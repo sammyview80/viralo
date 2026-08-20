@@ -14,6 +14,8 @@ import {
   type SubscriptionInfo,
   type UserResponse,
   type WebhookConfig,
+  type WebhookEventType,
+  WEBHOOK_EVENT_TYPES,
 } from "@/lib/api";
 
 /* ─── Icons ─────────────────────────────────────────────────────────────── */
@@ -573,6 +575,15 @@ function validateWebhookUrl(url: string): string | null {
   return null;
 }
 
+const WEBHOOK_EVENT_LABELS: Record<WebhookEventType, string> = {
+  "video.completed": "Video completed",
+  "video.failed": "Video failed",
+  "post.published": "Post published",
+  "post.failed": "Post failed",
+  "clip.ready": "Clip ready",
+  "clip.upload_failed": "Clip upload failed",
+};
+
 function WebhooksSection() {
   const [config, setConfig] = useState<WebhookConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -598,7 +609,7 @@ function WebhooksSection() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await settingsApi.updateWebhook({ url: config.url ?? "", enabled: config.enabled });
+      const updated = await settingsApi.updateWebhook({ url: config.url ?? "", enabled: config.enabled, events: config.events });
       setConfig(updated);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save webhook settings.");
@@ -661,7 +672,7 @@ function WebhooksSection() {
       )}
 
       <Card>
-        <FieldRow label="Enable webhook" hint="Send an event to your URL when a video finishes or fails.">
+        <FieldRow label="Enable webhook" hint="Send an event to your URL for the video, post, and clip events selected below.">
           <Toggle checked={config.enabled} onChange={v => setConfig(c => c && { ...c, enabled: v })} />
         </FieldRow>
         <FieldRow label="Endpoint URL" hint="Must be http(s). Receives a POST for each event." border={false}>
@@ -677,6 +688,25 @@ function WebhooksSection() {
           </div>
         </FieldRow>
       </Card>
+
+      <Card>
+        <div className="p-4 pb-2">
+          <p className="text-[12px] font-semibold text-c-text">Event types</p>
+          <p className="mt-0.5 text-[12px] text-c-text-muted">Choose which events are sent to your endpoint.</p>
+        </div>
+        {WEBHOOK_EVENT_TYPES.map((evt, i) => (
+          <FieldRow key={evt} label={WEBHOOK_EVENT_LABELS[evt]} border={i < WEBHOOK_EVENT_TYPES.length - 1}>
+            <Toggle
+              checked={config.events.includes(evt)}
+              onChange={v => setConfig(c => c && {
+                ...c,
+                events: v ? [...c.events, evt] : c.events.filter(e => e !== evt),
+              })}
+            />
+          </FieldRow>
+        ))}
+      </Card>
+
       <SaveBar onSave={save} saving={saving} disabled={!!urlError} />
 
       <Card>
@@ -690,10 +720,14 @@ function WebhooksSection() {
       <div className="rounded-[10px] border border-c-border bg-surface-1 p-4 space-y-2">
         <p className="text-[12px] font-semibold text-c-text">Payload & verification</p>
         <p className="text-[12px] leading-relaxed text-c-text-muted">
-          Each event is a POST with JSON body: <code className="font-mono text-[11px]">event</code>,{" "}
-          <code className="font-mono text-[11px]">video_id</code>, <code className="font-mono text-[11px]">status</code>,{" "}
-          <code className="font-mono text-[11px]">error_reason</code>, <code className="font-mono text-[11px]">timestamps</code>,{" "}
-          and <code className="font-mono text-[11px]">metadata</code>.
+          Each event is a POST with JSON body including <code className="font-mono text-[11px]">event</code>,{" "}
+          <code className="font-mono text-[11px]">status</code>, and timestamps — the{" "}
+          <code className="font-mono text-[11px]">event</code> field (e.g. <code className="font-mono text-[11px]">video.completed</code>,{" "}
+          <code className="font-mono text-[11px]">post.published</code>, <code className="font-mono text-[11px]">clip.ready</code>)
+          determines the rest of the payload shape: video events include <code className="font-mono text-[11px]">video_id</code> and{" "}
+          <code className="font-mono text-[11px]">metadata</code>, post events include <code className="font-mono text-[11px]">post_id</code> and{" "}
+          <code className="font-mono text-[11px]">platform</code>, clip events include <code className="font-mono text-[11px]">clip_id</code>.
+          Failures also include <code className="font-mono text-[11px]">error_reason</code>.
         </p>
         <p className="text-[12px] leading-relaxed text-c-text-muted">
           Verify authenticity via the <code className="font-mono text-[11px]">X-Viralo-Signature</code> header — an HMAC-SHA256
@@ -701,7 +735,7 @@ function WebhooksSection() {
         </p>
         <p className="text-[12px] leading-relaxed text-c-text-muted">
           Send-test-webhook isn't available yet — the backend has no test-trigger endpoint. To verify delivery, trigger a real
-          video job and check your endpoint logs.
+          event (finish a video, publish a post, or generate a clip) and check your endpoint logs.
         </p>
       </div>
     </div>
@@ -717,7 +751,7 @@ const SECTIONS: { id: SectionId; label: string; desc: string; icon: React.ReactN
   { id: "billing", label: "Billing", desc: "Plan and usage.", icon: <IconBilling /> },
   { id: "notifications", label: "Notifications", desc: "Choose notification preferences.", icon: <IconNotifications /> },
   { id: "api", label: "API keys", desc: "Create and revoke access keys.", icon: <IconApi /> },
-  { id: "webhooks", label: "Webhooks", desc: "Get notified when video jobs finish.", icon: <IconWebhook /> },
+  { id: "webhooks", label: "Webhooks", desc: "Get notified about video, post, and clip events.", icon: <IconWebhook /> },
 ];
 
 const CONTENT: Record<SectionId, React.ReactNode> = {

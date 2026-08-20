@@ -123,7 +123,7 @@ def process_due_posts():
     # TikTok/YouTube upload+poll cycle while halving the worst-case recovery time.
     # Auto-retry if under max retries, otherwise mark as failed
     with engine.connect() as conn:
-        publishing_rows = conn.execute(
+        recovered = conn.execute(
             text("""
                 UPDATE scheduled_posts
                 SET status = CASE
@@ -137,11 +137,22 @@ def process_due_posts():
                     updated_at = NOW()
                 WHERE status = 'publishing'
                   AND updated_at < NOW() - interval '5 minutes'
+                RETURNING id, tenant_id, platform, clip_id, status, last_error
             """)
-        ).rowcount
+        ).fetchall()
         conn.commit()
+    publishing_rows = len(recovered)
     if publishing_rows:
         logger.info("process_due_posts: recovered %d stale publishing posts (auto-retry if retries < 3)", publishing_rows)
+        for row in recovered:
+            if row.status != "failed":
+                continue
+            # _try_enqueue_post_webhook already swallows every exception internally
+            _try_enqueue_post_webhook(
+                str(row.tenant_id), str(row.id), row.platform, "failed",
+                clip_id=str(row.clip_id) if row.clip_id else None,
+                error_reason=row.last_error,
+            )
 
     with engine.connect() as conn:
         rows = conn.execute(
@@ -219,7 +230,8 @@ def publish_post(self, tenant_id: str, post_id: str):
                         sa.token_expires_at,
                         sa.platform_user_id,
                         sa.scope,
-                        COALESCE(sp.clip_storage_url, c.storage_url) AS clip_storage_url
+                        COALESCE(sp.clip_storage_url, c.storage_url) AS clip_storage_url,
+                        c.video_id
                     FROM claimed sp
                     JOIN social_accounts sa
                         ON sa.id = sp.social_account_id
@@ -248,6 +260,7 @@ def publish_post(self, tenant_id: str, post_id: str):
             platform_user_id,
             scope,
             clip_storage_url,
+            video_id,
         ) = row
 
         platform_kwargs = platform_kwargs_raw or {}
@@ -435,6 +448,13 @@ def publish_post(self, tenant_id: str, post_id: str):
                 live_url=live_url,
                 user_id=notification_user_id,
             )
+            _try_enqueue_post_webhook(
+                tenant_id, post_id, platform, "success",
+                clip_id=str(clip_id) if clip_id else None,
+                video_id=str(video_id) if video_id else None,
+                platform_post_id=result.platform_post_id,
+                live_url=live_url,
+            )
 
 
         elif result.retry_after_seconds is not None:
@@ -585,3 +605,40 @@ def _handle_publish_failure(
             action_url=failed_url,
             user_id=user_id,
         )
+        _try_enqueue_post_webhook(
+            tenant_id, post_id, platform, "failed",
+            clip_id=clip_id,
+            error_reason=error[:500],
+        )
+
+
+def _try_enqueue_post_webhook(
+    tenant_id: str,
+    post_id: str,
+    platform: str,
+    status: str,
+    clip_id: str | None = None,
+    video_id: str | None = None,
+    platform_post_id: str | None = None,
+    live_url: str | None = None,
+    error_reason: str | None = None,
+) -> None:
+    """Best-effort enqueue of post.published / post.failed outbound webhook."""
+    try:
+        from workers.tasks.webhook import enqueue_webhook
+        now = datetime.now(timezone.utc).isoformat()
+        event = "post.published" if status == "success" else "post.failed"
+        enqueue_webhook(tenant_id, event, {
+            "entity_id": post_id,
+            "post_id": post_id,
+            "platform": platform,
+            "clip_id": clip_id,
+            "video_id": video_id,
+            "status": status,
+            "platform_post_id": platform_post_id,
+            "live_url": live_url,
+            "error_reason": error_reason,
+            "completed_at": now,
+        })
+    except Exception:
+        logger.warning("_try_enqueue_post_webhook: failed to enqueue for post %s", post_id)

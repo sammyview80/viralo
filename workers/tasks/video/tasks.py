@@ -17,7 +17,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace as dataclass_replace
-from datetime import datetime
+from datetime import datetime, timezone
 from fractions import Fraction
 from pathlib import Path
 from typing import Optional
@@ -36,6 +36,40 @@ from workers.tasks.video.ai import *
 from workers.tasks.video.render import *
 from workers.tasks.video.download import *
 from workers.tasks.video.pipeline import *
+
+
+def _enqueue_clip_ready_webhook(tenant_id: str, clip_id: str, video_id: str | None, storage_url: str | None = None) -> None:
+    # completed_at here is informational only (sent_at-ish) — dispatch_webhook's
+    # event_id is derived from clip_id + event name alone, not a timestamp, so
+    # it stays stable across celery acks_late redelivery. See workers/tasks/webhook.py.
+    try:
+        from workers.tasks.webhook import enqueue_webhook
+        enqueue_webhook(tenant_id, "clip.ready", {
+            "entity_id": clip_id,
+            "clip_id": clip_id,
+            "video_id": video_id,
+            "status": "ready",
+            "storage_url": storage_url,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:
+        logging.warning("enqueue clip.ready webhook failed for clip %s: %s", clip_id, exc)
+
+
+def _enqueue_clip_upload_failed_webhook(tenant_id: str, clip_id: str, video_id: str | None, error: str) -> None:
+    try:
+        from workers.tasks.webhook import enqueue_webhook
+        enqueue_webhook(tenant_id, "clip.upload_failed", {
+            "entity_id": clip_id,
+            "clip_id": clip_id,
+            "video_id": video_id,
+            "status": "failed",
+            "error_reason": error[:500],
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:
+        logging.warning("enqueue clip.upload_failed webhook failed for clip %s: %s", clip_id, exc)
+
 
 __all__ = [
     'generate_viral_clips',
@@ -143,6 +177,7 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
             "media_url": media_url,
             "thumbnail_url": signed_thumbnail,
         })
+        _enqueue_clip_ready_webhook(tenant_id, clip_id, video_id, storage_url=media_url)
 
         # Push clip metadata to Google Sheets for n8n publishing workflow
         try:
@@ -214,6 +249,7 @@ def upload_clip_to_storage(self, clip_id: str, clip_path: str, tenant_id: str, j
                 "error": str(exc)[:300],
                 "attempts": attempt,
             })
+            _enqueue_clip_upload_failed_webhook(tenant_id, clip_id, failed_video_id, str(exc))
             return
         raise self.retry(exc=exc)
     finally:
@@ -609,6 +645,8 @@ def concat_top_clips(self, tenant_id: str, video_id: str, clip_ids: list) -> str
                 {"url": storage_url, "id": composite_id},
             )
 
+        _enqueue_clip_ready_webhook(tenant_id, composite_id, video_id, storage_url=storage_url)
+
         return composite_id
 
     finally:
@@ -812,6 +850,8 @@ Every clip index must appear in exactly one group. Use a group of [N] for clips 
                         {"url": storage_url, "id": new_id},
                     )
 
+                _enqueue_clip_ready_webhook(tenant_id, new_id, video_id, storage_url=storage_url)
+
                 all_new_clip_ids.append(new_id)
                 logging.info("MergeAI: created merged clip %s from %s", new_id, source_clip_ids)
 
@@ -977,6 +1017,8 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
                 text("UPDATE videos SET storage_url=:url, updated_at=NOW() WHERE id = CAST(:vid AS uuid)"),
                 {"url": storage_url, "vid": video_id},
             )
+
+        _enqueue_clip_ready_webhook(tenant_id, clip_id, video_id, storage_url=storage_url)
 
         # Generate platform captions (same as clip pipeline)
         emit_progress("captions", 95, "processing", "Generating platform captions...")

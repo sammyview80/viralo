@@ -1131,10 +1131,21 @@ export interface ApiKeyCreated extends ApiKeyInfo {
 
 export interface UpdateMePayload { full_name?: string; avatar_url?: string }
 
+export const WEBHOOK_EVENT_TYPES = [
+  "video.completed",
+  "video.failed",
+  "post.published",
+  "post.failed",
+  "clip.ready",
+  "clip.upload_failed",
+] as const;
+export type WebhookEventType = typeof WEBHOOK_EVENT_TYPES[number];
+
 export interface WebhookConfig {
   url: string | null;
   enabled: boolean;
   secret_set: boolean;
+  events: WebhookEventType[];
 }
 
 // ── Admin panel ──────────────────────────────────────────────────────────────
@@ -1357,6 +1368,6 @@ export const settingsApi = {
   revokeApiKey:          (id: string)                    => req<void>("DELETE", `/settings/api-keys/${id}`),
 
   getWebhook:            ()                              => req<WebhookConfig>("GET",   "/settings/webhook"),
-  updateWebhook:         (body: { url?: string; enabled?: boolean }) => req<WebhookConfig>("PATCH", "/settings/webhook", body),
+  updateWebhook:         (body: { url?: string; enabled?: boolean; events?: WebhookEventType[] }) => req<WebhookConfig>("PATCH", "/settings/webhook", body),
   rotateWebhookSecret:   ()                              => req<{ secret: string }>("POST", "/settings/webhook/rotate-secret"),
 };
