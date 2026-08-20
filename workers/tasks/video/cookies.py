@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -82,8 +83,62 @@ def _record_good_proxy(proxy: str) -> None:
         logging.warning("Could not persist good proxy to redis: %s", exc)
 
 
+_PROXY_SCORE_REDIS_KEY = "ytdlp:proxy_scores"
+_PROXY_SCORE_TOP_N = 5
+# Must match PROXY_SCORE_TTL_SEC in workers/tasks/proxy_quality_tester.py. Not
+# imported directly — that module imports FROM this one (_is_429/_pot_args/etc),
+# so importing back would be circular. Redis hash fields have no per-field TTL
+# (only hset with a whole-key expire), so a proxy that's gone dead since its last
+# test would otherwise rank forever until the whole key expires; enforce staleness
+# here explicitly instead.
+_PROXY_SCORE_TTL_SEC = 6 * 3600
+
+
+def _top_scored_proxies(proxies: list[str]) -> list[str]:
+    """Return up to _PROXY_SCORE_TOP_N proxies from `proxies`, ranked by the score
+    workers/tasks/proxy_quality_tester.py wrote to redis hash _PROXY_SCORE_REDIS_KEY
+    (score > 0 only, not stale, ties broken by most recent tested_at). Empty list if
+    redis is down, the hash is empty, or nothing scored positively/fresh — callers
+    must treat that as "no ranking available" and fall back to existing order
+    unchanged.
+    """
+    try:
+        raw = redis_client.hgetall(_PROXY_SCORE_REDIS_KEY)
+    except Exception as exc:
+        logging.warning("Could not read proxy scores from redis: %s", exc)
+        return []
+    if not raw:
+        return []
+
+    proxy_set = set(proxies)
+    now = time.time()
+    scored: list[tuple[float, float, str]] = []
+    for k, v in raw.items():
+        proxy = k.decode() if isinstance(k, bytes) else k
+        if proxy not in proxy_set:
+            continue
+        try:
+            data = json.loads(v.decode() if isinstance(v, bytes) else v)
+            score = float(data.get("score") or 0)
+            tested_at = float(data.get("tested_at") or 0)
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if score > 0 and (now - tested_at) <= _PROXY_SCORE_TTL_SEC:
+            scored.append((score, tested_at, proxy))
+
+    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return [proxy for _, _, proxy in scored[:_PROXY_SCORE_TOP_N]]
+
+
 def _ytdlp_proxies_with_refresh() -> list[str]:
     proxies = _ytdlp_proxies()
+
+    top_scored = _top_scored_proxies(proxies)
+    if top_scored:
+        rest = [p for p in proxies if p not in top_scored]
+        proxies = top_scored + rest
+        logging.info("Reordered proxy list: top %d scored proxies first", len(top_scored))
+
     good = _LAST_GOOD_PROXY_LOCAL
     try:
         redis_good = redis_client.get(_GOOD_PROXY_REDIS_KEY)
