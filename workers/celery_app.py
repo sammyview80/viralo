@@ -17,6 +17,7 @@ _include = [
     "workers.tasks.notification",
     "workers.tasks.websub",
     "workers.tasks.gsheet",
+    "workers.tasks.webhook",
 ]
 if not _is_light:
     _include += [
@@ -69,6 +70,7 @@ celery_app.conf.update(
         "workers.tasks.post.publish_post": {"queue": "viralo.post.publish"},
         "workers.tasks.analytics.*": {"queue": "viralo.analytics.ingest"},
         "workers.tasks.notification.*": {"queue": "viralo.notifications"},
+        "workers.tasks.webhook.*": {"queue": "viralo.webhooks"},
     },
 )
 

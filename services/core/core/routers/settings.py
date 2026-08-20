@@ -114,6 +114,79 @@ async def update_notification_prefs(
     return tenant.notification_prefs
 
 
+# ── Webhooks ──────────────────────────────────────────────────────────────────
+
+DEFAULT_WEBHOOK_CONFIG = {
+    "url": None,
+    "enabled": False,
+}
+
+
+class WebhookConfigUpdate(BaseModel):
+    url: str | None = None
+    enabled: bool | None = None
+
+
+@router.get("/webhook")
+async def get_webhook_config(
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_no_rls),
+):
+    result = await db.execute(select(Tenant).where(Tenant.id == uuid.UUID(token.tenant_id)))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    current = {**DEFAULT_WEBHOOK_CONFIG, **(tenant.webhook_config or {})}
+    current.pop("secret", None)  # never echo the signing secret back
+    current["secret_set"] = bool((tenant.webhook_config or {}).get("secret"))
+    return current
+
+
+@router.patch("/webhook")
+async def update_webhook_config(
+    body: WebhookConfigUpdate,
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_no_rls),
+):
+    if body.url is not None and body.url and not (body.url.startswith("https://") or body.url.startswith("http://")):
+        raise HTTPException(status_code=400, detail="webhook url must be http(s)")
+
+    result = await db.execute(select(Tenant).where(Tenant.id == uuid.UUID(token.tenant_id)))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    current = {**DEFAULT_WEBHOOK_CONFIG, **(tenant.webhook_config or {})}
+    updates = body.model_dump(exclude_none=True)
+    current.update(updates)
+    tenant.webhook_config = current
+    await db.commit()
+
+    out = {**current}
+    out.pop("secret", None)
+    out["secret_set"] = bool(current.get("secret"))
+    return out
+
+
+@router.post("/webhook/rotate-secret")
+async def rotate_webhook_secret(
+    token: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_no_rls),
+):
+    result = await db.execute(select(Tenant).where(Tenant.id == uuid.UUID(token.tenant_id)))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    new_secret = f"whsec_{secrets.token_hex(24)}"
+    current = {**DEFAULT_WEBHOOK_CONFIG, **(tenant.webhook_config or {})}
+    current["secret"] = new_secret
+    tenant.webhook_config = current
+    await db.commit()
+
+    return {"secret": new_secret}  # shown once only
+
+
 # ── API keys ─────────────────────────────────────────────────────────────────
 
 class ApiKeyCreate(BaseModel):

@@ -408,7 +408,13 @@ def _publish_clip_event(job_id: str, event: str, payload: dict) -> None:
             logging.warning("Could not publish clip event on %s: %s", channel, exc)
 
 
-def _update_video(tenant_id: str, video_id: str, **kwargs) -> None:
+def _update_video(tenant_id: str, video_id: str, notify_webhook: bool = True, **kwargs) -> None:
+    """
+    notify_webhook: set False when this 'failed' write is an intermediate state
+    before a self.retry() call — a retry that later succeeds must not have
+    already fired a 'video.failed' webhook. Callers on a retry path should
+    only pass True once retries are actually exhausted (this attempt is final).
+    """
     if not kwargs:
         return
     set_parts = ", ".join(f"{k} = :{k}" for k in kwargs)
@@ -417,6 +423,14 @@ def _update_video(tenant_id: str, video_id: str, **kwargs) -> None:
             text(f"UPDATE videos SET {set_parts}, updated_at = NOW() WHERE id = CAST(:vid AS uuid)"),
             {**kwargs, "vid": video_id},
         )
+
+    status = kwargs.get("status")
+    if notify_webhook and status in ("ready", "failed"):
+        try:
+            from workers.tasks.webhook import enqueue_video_webhook
+            enqueue_video_webhook(tenant_id, video_id, status, kwargs.get("error_message"))
+        except Exception:
+            logging.warning("_update_video: failed to enqueue webhook for video %s", video_id)
 
 
 def _check_cancelled(tenant_id: str, video_id: str) -> bool:

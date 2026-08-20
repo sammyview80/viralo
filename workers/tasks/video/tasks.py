@@ -291,7 +291,8 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         raise  # non-retryable
     except subprocess.TimeoutExpired:
         msg = "Rendering timed out. Try fewer clips or a lower quality setting."
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        is_final = self.request.retries >= 1
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg, notify_webhook=is_final)
         _publish_progress(job_id, "failed", 0, "failed", msg)
         if self.request.retries >= 1:
             _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
@@ -302,17 +303,19 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
             msg = "Video rendering failed. Try a different quality setting."
         else:
             msg = f"Processing error: {err[:200]}"
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
-        _publish_progress(job_id, "failed", 0, "failed", msg)
         retry_n = self.request.retries
+        is_final = retry_n >= 2
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg, notify_webhook=is_final)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
         if retry_n >= 1:
             _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
         raise self.retry(exc=exc, countdown=min(30 * (2 ** retry_n), 300), max_retries=2)
     except Exception as exc:
         msg = f"Unexpected error: {str(exc)[:150]}"
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
-        _publish_progress(job_id, "failed", 0, "failed", msg)
         retry_n = self.request.retries
+        is_final = retry_n >= 2
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg, notify_webhook=is_final)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
         if retry_n >= 1:
             _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
         raise self.retry(exc=exc, countdown=min(60 * (2 ** retry_n), 600), max_retries=2)
@@ -462,7 +465,8 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         raise  # non-retryable — bad input
     except subprocess.TimeoutExpired:
         msg = "Video download or rendering timed out. The video may be too large or the server is busy."
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
+        is_final = self.request.retries >= 2
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg, notify_webhook=is_final)
         _publish_progress(job_id, "failed", 0, "failed", msg)
         if self.request.retries >= 1:
             _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
@@ -480,18 +484,20 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
             msg = "Video rendering failed. Try a shorter clip duration or lower quality setting."
         else:
             msg = f"Processing error: {err[:200]}"
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
-        _publish_progress(job_id, "failed", 0, "failed", msg)
         retry_n = self.request.retries
+        is_final = retry_n >= 2
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg, notify_webhook=is_final)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
         if retry_n >= 1:
             _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
         raise self.retry(exc=exc, countdown=min(30 * (2 ** retry_n), 300), max_retries=2)
     except Exception as exc:
         err = str(exc)[:300]
         msg = f"Unexpected error during processing. Our team has been notified. ({err[:120]})"
-        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg)
-        _publish_progress(job_id, "failed", 0, "failed", msg)
         retry_n = self.request.retries
+        is_final = retry_n >= 2
+        _update_video(tenant_id, video_id, status="failed", pipeline_step="failed", error_message=msg, notify_webhook=is_final)
+        _publish_progress(job_id, "failed", 0, "failed", msg)
         if retry_n >= 1:
             _notify_video(tenant_id, video_id, "video_failed", "Video processing failed", msg)
         raise self.retry(exc=exc, countdown=min(60 * (2 ** retry_n), 600), max_retries=2)
@@ -1316,6 +1322,14 @@ def reconcile_stuck_videos(self) -> dict:
                     failed += 1
                     logging.error("reconcile_stuck_videos: gave up on video %s (was %s, retries=%d)",
                                   vid, status_, retries)
+                    try:
+                        from workers.tasks.webhook import enqueue_video_webhook
+                        enqueue_video_webhook(
+                            str(tid), str(vid), "failed",
+                            "Processing was interrupted and could not be auto-recovered. Please retry.",
+                        )
+                    except Exception:
+                        logging.warning("reconcile_stuck_videos: failed to enqueue webhook for video %s", vid)
     except Exception as e:
         logging.warning("reconcile_stuck_videos failed: %s", e)
     if requeued or failed:
