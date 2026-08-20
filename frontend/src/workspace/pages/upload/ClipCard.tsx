@@ -4,8 +4,8 @@ import { videoApi, platformApi, type ClipApiResponse, type ScheduledPost, type S
 import { UniversalClipCard, type ClipCardAction } from "../../components/UniversalClipCard";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PLAT_DISPLAY, PlatPill, VirChip, fmtSec } from "./helpers";
-import { TimelineEditor, type TimelineClip } from "./Timeline";
 import { BulkPublishModal } from "./BulkPublishModal";
+import { VideoEditor } from "../../components/VideoEditor";
 
 /* ─── Clip detail modal ─── */
 const DETAIL_PLAT_CFG: Record<string, { color: string; icon: string }> = {
@@ -566,10 +566,6 @@ export function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted
   const [upscaling,      setUpscaling]      = useState(false);
   const [localClip,      setLocalClip]      = useState(clip);
 
-  const durMs = localClip.duration_ms ?? ((localClip.end_ms ?? 0) - (localClip.start_ms ?? 0));
-  const startSec = (localClip.start_ms ?? 0) / 1000;
-  const endSec = (localClip.end_ms ?? durMs) / 1000;
-
   const handleRegen = () => {
     setRegenerating(true);
     setTimeout(() => setRegenerating(false), 2200);
@@ -642,16 +638,10 @@ export function ClipCard({ clip, idx, selected = false, onToggleSelect, isPosted
       </div>
 
       {showEditor && (
-        <TimelineEditor
-          clip={{ id: localClip.id, title: localClip.title, startSec, endSec, storage_url: localClip.storage_url } as TimelineClip}
-          totalDur={Math.max(endSec + 60, 600)}
+        <VideoEditor
+          clip={localClip}
           onClose={() => setShowEditor(false)}
-          onSave={(c) => setLocalClip((prev) => ({
-            ...prev,
-            start_ms: c.startSec * 1000,
-            end_ms: c.endSec * 1000,
-            duration_ms: (c.endSec - c.startSec) * 1000,
-          }))}
+          onPost={() => setShowPublish(true)}
         />
       )}
 
