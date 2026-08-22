@@ -29,6 +29,8 @@ from pydantic import BaseModel
 
 from mcp_svc.client import (
     UpstreamServiceError,
+    analyze_viral,
+    create_ranking_video,
     generate_clips,
     get_clip,
     get_job_status,
@@ -259,6 +261,50 @@ TOOLS = [
             "required": ["video_id"],
         },
         "fn": lambda api_key, args: generate_clips(api_key, **args),
+    },
+    {
+        "name": "analyze_viral",
+        "description": "Analyze a YouTube video for virality potential and return AI-picked clip_moments (start_sec/end_sec/reason/clip_score) to feed into create_ranking_video.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "YouTube video URL"},
+            },
+            "required": ["url"],
+        },
+        "fn": lambda api_key, args: analyze_viral(api_key, **args),
+    },
+    {
+        "name": "create_ranking_video",
+        "description": "Render a ranking/countdown video by stitching together AI- or user-picked clip segments (e.g. clip_moments from analyze_viral).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "template": {"type": "string", "enum": ["viral", "classic", "neon", "minimal"], "default": "viral"},
+                "order": {"type": "string", "enum": ["countdown", "ascending"], "default": "countdown"},
+                "template_config": {"type": "object"},
+                "segments": {
+                    "type": "array",
+                    "minItems": 2,
+                    "description": "At least 2 segments, e.g. taken from analyze_viral's clip_moments",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source_type": {"type": "string", "enum": ["url", "upload"]},
+                            "url": {"type": "string", "description": "Required when source_type is 'url'"},
+                            "video_id": {"type": "string", "description": "Required when source_type is 'upload'"},
+                            "start_sec": {"type": "number", "minimum": 0},
+                            "end_sec": {"type": "number", "exclusiveMinimum": 0},
+                            "segment_title": {"type": "string"},
+                        },
+                        "required": ["source_type", "start_sec", "end_sec"],
+                    },
+                },
+            },
+            "required": ["title", "segments"],
+        },
+        "fn": lambda api_key, args: create_ranking_video(api_key, **args),
     },
 ]
 

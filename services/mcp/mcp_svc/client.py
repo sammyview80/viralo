@@ -198,3 +198,32 @@ async def generate_clips(token: str, video_id: str, config: Dict[str, Any] | Non
     async with ServiceClient(token) as client:
         resp = await client.post(VIDEO_SVC_BASE, f"/videos/{video_id}/generate-clips", json={"config": config or {}})
         return resp.json()
+
+
+async def analyze_viral(token: str, url: str) -> Dict[str, Any]:
+    """POST /analyze-viral — score a YouTube video and return AI-picked clip_moments."""
+    async with ServiceClient(token) as client:
+        resp = await client.post(VIDEO_SVC_BASE, "/analyze-viral", json={"url": url})
+        return resp.json()
+
+
+async def create_ranking_video(
+    token: str,
+    title: str,
+    segments: list[Dict[str, Any]],
+    template: str = "viral",
+    order: str = "countdown",
+    template_config: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """POST /ranking — render a ranking/countdown video from AI- or user-picked clip segments."""
+    async with ServiceClient(token) as client:
+        body: Dict[str, Any] = {
+            "title": title,
+            "template": template,
+            "order": order,
+            "segments": segments,
+        }
+        if template_config:
+            body["template_config"] = template_config
+        resp = await client.post(VIDEO_SVC_BASE, "/ranking", json=body)
+        return resp.json()
