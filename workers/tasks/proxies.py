@@ -16,6 +16,14 @@ Three providers, selected by PROXY_PROVIDER:
 
 Both return list[str] — the exact shape the download loops already consume — so the
 client-major / parallel-batch logic in video.py is untouched.
+
+Cascade mode: set WEBSHARE_FIRST=true with PROXY_PROVIDER=static (default) plus
+WEBSHARE_PROXY_USER/PASS present to prepend the webshare rotating pool ahead of the
+static list. attempt % len(proxies) in the download retry loop then hits rotating
+proxies on early attempts, falling through to static entries after. Opt-in via
+WEBSHARE_FIRST rather than triggered by creds alone, matching this file's existing
+pattern of explicit provider selection — avoids silently changing behavior for any
+deployment that already has webshare creds set but wants static-only.
 """
 import logging
 import os
@@ -34,7 +42,18 @@ def get_proxies() -> list[str]:
         return _residential_proxies()
     if provider in ("webshare", "rotating"):
         return _webshare_rotating_proxies()
-    return _static_proxies()
+
+    static = _static_proxies()
+    if provider == "static" and os.getenv("WEBSHARE_FIRST", "").lower() in ("1", "true", "yes"):
+        user = os.getenv("WEBSHARE_PROXY_USER", "").strip()
+        pw = os.getenv("WEBSHARE_PROXY_PASS", "").strip()
+        if user and pw:
+            rotating = _webshare_rotating_proxies()
+            logging.info(
+                "Proxy pool: %d webshare rotating entries + %d static (WEBSHARE_FIRST)",
+                len(rotating), len(static))
+            return rotating + static
+    return static
 
 
 def _static_proxies() -> list[str]:
