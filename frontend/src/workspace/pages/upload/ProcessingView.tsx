@@ -117,16 +117,21 @@ type LiveEvent = {
   ts: number;
 };
 
+const YOUTUBE_BOT_BLOCKED_PREFIX = "YOUTUBE_BOT_BLOCKED:";
+
 export function ProcessingView({
   video,
   onDone,
   onCancel,
   onNewUpload,
+  onUploadFileInstead,
 }: {
   video: VideoResponse;
   onDone: (updated: VideoResponse) => void;
   onCancel?: () => void;
   onNewUpload?: () => void;
+  /** Switches the upload flow to the file tab (used by the YouTube bot-block fallback). */
+  onUploadFileInstead?: () => void;
 }) {
   const [current, setCurrent] = useState(video);
   const [liveMsg, setLiveMsg] = useState<string>("");
@@ -265,7 +270,8 @@ export function ProcessingView({
             es.close();
             esRef.current = null;
             sseActiveRef.current = false;
-            if (!doneRef.current) {
+            const botBlocked = d.status === "failed" && (d.message ?? "").startsWith(YOUTUBE_BOT_BLOCKED_PREFIX);
+            if (!doneRef.current && !botBlocked) {
               doneRef.current = true;
               try { localStorage.removeItem(STORAGE_KEY); } catch { /* ok */ }
               videoApi.get(current.id).then(onDone).catch(() => onDone(current));
@@ -312,7 +318,8 @@ export function ProcessingView({
         }
         setCurrent(updated);
         if (updated.error_message) setErrorMsg(updated.error_message);
-        if (isTerminal(updated) && !doneRef.current) {
+        const botBlocked = updated.status === "failed" && (updated.error_message ?? "").startsWith(YOUTUBE_BOT_BLOCKED_PREFIX);
+        if (isTerminal(updated) && !doneRef.current && !botBlocked) {
           doneRef.current = true;
           setTimeout(() => onDone(updated), 400);
         }
@@ -331,6 +338,11 @@ export function ProcessingView({
     ? Math.max(0, pipelineSteps.findIndex((step) => step.keys.some((key) => (current.pipeline_step ?? "queued").toLowerCase().includes(key))))
     : pipelineStepIdx(current.pipeline_step);
   const sourceLabel = isRankingVideo ? "Ranking video" : current.source_type === "youtube_url" ? "YouTube" : "Uploaded file";
+
+  const isYoutubeBotBlocked = errorMsg.startsWith(YOUTUBE_BOT_BLOCKED_PREFIX);
+  const displayErrorMsg = isYoutubeBotBlocked
+    ? errorMsg.slice(YOUTUBE_BOT_BLOCKED_PREFIX.length).trim()
+    : errorMsg;
 
   const isDone = current.status === "done" || current.status === "ready" || current.pipeline_step === "complete";
   const showCancel = Boolean(onCancel && current.status !== "failed" && !isTerminal(current));
@@ -448,11 +460,38 @@ export function ProcessingView({
         </div>
       )}
 
+      {/* ── YOUTUBE BOT-BLOCKED FALLBACK ──────────── */}
+      {current.status === "failed" && isYoutubeBotBlocked && (
+        <div className="rounded-[12px] border border-yellow-300/25 bg-yellow-50 p-4 dark:border-yellow-300/15 dark:bg-yellow-400/[.05]">
+          <div className="text-[13px] font-semibold text-yellow-700 dark:text-yellow-200">
+            YouTube is blocking automated downloads right now
+          </div>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-c-text-secondary">
+            This is a known, industry-wide yt-dlp/YouTube issue (bot-detection on automated
+            downloads) — it isn't specific to your account or this video, and we can't fix it
+            from our side. The workaround: download the video yourself from a signed-in browser
+            (which doesn't trigger bot-detection), then upload the file directly instead.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href="https://studio.youtube.com" target="_blank" rel="noopener noreferrer"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[8px] border border-yellow-300/40 bg-yellow-100 px-3 py-1.5 text-[11.5px] font-semibold text-yellow-800 transition hover:bg-yellow-200 dark:border-yellow-300/20 dark:bg-yellow-400/10 dark:text-yellow-200 dark:hover:bg-yellow-400/20">
+              Open YouTube Studio (if this is your video)
+            </a>
+            {onUploadFileInstead && (
+              <button type="button" onClick={onUploadFileInstead}
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[8px] border border-c-border bg-surface-2 px-3 py-1.5 text-[11.5px] font-semibold text-c-text transition hover:bg-surface-3">
+                Upload the file instead
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── ERROR ─────────────────────────────────── */}
-      {(current.status === "failed" || errorMsg) && errorMsg && (
+      {(current.status === "failed" || errorMsg) && errorMsg && !isYoutubeBotBlocked && (
         <div className="break-all rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 font-mono text-[11.5px] leading-snug text-red-500 dark:border-red-500/20 dark:bg-red-500/[.07] dark:text-red-400">
           <div className="flex items-start justify-between gap-3">
-            <span>{errorMsg}</span>
+            <span>{displayErrorMsg}</span>
             <button type="button" disabled={retrying}
               onClick={async () => {
                 if (isRankingVideo) {

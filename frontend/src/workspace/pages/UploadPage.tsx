@@ -301,6 +301,17 @@ export function UploadPage() {
                   setUploadStep(1);
                   setPendingFile(null);
                 }}
+                onUploadFileInstead={() => {
+                  setView("upload");
+                  setActiveVideo(null);
+                  setClips([]);
+                  setUploadError("");
+                  setUploadStep(1);
+                  setPendingFile(null);
+                  setSource("file");
+                  setUrlVal("");
+                  setUrlReady(false);
+                }}
               />
               </div>
             </div>

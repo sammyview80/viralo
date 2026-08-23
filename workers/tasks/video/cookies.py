@@ -273,7 +273,8 @@ def _is_429(stderr: str) -> bool:
     return "429" in stderr or "Too Many Requests" in stderr
 
 def _is_bot_blocked(stderr: str) -> bool:
-    return "Sign in to confirm" in stderr or "bot" in stderr.lower() or "not a bot" in stderr
+    s = stderr.lower()
+    return "sign in to confirm" in s or "not a bot" in s or "confirm you're not a bot" in s
 
 def _is_bad_cookies(stderr: str) -> bool:
     s = stderr.lower()

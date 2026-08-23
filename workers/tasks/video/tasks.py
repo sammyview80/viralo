@@ -335,7 +335,9 @@ def process_uploaded_video(self, tenant_id: str, video_id: str, file_path: str |
         raise self.retry(exc=RuntimeError(msg), countdown=60, max_retries=1)
     except RuntimeError as exc:
         err = str(exc)
-        if "ffmpeg" in err.lower() or "render" in err.lower():
+        if err.startswith("YOUTUBE_BOT_BLOCKED:"):
+            msg = "YOUTUBE_BOT_BLOCKED: YouTube is blocking automated downloads for this video right now."
+        elif "ffmpeg" in err.lower() or "render" in err.lower():
             msg = "Video rendering failed. Try a different quality setting."
         else:
             msg = f"Processing error: {err[:200]}"
@@ -509,7 +511,14 @@ def process_youtube_video(self, tenant_id: str, video_id: str, url: str, cfg: di
         raise self.retry(exc=RuntimeError(msg), countdown=60, max_retries=2)
     except RuntimeError as exc:
         err = str(exc)
-        if "download" in err.lower() or "yt-dlp" in err.lower() or "youtube" in err.lower():
+        if err.startswith("YOUTUBE_BOT_BLOCKED:"):
+            # yt-dlp exhausted every strategy and every failure was a bot-detection /
+            # sign-in-required wall — this is the known industry-wide yt-dlp/YouTube
+            # issue, not fixable server-side. Tag error_message so the frontend can
+            # show the "download via YouTube Studio, upload the file" fallback UX
+            # instead of a generic failure, without string-matching the full dump.
+            msg = "YOUTUBE_BOT_BLOCKED: YouTube is blocking automated downloads for this video right now."
+        elif "download" in err.lower() or "yt-dlp" in err.lower() or "youtube" in err.lower():
             if "429" in err or "Too Many Requests" in err:
                 msg = "YouTube is rate-limiting downloads. Retrying automatically..."
             else:
@@ -1055,7 +1064,10 @@ def generate_video_ranking(self, tenant_id: str, video_id: str, segments: list,
 
     except Exception as exc:
         logging.exception("generate_video_ranking failed")
-        message = f"Ranking video generation failed: {str(exc)[:250]}"
+        if str(exc).startswith("YOUTUBE_BOT_BLOCKED:"):
+            message = "YOUTUBE_BOT_BLOCKED: YouTube is blocking automated downloads for this video right now."
+        else:
+            message = f"Ranking video generation failed: {str(exc)[:250]}"
         try:
             emit_progress("failed", last_pct, "failed", message, error_message=message)
         except Exception as update_exc:

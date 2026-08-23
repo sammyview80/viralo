@@ -264,6 +264,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     """
     import time, random
     errors = []
+    bot_blocked_seen = {"flag": False}
     winner: dict[str, str | None] = {"client": None}
     proxies = _ytdlp_proxies_with_refresh()
 
@@ -402,6 +403,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         if _is_bad_cookies(stderr):
             logging.error("YouTube cookies INVALID/EXPIRED — refresh yt-cookies.txt")
             break
+        if _is_bot_blocked(stderr):
+            bot_blocked_seen["flag"] = True
         if _is_429(stderr) or _is_bot_blocked(stderr):
             logging.warning("Direct high-quality %s hit bot/429 — falling to proxies", label)
             break
@@ -482,6 +485,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     actual_error = error_lines[-1]
                     stderr = "\n".join(stderr_lines[-5:])
                     reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
+                    if reason == "bot":
+                        bot_blocked_seen["flag"] = True
                     is_fmt_unavailable = "not available" in actual_error and "format" in actual_error.lower()
                     logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | ERROR: %s", idx, proxy, client, reason, proc.returncode, actual_error[:300])
                     with proxy_errors_lock:
@@ -602,6 +607,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 "logged-in browser. tv_embedded/web clients cannot authenticate until then. "
                 "(strategy %d, %s)", attempt + 1, label)
             break
+        if _is_bot_blocked(stderr):
+            bot_blocked_seen["flag"] = True
         if _is_429(stderr) or _is_bot_blocked(stderr):
             logging.warning("YouTube 429/bot-block on direct strategy %d (%s)", attempt + 1, label)
             break
@@ -654,7 +661,16 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         except Exception as e:
             errors.append(f"RapidAPI TikTok: {e}")
 
-    raise RuntimeError("YouTube download failed after all strategies.\n" + "\n".join(errors))
+    msg = "YouTube download failed after all strategies.\n" + "\n".join(errors)
+    is_youtube_url = "youtube.com" in url.lower() or "youtu.be" in url.lower()
+    if bot_blocked_seen["flag"] and is_youtube_url:
+        # Machine-readable tag so callers (tasks.py → video.error_message → API →
+        # frontend) can detect this specific, unfixable-on-our-end case without
+        # fragile substring matching on the full yt-dlp error dump. Gated to actual
+        # YouTube URLs — this fn is also used for TikTok/Instagram ranking segments,
+        # which should never get the "go to YouTube Studio" fallback UX.
+        msg = "YOUTUBE_BOT_BLOCKED: " + msg
+    raise RuntimeError(msg)
 
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
