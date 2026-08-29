@@ -8,9 +8,12 @@ export default defineConfig({
     },
   },
   server: {
-    allowedHosts:true,
-  },    
+    // allowedHosts: true is unreliable on some Vite 6.x releases (see
+    // https://github.com/vitejs/vite/issues/19242). Use an explicit
+    // suffix match instead so it actually works in prod behind nginx.
+    allowedHosts: [".viraloapp.tech", "localhost"],
+  },
   preview: {
-    allowedHosts: true,
+    allowedHosts: [".viraloapp.tech", "localhost"],
   },
 });
