@@ -18,6 +18,17 @@ def _get_fernet() -> Fernet:
     return Fernet(key.encode() if isinstance(key, str) else key)
 
 
+def validate_encryption_key_at_startup() -> None:
+    """Fail fast at process boot if ENCRYPTION_KEY is missing/invalid outside dev.
+
+    Without this, the first symptom is a 500 on whatever endpoint happens to
+    call encrypt_token()/decrypt_token() first (e.g. TikTok OAuth connect),
+    which is confusing to diagnose in prod-like environments. Call this from
+    the FastAPI startup hook so misconfiguration surfaces in the boot logs.
+    """
+    _get_fernet()
+
+
 def encrypt_token(token: str) -> str:
     """Encrypt a plaintext token string and return the Fernet ciphertext as a string."""
     return _get_fernet().encrypt(token.encode()).decode()

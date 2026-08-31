@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from shared.middleware.tenant import TenantMiddleware
+from platform_svc.crypto import validate_encryption_key_at_startup
 from platform_svc.routers import social_accounts, scheduling, notifications, analytics, push, websub
 
 _ALLOWED_ORIGINS = [o.strip() for o in os.getenv(
@@ -28,6 +29,13 @@ app.include_router(notifications.router, prefix="/api/v1/platform")
 app.include_router(analytics.router, prefix="/api/v1/platform")
 app.include_router(push.router, prefix="/api/v1/platform")
 app.include_router(websub.router, prefix="/api/v1/platform")
+
+
+@app.on_event("startup")
+async def _check_encryption_key() -> None:
+    # Fail fast at boot rather than 500ing the first oauth-token endpoint hit
+    # (e.g. TikTok connect) when ENCRYPTION_KEY is unset/blank in the env.
+    validate_encryption_key_at_startup()
 
 
 @app.get("/health")
