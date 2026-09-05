@@ -145,10 +145,7 @@ See `docs/` for deeper design notes and `TODO.md` for the current roadmap.
 
 ## Contributing
 
-Issues and PRs welcome. Please:
-- keep changes scoped and tested (`make test`, `make lint`),
-- never commit secrets or `.env`,
-- follow existing service boundaries — don't reach across service DBs directly.
+Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for branch conventions, code style, test requirements, and how to report security issues.
 
 ## License
 
