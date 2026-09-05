@@ -4,6 +4,16 @@
 
 Open-source, self-hostable, FastAPI microservices + React/Vite frontend.
 
+**🚀 Live demo: [app.viraloapp.tech](https://app.viraloapp.tech)** — try it before you self-host.
+
+---
+
+## Screenshots
+
+| Dashboard | Video Studio | Clips |
+|---|---|---|
+| ![Dashboard](docs/assets/screenshot-dashboard.png) | ![Video Studio](docs/assets/screenshot-studio.png) | ![Clips](docs/assets/screenshot-clips.png) |
+
 ---
 
 ## Quick install (one command)
