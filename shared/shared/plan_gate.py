@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,17 @@ from shared.models.public.plan import Plan
 from shared.models.public.subscription import Subscription
 from shared.models.public.tenant import Tenant
 from shared.schemas.auth import TokenPayload
+
+
+def is_self_hosted() -> bool:
+    """True when running via the open-source self-host installer.
+
+    Defaults to False so the hosted SaaS (existing .env, no SELF_HOSTED key)
+    is unaffected. scripts/install.sh writes SELF_HOSTED=true into .env for
+    fresh self-host clones, which removes all plan/billing gating — self-host
+    operators own their own infra and shouldn't hit SaaS pricing-tier walls.
+    """
+    return os.getenv("SELF_HOSTED", "false").strip().lower() == "true"
 
 
 @dataclass
@@ -123,7 +135,14 @@ def _check_feature(features: PlanFeatures, feature: str) -> bool:
 async def get_tenant_plan(
     db: AsyncSession, tenant_id: uuid.UUID
 ) -> tuple[str, PlanFeatures]:
-    """Return (plan_name, PlanFeatures) for tenant. Defaults to 'free'."""
+    """Return (plan_name, PlanFeatures) for tenant. Defaults to 'free'.
+
+    Self-hosted installs always resolve to 'unlimited' — no DB lookup needed,
+    and no plan/subscription rows have to exist for a fresh self-host DB.
+    """
+    if is_self_hosted():
+        return "unlimited", get_plan_features("unlimited")
+
     result = await db.execute(
         select(Plan.name)
         .join(Subscription, Subscription.plan_id == Plan.id)

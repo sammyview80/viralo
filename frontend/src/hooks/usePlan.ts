@@ -29,21 +29,26 @@ export function usePlan() {
     "billing:subscription",
     billingApi.subscription,
   );
+  const selfHosted = data?.self_hosted === true;
   const planName = ((data?.plan_name ?? "free") as PlanName) in PLAN_FEATURES
     ? (data?.plan_name as PlanName)
     : "free";
-  const features: PlanFeatures = PLAN_FEATURES[planName] ?? PLAN_FEATURES.free;
+  const features: PlanFeatures = selfHosted
+    ? PLAN_FEATURES.unlimited
+    : PLAN_FEATURES[planName] ?? PLAN_FEATURES.free;
 
   return {
-    plan: planName,
+    plan: selfHosted ? "unlimited" : planName,
     features,
     loading,
     subscription: data,
+    selfHosted,
     can: (feature: keyof PlanFeatures): boolean => {
+      if (selfHosted) return true;
       const val = features[feature];
       return val === true || (typeof val === "number" && val !== 0);
     },
     isAtLeast: (minPlan: PlanName): boolean =>
-      PLAN_ORDER.indexOf(planName) >= PLAN_ORDER.indexOf(minPlan),
+      selfHosted || PLAN_ORDER.indexOf(planName) >= PLAN_ORDER.indexOf(minPlan),
   };
 }

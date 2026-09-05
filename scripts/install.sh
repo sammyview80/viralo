@@ -42,6 +42,10 @@ gen_fernet() { python3 -c "from cryptography.fernet import Fernet; print(Fernet.
 
 if [ -f .env ]; then
   info ".env already exists — leaving your secrets untouched."
+  if ! grep -q "^SELF_HOSTED=" .env; then
+    echo "SELF_HOSTED=true" >> .env
+    ok "Added SELF_HOSTED=true to existing .env — billing/plan gates disabled."
+  fi
 else
   info "Creating .env from .env.example"
   cp .env.example .env
@@ -106,6 +110,7 @@ echo
 ok "Viralo is running:"
 echo "    Frontend:      http://localhost:3000"
 echo "    Core API:      http://localhost:8001"
+echo "    Billing:       disabled (SELF_HOSTED=true) — every feature unlocked, no plan limits"
 echo
 echo "  Next steps:"
 echo "    - Logs:         $COMPOSE logs -f"
