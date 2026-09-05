@@ -320,6 +320,8 @@ export function BillingPage() {
     { ttl: 60_000 },
   );
 
+  const selfHosted = sub?.self_hosted === true;
+
   const currentPlanName = sub?.plan_name ?? "free";
 
   const currentPlan = plans?.find((p) => p.name.toLowerCase() === currentPlanName.toLowerCase());
@@ -352,6 +354,20 @@ export function BillingPage() {
         {/* Header */}
         <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Billing</h1>
 
+        {selfHosted ? (
+          <div className="rounded-[14px] border border-emerald-500/30 bg-emerald-500/5 p-6 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎉</span>
+              <p className="font-display text-lg font-bold text-emerald-300">Self-hosted — everything unlocked</p>
+            </div>
+            <p className="text-sm text-c-text-secondary">
+              This is a self-hosted install. There's no billing here — every feature (brainstorm, workflows,
+              channels, integrations, unlimited videos/storage) is enabled by default since you're running
+              your own infrastructure.
+            </p>
+          </div>
+        ) : (
+        <>
         {(successPlan || successSession) && (
           <div className="flex items-center gap-3 rounded-[12px] border border-emerald-500/30 bg-emerald-500/10 px-5 py-4">
             <span className="text-xl">🎉</span>
@@ -457,6 +473,8 @@ export function BillingPage() {
             support@viralo.com
           </a>
         </p>
+        </>
+        )}
       </div>
 
       {esewaTarget && (

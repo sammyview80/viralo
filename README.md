@@ -123,7 +123,8 @@ make format         # ruff format
 All configuration lives in `.env` (see `.env.example` for the full list, grouped by section):
 
 - **Core**: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`
-- **Security**: `SECRET_KEY`, `ENCRYPTION_KEY`, `ADMIN_JWT_SECRET` — required, generated automatically by `install.sh`
+- **Security**: `SECRET_KEY`, `ENCRYPTION_KEY`, `ADMIN_JWT_SECRET`, `WEBSUB_SECRET` — required, generated automatically by `install.sh`
+- **Self-hosting**: `SELF_HOSTED=true` (default via `install.sh`) removes all plan/billing gates — unlimited videos, storage, brainstorm, workflows, channels, and integrations, no Stripe/eSewa checkout. Only set it to `false` if you're running this as a hosted multi-tenant SaaS with real billing tiers.
 - **LLM providers** (optional, add the ones you use): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `CEREBRAS_API_KEY`, `SAMBANOVA_API_KEY`, `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
 - **Storage** (pick one): Cloudinary (`CLOUDINARY_URL`), Cloudflare R2 (`CF_R2_*`), or S3 (`AWS_*`)
 - **External APIs** (optional): `TAVILY_API_KEY`, `ELEVENLABS_API_KEY`, `PEXELS_API_KEY`, Stripe billing keys

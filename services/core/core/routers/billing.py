@@ -16,6 +16,7 @@ from shared.deps import get_current_user, get_db_no_rls
 from shared.models.public.plan import Plan
 from shared.models.public.subscription import Subscription
 from shared.models.public.usage_quota import UsageQuota
+from shared.plan_gate import is_self_hosted
 from shared.schemas.auth import TokenPayload
 from shared.subscription_events import log_subscription_event
 
@@ -152,6 +153,26 @@ async def get_subscription(
         raise HTTPException(status_code=400, detail="No tenant associated with account")
 
     tenant_id = uuid.UUID(str(token.tenant_id))
+
+    if is_self_hosted():
+        # No billing on a self-hosted install — report unlimited without
+        # requiring plan/subscription rows to exist in a fresh DB.
+        quota_result = await db.execute(
+            select(UsageQuota).where(UsageQuota.tenant_id == tenant_id)
+        )
+        quota = quota_result.scalar_one_or_none()
+        return {
+            "plan_name": "unlimited",
+            "status": "active",
+            "billing_cycle": "monthly",
+            "current_period_end": None,
+            "cancel_at_period_end": False,
+            "videos_used": quota.videos_used if quota else 0,
+            "storage_bytes_used": quota.storage_bytes_used if quota else 0,
+            "brainstorm_used": quota.brainstorm_used if quota else 0,
+            "self_hosted": True,
+        }
+
     sub_result = await db.execute(
         select(Subscription).where(Subscription.tenant_id == tenant_id).limit(1)
     )
@@ -200,6 +221,8 @@ async def create_checkout(
     token: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_no_rls),
 ):
+    if is_self_hosted():
+        raise HTTPException(status_code=400, detail="Billing is disabled on self-hosted installs — all features are unlocked.")
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=503, detail="Stripe not configured")
     if not token.tenant_id:

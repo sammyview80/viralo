@@ -339,6 +339,10 @@ class SceneFrame:
 
 def _is_unlimited(tenant_id: str) -> bool:
     """Return True if tenant's plan has no duration limit (pro+ or bypass email)."""
+    from shared.plan_gate import is_self_hosted  # noqa: PLC0415
+
+    if is_self_hosted():
+        return True
     try:
         with Session(engine) as s:
             row = s.execute(

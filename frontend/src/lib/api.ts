@@ -976,6 +976,7 @@ export interface SubscriptionInfo {
   videos_used: number;
   storage_bytes_used: number;
   brainstorm_used: number;
+  self_hosted?: boolean;
 }
 
 export interface EsewaQR {
