@@ -37,7 +37,9 @@ _STATIC_RE = re.compile(r'(socks[45]?|https?)://(?:[^@/\s]+@)?[\w.\-]+:\d{2,5}')
 
 
 def get_proxies() -> list[str]:
-    provider = os.getenv("PROXY_PROVIDER", "static").lower()
+    # Default is webshare (rotating IP per connection) — static datacenter IPs get
+    # 360p-capped and bot-blocked fast. Explicit opt-in required for static/residential.
+    provider = os.getenv("PROXY_PROVIDER", "webshare").lower()
     if provider == "residential":
         return _residential_proxies()
     if provider in ("webshare", "rotating"):

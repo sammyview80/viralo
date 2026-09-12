@@ -46,6 +46,7 @@ __all__ = [
     '_ytdlp_base_flags',
     '_POT_CLIENTS',
     '_pot_args',
+    '_check_pot_provider_health',
     '_resolve_downloaded',
     '_is_429',
     '_is_bot_blocked',
@@ -219,13 +220,15 @@ def _cookies_flags(unique: bool = False) -> list[str]:
 
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> list[str]:
     """Return common yt-dlp flags."""
+    limit_rate = os.getenv("YTDLP_LIMIT_RATE", "5M").strip()
+    rate_flags = ["--limit-rate", limit_rate] if limit_rate else []
     if proxy:
-        flags = ["--no-check-certificate", "--retries", "1",
+        flags = ["--no-check-certificate", "--retries", "1", "--fragment-retries", "3",
                  "--socket-timeout", "15",
-                 "--proxy", proxy]
+                 "--proxy", proxy] + rate_flags
     else:
-        flags = ["--no-check-certificate", "--retries", "2",
-                 "--socket-timeout", "20"]
+        flags = ["--no-check-certificate", "--retries", "2", "--fragment-retries", "3",
+                 "--socket-timeout", "20"] + rate_flags
     if use_cookies:
         flags += _cookies_flags()
     return flags
@@ -239,13 +242,65 @@ _POT_CLIENTS = {"web", "mweb", "tv", "tv_embedded", "web_safari", "web_embedded"
 
 
 def _pot_args(client: str) -> list[str]:
-    """Force PO-token fetch for clients that need it. No-op when disabled."""
+    """Force PO-token fetch for clients that need it. No-op when disabled.
+
+    PO-token PROVIDER SELECTION (not runtime fallback): bgutilhttp (default) or wpc,
+    via YTDLP_POT_FALLBACK_PROVIDER — wpc replaces bgutil entirely, it is not tried
+    after bgutil fails at request time.
+
+    bgutilhttp needs the bgutil-pot HTTP server (see docker-compose service
+    `bgutil-pot`). wpc is coletdjnz/yt-dlp-getpot-wpc — NOT a lightweight option:
+    per its README it launches an actual browser (nodriver) to mint tokens, so it
+    needs Chrome/Chromium installed in the container, not just
+    `pip install yt-dlp-getpot-wpc` (neither is done in the Dockerfile; wire-only).
+    """
     if os.getenv("YTDLP_DISABLE_POT", "") == "1":
         return []
     if client not in _POT_CLIENTS:
         return []
+    provider = os.getenv("YTDLP_POT_FALLBACK_PROVIDER", "bgutilhttp").strip().lower()
+    if provider == "wpc":
+        browser_path = os.getenv("YTDLP_WPC_BROWSER_PATH", "").strip()
+        arg = f"youtubepot-wpc:browser_path={browser_path}" if browser_path else "youtubepot-wpc:"
+        return ["--extractor-args", arg]
     base_url = os.getenv("BGUTIL_POT_BASE_URL", "http://127.0.0.1:4416")
     return ["--extractor-args", f"youtubepot-bgutilhttp:base_url={base_url}"]
+
+
+_BGUTIL_PINNED_VERSION = "1.3.1"  # must match brainicism/bgutil-ytdlp-pot-provider tag in Dockerfile
+
+
+def _check_pot_provider_health() -> None:
+    """Best-effort PO-token provider reachability/version check. Never raises.
+
+    Single /ping call, 3s timeout — this runs inside refresh_youtube_cookies
+    (soft_time_limit=120), so it must stay cheap and never eat into that budget.
+    Skipped entirely when YTDLP_POT_FALLBACK_PROVIDER=wpc, since wpc doesn't use
+    bgutil at all. Logs a warning if unreachable or reporting a version that
+    doesn't match _BGUTIL_PINNED_VERSION. Log-only — must never block cookie refresh.
+    """
+    try:
+        if os.getenv("YTDLP_POT_FALLBACK_PROVIDER", "bgutilhttp").strip().lower() == "wpc":
+            return
+        import urllib.request as _urllib_req
+        import json as _json
+        base_url = os.getenv("BGUTIL_POT_BASE_URL", "http://127.0.0.1:4416").rstrip("/")
+        try:
+            with _urllib_req.urlopen(f"{base_url}/ping", timeout=3) as resp:
+                body = resp.read().decode(errors="ignore")
+            try:
+                data = _json.loads(body)
+                version = str(data.get("version") or data.get("server_version") or "") if isinstance(data, dict) else ""
+            except (ValueError, TypeError):
+                version = ""
+            if version and version != _BGUTIL_PINNED_VERSION:
+                logging.warning(
+                    "bgutil-pot-provider version mismatch: server=%s pinned=%s "
+                    "— PO tokens may be incompatible", version, _BGUTIL_PINNED_VERSION)
+        except Exception:
+            logging.warning("bgutil-pot-provider unreachable at %s (ping failed)", base_url)
+    except Exception as e:
+        logging.warning("_check_pot_provider_health: %s", e)
 
 
 def _resolve_downloaded(template_path: str) -> str | None:
