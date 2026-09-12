@@ -168,7 +168,7 @@ def _list_youtube_formats(url: str, timeout: int = 30, max_proxy_tries: int = 5)
 
     def _probe(proxy: str | None, client: str) -> dict | None:
         nonlocal saw_private
-        base = _ytdlp_base_flags(proxy, use_cookies=True)
+        base = _ytdlp_base_flags(proxy, use_cookies=True, proxy_trusted=proxies_trusted)
         cmd = (["yt-dlp"] + base + _pot_args(client)
                + ["--extractor-args", f"youtube:player_client={client}",
                   "-J", "--no-download", "--no-playlist", url])
@@ -200,7 +200,7 @@ def _list_youtube_formats(url: str, timeout: int = 30, max_proxy_tries: int = 5)
     # lower client. Otherwise tv failing on the first few proxies would settle for
     # web@360p even though a later proxy would have yielded 1080p+ — matching what the
     # real download (which walks every proxy for tv) actually fetches.
-    all_proxies = _ytdlp_proxies()
+    all_proxies, proxies_trusted = _ytdlp_proxies_with_trust()
     hd_tries = min(len(all_proxies), max(max_proxy_tries, 12))
     low_tries = min(len(all_proxies), 3)
     # HD-capable clients first (tv / mweb / web_safari) with an exhaustive proxy search:
@@ -273,7 +273,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     errors = []
     bot_blocked_seen = {"flag": False}
     winner: dict[str, str | None] = {"client": None}
-    proxies = _ytdlp_proxies_with_refresh()
+    proxies, proxies_trusted = _ytdlp_proxies_with_refresh_with_trust()
 
     def _client_of(cmd: list[str]) -> str:
         """Extract the yt-dlp player_client from a built command, for win reporting."""
@@ -296,15 +296,20 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         fmt = f"bestvideo[height<={cap}]+bestaudio/best[height<={cap}]"
         fmt_fallback = f"bestvideo[height<={cap}][ext=mp4]+bestaudio[ext=m4a]/best[height<={cap}][ext=mp4]/best"
 
-    def _client_args(proxy: str | None) -> list[list[str]]:
+    def _client_args(proxy: str | None, proxy_trusted: bool = False) -> list[list[str]]:
         """Return ordered strategy list — best quality first, fallbacks after.
 
         Order reflects tested 2026 success rates: tv_embedded (+PO+cookies) and
         android_vr download full streams; the `default` client auto-picks a
         working one; web/ios are broken (SABR / n-challenge / no formats) so go
         last. Cookies on every strategy (android ignores them harmlessly).
+
+        `proxy_trusted` defaults to False (fail-closed), same as every other
+        proxy-carrying call site in this module — callers passing a real proxy
+        MUST pass its actual trust value; only proxy=None (direct) is inert to
+        this flag since _ytdlp_base_flags never gates a proxy-less request on it.
         """
-        bc = _ytdlp_base_flags(proxy, use_cookies=True)  # cookies on every strategy
+        bc = _ytdlp_base_flags(proxy, use_cookies=True, proxy_trusted=proxy_trusted)  # cookies on every strategy
         base = _ytdlp_base_flags(proxy)
         return [
             # mweb + PO + cookies: full HD/4K ladder. PRIMARY client — it is NOT under the
@@ -421,204 +426,208 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     # parallel hammered the same video from N IPs at once, which itself trips bot
     # detection; sequential is gentler and stops as soon as one proxy wins.
     # Set YTDLP_PROXY_PARALLEL=1 to restore the old parallel race.
-    if proxies:
-        import concurrent.futures, threading as _threading
-        _parallel = os.getenv("YTDLP_PROXY_PARALLEL", "") == "1"
-        logging.info("Phase 1: trying %d env proxies (%s)", len(proxies),
-                     "parallel race" if _parallel else "sequential")
-        proxy_errors: list[str] = []
-        proxy_errors_lock = _threading.Lock()
-        move_lock = _threading.Lock()
-        moved = _threading.Event()
+    # Shared across the rotating-proxy phase (below) AND the static-proxy fallback
+    # phase (after it): both reuse the same `_try_proxy` helper/locks so a static
+    # fallback attempt participates in the same "first strategy to move() wins"
+    # coordination as the rotating pool, instead of duplicating that machinery.
+    import concurrent.futures, threading as _threading
+    _parallel = os.getenv("YTDLP_PROXY_PARALLEL", "") == "1"
+    proxy_errors: list[str] = []
+    proxy_errors_lock = _threading.Lock()
+    move_lock = _threading.Lock()
+    moved = _threading.Event()
 
-        def _try_proxy(proxy: str, idx: int, clients: list[str]) -> bool:
+    def _try_proxy(proxy: str, idx: int | str, clients: list[str], proxy_trusted: bool) -> bool:
+        if moved.is_set():
+            return False
+        import threading as _t
+
+        for client in clients:
             if moved.is_set():
                 return False
-            import threading as _t
+            tmp_path = out_path + f".proxy{idx}.tmp"
+            base = _ytdlp_base_flags(proxy, use_cookies=True, proxy_trusted=proxy_trusted)
+            cmd = (["yt-dlp"] + base + _pot_args(client) +
+                   ["--extractor-args", f"youtube:player_client={client}",
+                    "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
+            try:
+                proc = subprocess.Popen(cmd + ["--newline"],
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stderr_lines: list[str] = []
 
-            for client in clients:
-                if moved.is_set():
-                    return False
-                tmp_path = out_path + f".proxy{idx}.tmp"
-                base = _ytdlp_base_flags(proxy, use_cookies=True)
-                cmd = (["yt-dlp"] + base + _pot_args(client) +
-                       ["--extractor-args", f"youtube:player_client={client}",
-                        "-f", fmt, "--merge-output-format", "mp4", "-o", tmp_path, url])
-                try:
-                    proc = subprocess.Popen(cmd + ["--newline"],
-                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    stderr_lines: list[str] = []
+                def _drain(p=proc, sl=stderr_lines):
+                    for line in p.stderr:
+                        sl.append(line.rstrip())
+                        if moved.is_set():
+                            p.kill()
+                            return
 
-                    def _drain(p=proc, sl=stderr_lines):
-                        for line in p.stderr:
-                            sl.append(line.rstrip())
-                            if moved.is_set():
-                                p.kill()
-                                return
-
-                    t_stdout = _t.Thread(target=lambda p=proc: [_ for _ in p.stdout], daemon=True)
-                    t_stderr = _t.Thread(target=_drain, daemon=True)
-                    t_stdout.start(); t_stderr.start()
-                    # tv_embedded fetches a PO token + handshakes through the proxy
-                    # before download starts — 30s was too tight and killed live-but-slow
-                    # proxies mid-handshake. 60s gives them room; dead proxies still cut fast.
-                    proc.wait(timeout=60)
-                    t_stderr.join(timeout=3)
-                    produced = _resolve_downloaded(tmp_path) if proc.returncode == 0 else None
-                    if produced:
-                        with move_lock:
-                            if not moved.is_set():
-                                import shutil as _sh
-                                _sh.move(produced, out_path)
-                                moved.set()
-                                winner["client"] = client
-                                _record_good_proxy(proxy)
-                                logging.info("Proxy race won by %s client=%s", _redact_secrets(proxy), client)
-                                return True
-                    # Find the actual ERROR line. Skip [debug]/[download]/[info] progress
-                    # lines — with metadata-only clients (android_vr) the last stderr
-                    # line is a harmless [debug] line that reads as a fake ERROR.
+                t_stdout = _t.Thread(target=lambda p=proc: [_ for _ in p.stdout], daemon=True)
+                t_stderr = _t.Thread(target=_drain, daemon=True)
+                t_stdout.start(); t_stderr.start()
+                # tv_embedded fetches a PO token + handshakes through the proxy
+                # before download starts — 30s was too tight and killed live-but-slow
+                # proxies mid-handshake. 60s gives them room; dead proxies still cut fast.
+                proc.wait(timeout=60)
+                t_stderr.join(timeout=3)
+                produced = _resolve_downloaded(tmp_path) if proc.returncode == 0 else None
+                if produced:
+                    with move_lock:
+                        if not moved.is_set():
+                            import shutil as _sh
+                            _sh.move(produced, out_path)
+                            moved.set()
+                            winner["client"] = client
+                            _record_good_proxy(proxy)
+                            logging.info("Proxy race won by %s client=%s", _redact_secrets(proxy), client)
+                            return True
+                # Find the actual ERROR line. Skip [debug]/[download]/[info] progress
+                # lines — with metadata-only clients (android_vr) the last stderr
+                # line is a harmless [debug] line that reads as a fake ERROR.
+                error_lines = [
+                    l for l in stderr_lines
+                    if l.strip() and not l.startswith("  ")
+                    and not l.lstrip().startswith(("[debug]", "[download]", "[info]", "[youtube]"))
+                ]
+                if not error_lines:
+                    # rc=0 + no file = client extracted metadata only (no usable formats / no PO token)
                     error_lines = [
-                        l for l in stderr_lines
-                        if l.strip() and not l.startswith("  ")
-                        and not l.lstrip().startswith(("[debug]", "[download]", "[info]", "[youtube]"))
+                        "no downloadable formats (metadata-only extraction — missing PO token?)"
+                        if proc.returncode == 0 else (stderr_lines[-1] if stderr_lines else "")
                     ]
-                    if not error_lines:
-                        # rc=0 + no file = client extracted metadata only (no usable formats / no PO token)
-                        error_lines = [
-                            "no downloadable formats (metadata-only extraction — missing PO token?)"
-                            if proc.returncode == 0 else (stderr_lines[-1] if stderr_lines else "")
-                        ]
-                    actual_error = _redact_secrets(error_lines[-1])
-                    stderr = _redact_secrets("\n".join(stderr_lines[-5:]))
-                    reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
-                    if reason == "bot":
-                        bot_blocked_seen["flag"] = True
-                    is_fmt_unavailable = "not available" in actual_error and "format" in actual_error.lower()
-                    logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | ERROR: %s", idx, _redact_secrets(proxy), client, reason, proc.returncode, actual_error[:300])
-                    with proxy_errors_lock:
-                        proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: {reason}: {actual_error[:150]}")
-                    if _is_429(stderr) or _is_bot_blocked(stderr):
-                        break  # same proxy, different clients won't help if IP is blocked
-                    if _is_pot_rejected(stderr) and _pot_args(client):
-                        # REAL BUG, reproduced live on video njBnqiiTeZo: the bgutil PO-token
-                        # provider was healthy (/ping 200) and minting tokens, but YouTube
-                        # REJECTED those tokens with a hard `403 Forbidden` on the media
-                        # request. The identical command with the PO-token args removed
-                        # downloaded the full 48MB file from the same proxy, same client,
-                        # same cookies — so the token itself, not the IP, was the blocker.
-                        #
-                        # Before this retry, a rejected token failed identically on every
-                        # proxy in the pool, so the task burned all 12 proxies per client
-                        # tier and ultimately failed a video that was actually downloadable.
-                        # Retry ONCE without PO tokens before writing this proxy off.
-                        tmp_path_np = out_path + f".proxy{idx}.nopot.tmp"
-                        cmd_np = (["yt-dlp"] + _ytdlp_base_flags(proxy, use_cookies=True) +
-                                  ["--extractor-args", f"youtube:player_client={client}",
-                                   "-f", fmt, "--merge-output-format", "mp4",
-                                   "-o", tmp_path_np, url])
-                        try:
-                            r_np = subprocess.run(cmd_np, capture_output=True, text=True, timeout=90)
-                            produced_np = _resolve_downloaded(tmp_path_np) if r_np.returncode == 0 else None
-                            if produced_np:
-                                with move_lock:
-                                    if not moved.is_set():
-                                        import shutil as _sh
-                                        _sh.move(produced_np, out_path)
-                                        moved.set()
-                                        winner["client"] = client
-                                        _record_good_proxy(proxy)
-                                        logging.info(
-                                            "Proxy[%d] %s client=%s won WITHOUT PO token "
-                                            "(provider token was rejected by YouTube)",
-                                            idx, _redact_secrets(proxy), client)
-                                        return True
-                            logging.warning("Proxy[%d] %s client=%s no-PO retry also failed",
-                                            idx, _redact_secrets(proxy), client)
-                        except subprocess.TimeoutExpired:
-                            logging.warning("Proxy[%d] %s client=%s no-PO retry timed out",
-                                            idx, _redact_secrets(proxy), client)
-                        except Exception as _e:
-                            logging.warning("Proxy[%d] %s client=%s no-PO retry error: %s",
-                                            idx, _redact_secrets(proxy), client, _redact_secrets(_e))
-                        finally:
-                            import glob as _glob
-                            for _f in [tmp_path_np] + _glob.glob(_glob.escape(tmp_path_np) + ".*"):
-                                try:
-                                    Path(_f).unlink(missing_ok=True)
-                                except Exception:
-                                    pass
-                    if is_fmt_unavailable:
-                        # Requested selector matched nothing — retry the SAME client with the
-                        # most permissive selector, ignoring any quality cap. Fixes the case
-                        # where the only streams are above the requested cap, or only a
-                        # progressive `best` exists. If THIS still finds nothing, the video
-                        # genuinely has no a/v formats for this client (e.g. dead cookies → SABR).
-                        tmp_path2 = out_path + f".proxy{idx}.best.tmp"
-                        base2 = _ytdlp_base_flags(proxy, use_cookies=True)
-                        cmd2 = (["yt-dlp"] + base2 + _pot_args(client) +
-                                ["--extractor-args", f"youtube:player_client={client}",
-                                 "-f", "bv*+ba/b/best/bv*/b*",
-                                 "--merge-output-format", "mp4", "-o", tmp_path2, url])
-                        try:
-                            r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
-                            produced2 = _resolve_downloaded(tmp_path2) if r2.returncode == 0 else None
-                            if produced2:
-                                with move_lock:
-                                    if not moved.is_set():
-                                        import shutil as _sh
-                                        _sh.move(produced2, out_path)
-                                        moved.set()
-                                        winner["client"] = client
-                                        _record_good_proxy(proxy)
-                                        logging.info("Proxy race won by %s client=%s fmt=permissive", _redact_secrets(proxy), client)
-                                        return True
-                            logging.warning("Proxy[%d] %s client=%s fmt-fallback found no a/v formats either",
-                                            idx, _redact_secrets(proxy), client)
-                        except Exception:
-                            pass
-                        finally:
-                            import glob as _glob
-                            for _f in [tmp_path2] + _glob.glob(_glob.escape(tmp_path2) + ".*"):
-                                try:
-                                    Path(_f).unlink(missing_ok=True)
-                                except Exception:
-                                    pass
-                except subprocess.TimeoutExpired:
+                actual_error = _redact_secrets(error_lines[-1])
+                stderr = _redact_secrets("\n".join(stderr_lines[-5:]))
+                reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
+                if reason == "bot":
+                    bot_blocked_seen["flag"] = True
+                is_fmt_unavailable = "not available" in actual_error and "format" in actual_error.lower()
+                logging.warning("Proxy[%s] %s client=%s → %s | rc=%s | ERROR: %s", idx, _redact_secrets(proxy), client, reason, proc.returncode, actual_error[:300])
+                with proxy_errors_lock:
+                    proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: {reason}: {actual_error[:150]}")
+                if _is_429(stderr) or _is_bot_blocked(stderr):
+                    break  # same proxy, different clients won't help if IP is blocked
+                if _is_pot_rejected(stderr) and _pot_args(client):
+                    # REAL BUG, reproduced live on video njBnqiiTeZo: the bgutil PO-token
+                    # provider was healthy (/ping 200) and minting tokens, but YouTube
+                    # REJECTED those tokens with a hard `403 Forbidden` on the media
+                    # request. The identical command with the PO-token args removed
+                    # downloaded the full 48MB file from the same proxy, same client,
+                    # same cookies — so the token itself, not the IP, was the blocker.
+                    #
+                    # Before this retry, a rejected token failed identically on every
+                    # proxy in the pool, so the task burned all 12 proxies per client
+                    # tier and ultimately failed a video that was actually downloadable.
+                    # Retry ONCE without PO tokens before writing this proxy off.
+                    tmp_path_np = out_path + f".proxy{idx}.nopot.tmp"
+                    cmd_np = (["yt-dlp"] + _ytdlp_base_flags(proxy, use_cookies=True, proxy_trusted=proxy_trusted) +
+                              ["--extractor-args", f"youtube:player_client={client}",
+                               "-f", fmt, "--merge-output-format", "mp4",
+                               "-o", tmp_path_np, url])
                     try:
-                        proc.kill()
-                        proc.wait(timeout=5)
+                        r_np = subprocess.run(cmd_np, capture_output=True, text=True, timeout=90)
+                        produced_np = _resolve_downloaded(tmp_path_np) if r_np.returncode == 0 else None
+                        if produced_np:
+                            with move_lock:
+                                if not moved.is_set():
+                                    import shutil as _sh
+                                    _sh.move(produced_np, out_path)
+                                    moved.set()
+                                    winner["client"] = client
+                                    _record_good_proxy(proxy)
+                                    logging.info(
+                                        "Proxy[%s] %s client=%s won WITHOUT PO token "
+                                        "(provider token was rejected by YouTube)",
+                                        idx, _redact_secrets(proxy), client)
+                                    return True
+                        logging.warning("Proxy[%s] %s client=%s no-PO retry also failed",
+                                        idx, _redact_secrets(proxy), client)
+                    except subprocess.TimeoutExpired:
+                        logging.warning("Proxy[%s] %s client=%s no-PO retry timed out",
+                                        idx, _redact_secrets(proxy), client)
+                    except Exception as _e:
+                        logging.warning("Proxy[%s] %s client=%s no-PO retry error: %s",
+                                        idx, _redact_secrets(proxy), client, _redact_secrets(_e))
+                    finally:
+                        import glob as _glob
+                        for _f in [tmp_path_np] + _glob.glob(_glob.escape(tmp_path_np) + ".*"):
+                            try:
+                                Path(_f).unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                if is_fmt_unavailable:
+                    # Requested selector matched nothing — retry the SAME client with the
+                    # most permissive selector, ignoring any quality cap. Fixes the case
+                    # where the only streams are above the requested cap, or only a
+                    # progressive `best` exists. If THIS still finds nothing, the video
+                    # genuinely has no a/v formats for this client (e.g. dead cookies → SABR).
+                    tmp_path2 = out_path + f".proxy{idx}.best.tmp"
+                    base2 = _ytdlp_base_flags(proxy, use_cookies=True, proxy_trusted=proxy_trusted)
+                    cmd2 = (["yt-dlp"] + base2 + _pot_args(client) +
+                            ["--extractor-args", f"youtube:player_client={client}",
+                             "-f", "bv*+ba/b/best/bv*/b*",
+                             "--merge-output-format", "mp4", "-o", tmp_path2, url])
+                    try:
+                        r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
+                        produced2 = _resolve_downloaded(tmp_path2) if r2.returncode == 0 else None
+                        if produced2:
+                            with move_lock:
+                                if not moved.is_set():
+                                    import shutil as _sh
+                                    _sh.move(produced2, out_path)
+                                    moved.set()
+                                    winner["client"] = client
+                                    _record_good_proxy(proxy)
+                                    logging.info("Proxy race won by %s client=%s fmt=permissive", _redact_secrets(proxy), client)
+                                    return True
+                        logging.warning("Proxy[%s] %s client=%s fmt-fallback found no a/v formats either",
+                                        idx, _redact_secrets(proxy), client)
                     except Exception:
                         pass
-                    logging.warning("Proxy[%d] %s client=%s → timeout", idx, _redact_secrets(proxy), client)
-                    with proxy_errors_lock:
-                        proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: timeout")
-                except Exception as e:
-                    _safe_e = _redact_secrets(e)
-                    logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, _redact_secrets(proxy), client, _safe_e)
-                    with proxy_errors_lock:
-                        proxy_errors.append(f"proxy[{idx}] [{client}]: {_safe_e}")
-                finally:
-                    # Remove the template path AND any extension-rewritten file
-                    # (tmp_path + ".mp4" etc.) plus stray intermediates.
-                    import glob as _glob
-                    for _f in [tmp_path] + _glob.glob(_glob.escape(tmp_path) + ".*"):
-                        try:
-                            Path(_f).unlink(missing_ok=True)
-                        except Exception:
-                            pass
-            return False
+                    finally:
+                        import glob as _glob
+                        for _f in [tmp_path2] + _glob.glob(_glob.escape(tmp_path2) + ".*"):
+                            try:
+                                Path(_f).unlink(missing_ok=True)
+                            except Exception:
+                                pass
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                logging.warning("Proxy[%s] %s client=%s → timeout", idx, _redact_secrets(proxy), client)
+                with proxy_errors_lock:
+                    proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: timeout")
+            except Exception as e:
+                _safe_e = _redact_secrets(e)
+                logging.warning("Proxy[%s] %s client=%s → exception: %s", idx, _redact_secrets(proxy), client, _safe_e)
+                with proxy_errors_lock:
+                    proxy_errors.append(f"proxy[{idx}] [{client}]: {_safe_e}")
+            finally:
+                # Remove the template path AND any extension-rewritten file
+                # (tmp_path + ".mp4" etc.) plus stray intermediates.
+                import glob as _glob
+                for _f in [tmp_path] + _glob.glob(_glob.escape(tmp_path) + ".*"):
+                    try:
+                        Path(_f).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+        return False
 
-        # Client-MAJOR order: exhaust a high-quality client across EVERY proxy before
-        # settling for a lower-quality one. `tv` carries the full HD/4K ladder — BUT
-        # YouTube now runs a DRM experiment that, on many datacenter/proxy IPs, marks
-        # every `tv` https format DRM-protected so only storyboard images remain
-        # ("Requested format is not available"; yt-dlp #12563). `mweb` and `web_safari`
-        # return the same full adaptive ladder (4K/1080p, +PO +cookies), are NOT under
-        # that tv DRM experiment, and are NOT 360p-capped like plain `web` — so they sit
-        # right after `tv`. Plain `web` (360p-only on these IPs) and ios go last.
-        _CLIENT_TIERS = ["mweb", "web_safari", "tv", "android_vr", "web", "ios"]
+    # Client-MAJOR order: exhaust a high-quality client across EVERY proxy before
+    # settling for a lower-quality one. `tv` carries the full HD/4K ladder — BUT
+    # YouTube now runs a DRM experiment that, on many datacenter/proxy IPs, marks
+    # every `tv` https format DRM-protected so only storyboard images remain
+    # ("Requested format is not available"; yt-dlp #12563). `mweb` and `web_safari`
+    # return the same full adaptive ladder (4K/1080p, +PO +cookies), are NOT under
+    # that tv DRM experiment, and are NOT 360p-capped like plain `web` — so they sit
+    # right after `tv`. Plain `web` (360p-only on these IPs) and ios go last.
+    _CLIENT_TIERS = ["mweb", "web_safari", "tv", "android_vr", "web", "ios"]
 
+    if proxies:
+        logging.info("Phase 1: trying %d env proxies (%s)", len(proxies),
+                     "parallel race" if _parallel else "sequential")
         if _parallel:
             # Opt-in legacy behaviour: race all proxies in parallel batches, per client tier.
             BATCH = 10
@@ -628,7 +637,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     logging.info("Client=%s batch %d-%d: racing %d proxies",
                                  client, batch_start, batch_start + len(batch) - 1, len(batch))
                     with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH) as ex:
-                        futures = {ex.submit(_try_proxy, p, batch_start + i, [client]): p
+                        futures = {ex.submit(_try_proxy, p, batch_start + i, [client], proxies_trusted): p
                                    for i, p in enumerate(batch)}
                         for fut in concurrent.futures.as_completed(futures):
                             if moved.is_set():
@@ -645,7 +654,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             for client in _CLIENT_TIERS:
                 logging.info("Phase 1: trying client=%s across %d proxies", client, len(proxies))
                 for idx, proxy in enumerate(proxies):
-                    if _try_proxy(proxy, idx, [client]):
+                    if _try_proxy(proxy, idx, [client], proxies_trusted):
                         return winner["client"]
                     if moved.is_set():
                         return winner["client"]
@@ -653,6 +662,26 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         time.sleep(random.uniform(0.5, 1.5) * inter_sleep)
                 logging.info("Client=%s failed on all proxies, dropping to next client", client)
         errors.extend(proxy_errors)
+
+    # Phase 1.5: rotating pool exhausted/unavailable (e.g. Webshare rotating plan
+    # out of balance → every rotating proxy 402s) — try a single STATIC Webshare
+    # proxy (separate plan/credentials) before giving up and going direct, since
+    # direct almost always hits YouTube's bot-block on this host's flagged IP.
+    # Silently skipped if the static proxy env vars aren't configured — no
+    # behavior change for deployments that don't set them.
+    static_proxy = _webshare_static_proxy()
+    if static_proxy and not moved.is_set():
+        logging.info("Phase 1.5: rotating pool failed — trying static fallback proxy %s",
+                     _redact_secrets(static_proxy))
+        _errors_before_static = len(proxy_errors)
+        for client in _CLIENT_TIERS:
+            # Always trusted: this is the operator-configured static Webshare
+            # plan (WEBSHARE_STATIC_PROXY_*), never the free/public pool.
+            if _try_proxy(static_proxy, "static", [client], True):
+                return winner["client"]
+            if moved.is_set():
+                return winner["client"]
+        errors.extend(proxy_errors[_errors_before_static:])
 
     # Phase 2: direct strategies (android_vr no-cookies, then cookie-based clients)
     logging.info("Phase 2: trying direct strategies (no proxy)")
@@ -750,18 +779,26 @@ def _fetch_youtube_captions(url: str, language: str = "en") -> list[WordTimestam
     import tempfile
     lang_codes = [language, "en"] if language != "en" else ["en"]
     # direct first, then a few proxies — captions need no PO token, just an un-flagged IP
-    all_proxies = _ytdlp_proxies()
+    all_proxies, proxies_trusted = _ytdlp_proxies_with_trust()
     proxy_candidates = ([None] if os.getenv("YTDLP_SKIP_DIRECT") != "1" else []) + all_proxies[:8]
     if not proxy_candidates:
         proxy_candidates = [None]
 
-    _cookies = []
+    _cookie_file_flag = []
     _cf = os.getenv("YTDLP_COOKIES_FILE", "")
     if _cf and Path(_cf).exists():
-        _cookies = ["--cookies", _cf]
+        _cookie_file_flag = ["--cookies", _cf]
 
     for proxy in proxy_candidates:
         proxy_flag = ["--proxy", proxy] if proxy else []
+        # SECURITY (default-deny): never attach cookies over an untrusted proxy —
+        # see the identical guard in _ytdlp_base_flags (cookies.py). This loop
+        # builds its own --cookies flag separately (captions don't need PO
+        # tokens/full base flags), so the same check is repeated here rather
+        # than relying on _ytdlp_base_flags to catch it. `proxies_trusted` came
+        # from the SAME _ytdlp_proxies_with_trust() call that produced `proxy`,
+        # so there's no separate stale lookup to get wrong.
+        _cookies = _cookie_file_flag if (proxy is None or proxies_trusted) else []
         with tempfile.TemporaryDirectory() as tmp:
             out_tmpl = os.path.join(tmp, "cap.%(ext)s")
             for lang in lang_codes:

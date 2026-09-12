@@ -21,9 +21,11 @@ import logging
 import subprocess
 import time
 
-from workers.tasks.proxies import get_proxies
+from workers.tasks.proxies import get_proxies_with_trust
 from workers.tasks.video._core import redis_client
-from workers.tasks.video.cookies import _is_429, _is_bot_blocked, _pot_args, _ytdlp_base_flags
+from workers.tasks.video.cookies import (
+    _is_429, _is_bot_blocked, _pot_args, _redact_secrets, _ytdlp_base_flags,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -37,13 +39,19 @@ PROXY_SCORE_REDIS_KEY = "ytdlp:proxy_scores"
 PROXY_SCORE_TTL_SEC = 6 * 3600  # scores go stale as proxies rotate/die
 
 
-def _test_proxy_client(proxy: str, client: str, url: str, timeout: int) -> dict:
+def _test_proxy_client(proxy: str, client: str, url: str, timeout: int,
+                        proxy_trusted: bool = False) -> dict:
     """Run one yt-dlp metadata probe through `proxy` using `client`.
+
+    `proxy_trusted` defaults to False (fail closed) — callers MUST pass the
+    trust value from workers.tasks.proxies.get_proxies_with_trust() (or
+    explicitly False for raw/unvalidated candidates, e.g. proxy_refresh.py's
+    free-proxy-list probes) rather than assume cookies are safe to attach.
 
     Returns {"ok": bool, "latency": float, "blocked": bool, "rate_limited": bool,
              "error": str}.
     """
-    base = _ytdlp_base_flags(proxy, use_cookies=True)
+    base = _ytdlp_base_flags(proxy, use_cookies=True, proxy_trusted=proxy_trusted)
     cmd = (["yt-dlp"] + base + _pot_args(client) +
            ["--extractor-args", f"youtube:player_client={client}",
             "-J", "--no-download", "--no-playlist", url])
@@ -76,15 +84,18 @@ def _test_proxy_client(proxy: str, client: str, url: str, timeout: int) -> dict:
              "rate_limited": rate_limited, "error": err}
 
 
-def test_proxy(proxy: str, url: str, timeout: int) -> dict:
-    """Test one proxy across all client tiers. Returns a per-proxy result dict."""
+def test_proxy(proxy: str, url: str, timeout: int, proxy_trusted: bool = False) -> dict:
+    """Test one proxy across all client tiers. Returns a per-proxy result dict.
+
+    `proxy_trusted` defaults to False — see _test_proxy_client.
+    """
     attempts = []
     for client in CLIENT_TIERS:
-        result = _test_proxy_client(proxy, client, url, timeout)
+        result = _test_proxy_client(proxy, client, url, timeout, proxy_trusted=proxy_trusted)
         result["client"] = client
         attempts.append(result)
         logging.info("  proxy=%s client=%s ok=%s latency=%.1fs%s",
-                      proxy, client, result["ok"], result["latency"],
+                      _redact_secrets(proxy), client, result["ok"], result["latency"],
                       f" error={result['error']!r}" if not result["ok"] else "")
         if result["ok"]:
             break  # first working client is enough signal for this proxy
@@ -168,7 +179,7 @@ def print_report(results: list) -> None:
             why.append("hit bot-block on some clients")
         if r["rate_limited"]:
             why.append("hit 429 on some clients")
-        print(f"{rank:>3}. score={score:6.1f}  {r['proxy']:<50}  {'; '.join(why)}")
+        print(f"{rank:>3}. score={score:6.1f}  {_redact_secrets(r['proxy']):<50}  {'; '.join(why)}")
     print(f"\n{sum(1 for r in results if r['ok'])}/{len(results)} proxies usable.\n")
 
 
@@ -182,13 +193,13 @@ def main() -> None:
                          help="Skip writing scores to redis (dry run)")
     args = parser.parse_args()
 
-    proxies = get_proxies()
+    proxies, proxies_trusted = get_proxies_with_trust()
     if not proxies:
-        logging.error("No proxies returned by get_proxies() — check YTDLP_PROXY_LIST / PROXY_PROVIDER")
+        logging.error("No proxies returned by get_proxies_with_trust() — check YTDLP_PROXY_LIST / PROXY_PROVIDER")
         return
 
-    logging.info("Testing %d proxies against %s", len(proxies), args.url)
-    results = [test_proxy(p, args.url, args.timeout) for p in proxies]
+    logging.info("Testing %d proxies against %s (trusted=%s)", len(proxies), args.url, proxies_trusted)
+    results = [test_proxy(p, args.url, args.timeout, proxy_trusted=proxies_trusted) for p in proxies]
 
     print_report(results)
     if not args.no_persist:

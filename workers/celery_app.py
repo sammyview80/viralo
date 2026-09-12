@@ -61,6 +61,7 @@ celery_app.conf.update(
         "workers.tasks.video.concat_top_clips": {"queue": "viralo.video.generate"},
         "workers.tasks.video.merge_ai_clips": {"queue": "viralo.video.generate"},
         "workers.tasks.video.refresh_youtube_cookies": {"queue": "viralo.video.pipeline"},
+        "workers.tasks.video.refresh_free_proxy_pool": {"queue": "viralo.video.pipeline"},
         "workers.tasks.video.*": {"queue": "viralo.video.generate"},
         "workers.tasks.series.*": {"queue": "viralo.video.generate"},
         "workers.tasks.agent.*": {"queue": "viralo.agent.run"},
@@ -87,6 +88,15 @@ celery_app.conf.beat_schedule = {
         # Keep the YouTube session warm so cookies don't rotate out from under us.
         "task": "workers.tasks.video.refresh_youtube_cookies",
         "schedule": crontab(minute="*/25"),  # every 25 min — under YouTube's rotation cadence
+    },
+    "refresh-free-proxy-pool": {
+        # Free proxies (default PROXY_PROVIDER=free) are public/shared and rot within
+        # hours — get blacklisted or die outright with no SLA to fall back on. The pool
+        # itself carries a 4h TTL (see proxy_refresh.py), so refreshing every 2h keeps
+        # at least one successful re-validation inside every TTL window as a safety
+        # margin, instead of racing the expiry and occasionally reading an empty key.
+        "task": "workers.tasks.video.refresh_free_proxy_pool",
+        "schedule": crontab(minute=0, hour="*/2"),
     },
     "prune-source-cache": {
         # Evict cached YouTube sources past their TTL so storage doesn't grow unbounded.

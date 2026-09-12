@@ -1,8 +1,14 @@
 """Proxy provider abstraction for yt-dlp downloads.
 
-Three providers, selected by PROXY_PROVIDER:
+Four providers, selected by PROXY_PROVIDER:
 
-  - static       (default): parse a fixed comma-list from YTDLP_PROXY_LIST. Datacenter
+  - free         (default): read a pool of already-VALIDATED free proxies from redis
+                  (see workers/tasks/video/proxy_refresh.py, which fetches + real-tests
+                  a public free-proxy list on a schedule and persists survivors with a
+                  short TTL). No cost, no signup — the tradeoff is a smaller, rotating
+                  pool of lower-quality IPs than a paid plan. Falls back to static if
+                  the redis pool is empty/stale.
+  - static:       parse a fixed comma-list from YTDLP_PROXY_LIST. Datacenter
                   IPs — cheap, but YouTube 360p-caps and bot-blocks them fast.
   - residential:  build N gateway URLs that differ only by session token. Residential
                   vendors (Bright Data / Oxylabs / IPRoyal) rotate the egress IP
@@ -12,12 +18,14 @@ Three providers, selected by PROXY_PROVIDER:
                   assigns a random IP from the pool on EVERY connection — no session
                   token needed. We return N copies of the one gateway URL so the
                   parallel-batch / client-major loops open N independent connections,
-                  each landing on a different egress IP.
+                  each landing on a different egress IP. PAID — kept fully intact and
+                  available, just no longer the default. Re-enable anytime with
+                  PROXY_PROVIDER=webshare (+ WEBSHARE_PROXY_USER/PASS), zero code changes.
 
-Both return list[str] — the exact shape the download loops already consume — so the
+All return list[str] — the exact shape the download loops already consume — so the
 client-major / parallel-batch logic in video.py is untouched.
 
-Cascade mode: set WEBSHARE_FIRST=true with PROXY_PROVIDER=static (default) plus
+Cascade mode: set WEBSHARE_FIRST=true with PROXY_PROVIDER=static plus
 WEBSHARE_PROXY_USER/PASS present to prepend the webshare rotating pool ahead of the
 static list. attempt % len(proxies) in the download retry loop then hits rotating
 proxies on early attempts, falling through to static entries after. Opt-in via
@@ -35,15 +43,79 @@ from urllib.parse import quote
 # glued on with no delimiter (missing newline concatenates the next var).
 _STATIC_RE = re.compile(r'(socks[45]?|https?)://(?:[^@/\s]+@)?[\w.\-]+:\d{2,5}')
 
+# Written by workers/tasks/video/proxy_refresh.py:refresh_free_proxy_pool, read here.
+# Single source of truth for the key name so writer and reader can't drift apart.
+FREE_PROXY_POOL_REDIS_KEY = "ytdlp:free_proxy_pool"
+
+_REDIS_CLIENT = None
+
+
+def _redis_client():
+    """Standalone redis connection, independent of workers.tasks.video's heavy
+    import chain (numpy/cv2/PyAV) — proxies.py stays importable/cheap on its own,
+    including from the light beat/schedule process.
+    """
+    global _REDIS_CLIENT
+    if _REDIS_CLIENT is None:
+        import redis as _redis
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        _REDIS_CLIENT = _redis.from_url(
+            redis_url, max_connections=5, socket_connect_timeout=5, socket_timeout=5)
+    return _REDIS_CLIENT
+
+
+def _redact(value) -> str:
+    """Best-effort credential redaction for log lines in this module.
+
+    Free/static proxy URLs carry no credentials today, but residential/webshare
+    ones do — lazy-import the shared `_redact_secrets` (defined in
+    workers.tasks.video.cookies) so every provider's log lines are scrubbed the
+    same way, without giving this module a module-level dependency on the heavy
+    video package (only pulled in the first time a log line actually needs it).
+    """
+    try:
+        from workers.tasks.video.cookies import _redact_secrets
+        return _redact_secrets(value)
+    except Exception:
+        return "***" if value else "direct"
+
 
 def get_proxies() -> list[str]:
-    # Default is webshare (rotating IP per connection) — static datacenter IPs get
-    # 360p-capped and bot-blocked fast. Explicit opt-in required for static/residential.
-    provider = os.getenv("PROXY_PROVIDER", "webshare").lower()
+    """Backward-compatible list[str] view. Prefer get_proxies_with_trust() for
+    any call site that will attach cookies — see its docstring for why.
+    """
+    proxies, _trusted = get_proxies_with_trust()
+    return proxies
+
+
+def get_proxies_with_trust() -> tuple[list[str], bool]:
+    """Return (proxies, trusted) as ONE atomic decision.
+
+    SECURITY (default-deny by construction, not by registry): `trusted` is
+    computed in the same call, from the same read, that produces `proxies` —
+    there is no separate "is this proxy trusted" lookup a caller could run
+    against stale state, and no mutable set that has to be kept in sync as new
+    call sites appear. Every current and future caller that wants to decide
+    whether to attach YouTube cookies MUST use the `trusted` value returned
+    HERE, not re-derive it from the proxy string or from PROXY_PROVIDER alone.
+
+    Within a single call, every proxy shares the same trust value: this
+    function only ever returns proxies from exactly one source (or, for the
+    WEBSHARE_FIRST cascade, two — both already-trusted). Only the 'free'
+    provider can produce untrusted proxies, and only when it actually reads
+    live entries from the public redis pool (its own static fallback is
+    trusted, same as calling _static_proxies() directly).
+    """
+    # Default is free (self-refreshing validated pool, no cost) — explicit opt-in
+    # required for static/residential/webshare. Webshare remains fully supported;
+    # set PROXY_PROVIDER=webshare (+ creds) to switch back with zero code changes.
+    provider = os.getenv("PROXY_PROVIDER", "free").lower()
+    if provider == "free":
+        return _free_proxies_with_trust()
     if provider == "residential":
-        return _residential_proxies()
+        return _residential_proxies(), True
     if provider in ("webshare", "rotating"):
-        return _webshare_rotating_proxies()
+        return _webshare_rotating_proxies(), True
 
     static = _static_proxies()
     if provider == "static" and os.getenv("WEBSHARE_FIRST", "").lower() in ("1", "true", "yes"):
@@ -54,8 +126,8 @@ def get_proxies() -> list[str]:
             logging.info(
                 "Proxy pool: %d webshare rotating entries + %d static (WEBSHARE_FIRST)",
                 len(rotating), len(static))
-            return rotating + static
-    return static
+            return rotating + static, True
+    return static, True
 
 
 def _static_proxies() -> list[str]:
@@ -82,6 +154,50 @@ def _static_proxies() -> list[str]:
     else:
         logging.warning("YTDLP_PROXY_LIST not set or empty — no static proxies available")
     return proxies
+
+
+def _free_proxies() -> list[str]:
+    """Backward-compatible list[str] view of _free_proxies_with_trust()."""
+    proxies, _trusted = _free_proxies_with_trust()
+    return proxies
+
+
+def _free_proxies_with_trust() -> tuple[list[str], bool]:
+    """Read the pool of pre-validated free proxies from redis; (proxies, trusted).
+
+    Populated by workers.tasks.video.proxy_refresh.refresh_free_proxy_pool, which
+    only writes proxies that passed a REAL yt-dlp video-info extraction (the same
+    test_proxy()/score_result() logic in proxy_quality_tester.py) — never raw,
+    untested candidates straight off the public list. Even so, these are public,
+    unauthenticated, third-party-operated proxies — `trusted` is always False
+    when this branch actually returns live entries from that pool, so callers
+    know never to attach YouTube cookies to a request routed through one
+    (yt-dlp needs --no-check-certificate for proxies in general, so a malicious
+    one could otherwise terminate TLS and read the cookie in plaintext).
+
+    Falls back to _static_proxies() (same fallback pattern used by the
+    residential/webshare providers above, and trusted the same way — operator-
+    configured via YTDLP_PROXY_LIST) when the redis pool is empty — which
+    covers both "refresh task hasn't run yet" and "pool TTL expired" (free
+    proxies die fast; TTL expiry IS the staleness signal here, so an empty read
+    is treated as failure rather than a distinct check).
+    """
+    try:
+        raw = _redis_client().lrange(FREE_PROXY_POOL_REDIS_KEY, 0, -1)
+    except Exception as exc:
+        logging.warning("Could not read free proxy pool from redis: %s", _redact(exc))
+        raw = []
+
+    proxies = [p.decode() if isinstance(p, bytes) else p for p in (raw or [])]
+    if proxies:
+        logging.info("Proxy pool: %d validated free proxies from redis", len(proxies))
+        return proxies, False
+
+    logging.warning(
+        "PROXY_PROVIDER=free but redis pool %r is empty/stale (refresh_free_proxy_pool "
+        "hasn't run yet, or nothing passed real yt-dlp validation) — falling back to "
+        "static proxies", FREE_PROXY_POOL_REDIS_KEY)
+    return _static_proxies(), True
 
 
 def _residential_proxies() -> list[str]:
