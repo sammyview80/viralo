@@ -43,6 +43,7 @@ __all__ = [
     '_seed_live_cookies',
     '_active_cookies_path',
     '_cookies_flags',
+    '_redact_proxy',
     '_ytdlp_base_flags',
     '_POT_CLIENTS',
     '_pot_args',
@@ -50,6 +51,7 @@ __all__ = [
     '_resolve_downloaded',
     '_is_429',
     '_is_bot_blocked',
+    '_is_pot_rejected',
     '_is_bad_cookies',
 ]
 
@@ -218,6 +220,27 @@ def _cookies_flags(unique: bool = False) -> list[str]:
         logging.warning("_cookies_flags: %s", e)
         return []
 
+def _redact_proxy(value) -> str:
+    """Strip `user:pass@` credentials out of a proxy URL before it is logged.
+
+    Real leak found in production: every `Proxy[%d] %s ... failed` warning wrote the
+    FULL Webshare proxy URL — including username and password — into the container
+    logs in plaintext, where any log reader or shipper could harvest them. Logs are
+    not a secret store, so every log/exception path that mentions a proxy MUST go
+    through this helper.
+
+    Returns a stable `scheme://***@host:port` form so the logs stay useful for
+    telling proxies apart without exposing the credential itself. `None` (direct
+    connection) is rendered explicitly rather than as an empty string.
+    """
+    if not value:
+        return "direct"
+    try:
+        return re.sub(r"//[^/@\s]+:[^/@\s]*@", "//***@", str(value))
+    except Exception:
+        return "***"
+
+
 def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> list[str]:
     """Return common yt-dlp flags."""
     limit_rate = os.getenv("YTDLP_LIMIT_RATE", "5M").strip()
@@ -330,6 +353,26 @@ def _is_429(stderr: str) -> bool:
 def _is_bot_blocked(stderr: str) -> bool:
     s = stderr.lower()
     return "sign in to confirm" in s or "not a bot" in s or "confirm you're not a bot" in s
+
+def _is_pot_rejected(stderr: str) -> bool:
+    """True when YouTube rejected the media request with a hard 403.
+
+    Reproduced live (video njBnqiiTeZo): the bgutil PO-token provider answered
+    /ping 200 and minted tokens, yet YouTube returned `403 Forbidden` on the media
+    request for every proxy in the pool. The SAME command with the PO-token args
+    removed downloaded the full file from the SAME proxy/client/cookies — proving
+    the token was the blocker, not the egress IP.
+
+    Deliberately NOT matched here: "sign in to confirm you're not a bot" (that is
+    `_is_bot_blocked`, a genuine IP reputation problem that dropping PO tokens
+    cannot fix) and 429 rate limits. Callers must check `_is_bot_blocked` / `_is_429`
+    FIRST so a real IP block is never misread as a token problem.
+    """
+    s = stderr.lower()
+    if _is_bot_blocked(stderr) or _is_429(stderr):
+        return False
+    return "403" in s and ("forbidden" in s or "unable to download video data" in s)
+
 
 def _is_bad_cookies(stderr: str) -> bool:
     s = stderr.lower()
