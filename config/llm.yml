@@ -8,6 +8,15 @@
 
 # ── Provider priority order ────────────────────────────────────────────────────
 # List names in order of preference. Unlisted providers go at the end.
+#
+# NOTE: "custom" and "openrouter-custom" are env-driven (see CUSTOM_LLM_* and
+# OPENROUTER_MODEL in .env) and auto-prepend to the FRONT of this list at
+# runtime in shared/llm.py — actual precedence comes from that env-based
+# prepend logic, not from listing them here. Only add them below if you need
+# to explicitly override their position relative to each other or the rest
+# of the chain.
+#   - custom              # BYO provider (e.g. your own xAI/Grok key) — tried FIRST if configured
+#   - openrouter-custom   # OpenRouter paid model — tried SECOND if OPENROUTER_MODEL set
 priority:
   - groq-small          # free, fast 8b, separate quota bucket — always try first
   - openrouter-gemma    # free gemma-4, independent rate limit
@@ -36,6 +45,23 @@ defaults:
 # model_large     → used when prefer_large_model: true
 # model_small     → used when prefer_large_model: false
 providers:
+
+  # ── Env-driven providers (documentation only — not read from this file) ──
+  # custom:
+  #   env_key: CUSTOM_LLM_API_KEY  (via CUSTOM_LLM_BASE_URL/API_KEY/MODEL in .env)
+  #   base_url: <CUSTOM_LLM_BASE_URL>
+  #   model_large: <CUSTOM_LLM_MODEL>
+  #   model_small: <CUSTOM_LLM_MODEL_SMALL or falls back to CUSTOM_LLM_MODEL>
+  #   json_mode: <CUSTOM_LLM_JSON_MODE, default true>
+  #   notes: "Bring-your-own provider slot, e.g. xAI/Grok or any OpenAI-compatible endpoint."
+  #
+  # openrouter-custom:
+  #   env_key: OPENROUTER_API_KEY
+  #   base_url: https://openrouter.ai/api/v1
+  #   model_large: <OPENROUTER_MODEL>   # required — no default; distinct from the free "openrouter" entry
+  #   model_small: <OPENROUTER_MODEL>
+  #   json_mode: true
+  #   notes: "Paid/non-free OpenRouter model. Skips silently if OPENROUTER_MODEL unset."
 
   groq-small:
     enabled: true

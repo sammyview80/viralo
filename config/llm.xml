@@ -15,7 +15,15 @@
        Available names: groq-small, openrouter-gemma, groq, cerebras,
                         openrouter, sambanova, cloudflare, azure-openai,
                         github-models, together, fireworks, deepseek,
-                        mistral, novita, gemini
+                        mistral, novita, gemini, custom, openrouter-custom
+
+       NOTE: "custom" and "openrouter-custom" are env-driven (CUSTOM_LLM_*
+       and OPENROUTER_MODEL in .env) and auto-prepend to the FRONT of this
+       list at runtime in shared/llm.py — actual precedence comes from that
+       prepend logic, not from listing them here. Only list them below if
+       you need to explicitly override their default position:
+         provider "custom"            : BYO provider, tried FIRST if configured
+         provider "openrouter-custom" : OpenRouter paid model, tried SECOND if OPENROUTER_MODEL set
   -->
   <priority>
     <provider>groq-small</provider>
@@ -50,6 +58,28 @@
        env_key: environment variable holding the API key
   -->
   <providers>
+
+    <!-- ── Env-driven providers (documentation only — not read from this file) ──
+
+    <provider name="custom" enabled="true">
+      <env_key>CUSTOM_LLM_API_KEY</env_key>
+      <base_url>CUSTOM_LLM_BASE_URL</base_url>
+      <model_large>CUSTOM_LLM_MODEL</model_large>
+      <model_small>CUSTOM_LLM_MODEL_SMALL (falls back to CUSTOM_LLM_MODEL)</model_small>
+      <json_mode>CUSTOM_LLM_JSON_MODE, default true</json_mode>
+      <notes>Bring-your-own provider slot, e.g. xAI/Grok or any OpenAI-compatible endpoint.</notes>
+    </provider>
+
+    <provider name="openrouter-custom" enabled="true">
+      <env_key>OPENROUTER_API_KEY</env_key>
+      <base_url>https://openrouter.ai/api/v1</base_url>
+      <model_large>OPENROUTER_MODEL (required, no default)</model_large>
+      <model_small>OPENROUTER_MODEL</model_small>
+      <json_mode>true</json_mode>
+      <notes>Paid/non-free OpenRouter model, distinct from free "openrouter" entry. Skips if OPENROUTER_MODEL unset.</notes>
+    </provider>
+
+    -->
 
     <provider name="groq-small" enabled="true">
       <env_key>GROQ_API_KEY</env_key>

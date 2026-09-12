@@ -131,6 +131,76 @@ _BASE_PROVIDERS = [
 ]
 
 
+_RESERVED_PROVIDER_NAMES = {
+    "groq-small", "groq", "openrouter-gemma", "openrouter", "sambanova",
+    "cloudflare", "openrouter-deepseek", "openrouter-minimax",
+    "openrouter-llama32", "openrouter-qwen3coder", "openrouter-custom",
+    "azure-openai", "github-models",
+}
+
+
+def _safe_custom_name(name: str) -> str:
+    """Guard against CUSTOM_LLM_NAME colliding with a hardcoded provider name —
+    a collision would corrupt priority/disabled-list handling and share a
+    probe-cache key with the real provider. Falls back to 'custom-byo'."""
+    if name in _RESERVED_PROVIDER_NAMES or name.startswith("groq"):
+        log.warning(
+            f"[LLM] CUSTOM_LLM_NAME={name!r} collides with a built-in provider name — "
+            f"falling back to 'custom-byo'"
+        )
+        return "custom-byo"
+    return name
+
+
+def _build_custom_provider() -> dict | None:
+    """Bring-your-own-provider slot. Configured via CUSTOM_LLM_* env vars.
+    Returns None (no-op) if base_url or api_key missing."""
+    base_url = os.getenv("CUSTOM_LLM_BASE_URL", "").strip()
+    api_key = os.getenv("CUSTOM_LLM_API_KEY", "").strip()
+    if not base_url or not api_key:
+        return None
+    model_large = os.getenv("CUSTOM_LLM_MODEL", "").strip()
+    model_small = os.getenv("CUSTOM_LLM_MODEL_SMALL", "").strip() or model_large
+    if not model_large:
+        return None
+    name = os.getenv("CUSTOM_LLM_NAME", "custom").strip() or "custom"
+    name = _safe_custom_name(name)
+    json_mode = os.getenv("CUSTOM_LLM_JSON_MODE", "true").strip().lower() != "false"
+    return {
+        "name": name,
+        "env_key": "CUSTOM_LLM_API_KEY",
+        "base_url": base_url,
+        "model_large": model_large,
+        "model_small": model_small,
+        "json_mode": json_mode,
+        "_api_key_override": api_key,
+    }
+
+
+_OPENROUTER_PAID_PROVIDER = {
+    "name": "openrouter-custom",
+    "env_key": "OPENROUTER_API_KEY",
+    "base_url": "https://openrouter.ai/api/v1",
+    "model_large": None,  # filled from OPENROUTER_MODEL at build time
+    "model_small": None,
+    "json_mode": True,
+}
+
+
+def _build_openrouter_paid_provider() -> dict | None:
+    """Paid/non-free OpenRouter slot — requires explicit OPENROUTER_MODEL
+    AND OPENROUTER_API_KEY. Distinct from the free-tier 'openrouter' entry
+    in _BASE_PROVIDERS."""
+    model = os.getenv("OPENROUTER_MODEL", "").strip()
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not model or not api_key:
+        return None
+    p = dict(_OPENROUTER_PAID_PROVIDER)
+    p["model_large"] = model
+    p["model_small"] = model
+    return p
+
+
 def _build_groq_slots() -> list[dict]:
     """
     Collect all GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, … from env.
@@ -244,8 +314,21 @@ def _get_providers() -> list[dict]:
 
     providers = priority_head + groq_large + rest
 
+    # Custom BYO provider + OpenRouter paid tier — tried before everything else by default.
+    # xml_priority/LLM_PROVIDER_PRIORITY (below) can still reorder these if named explicitly.
+    front: list[dict] = []
+    custom_provider = _build_custom_provider()
+    if custom_provider is not None:
+        front.append(custom_provider)
+    openrouter_paid = _build_openrouter_paid_provider()
+    if openrouter_paid is not None:
+        front.append(openrouter_paid)
     if os.getenv("GITHUB_TOKEN"):
         providers = priority_head + [_GITHUB_MODELS_PROVIDER] + groq_large + rest
+
+    if front:
+        providers = front + providers
+
     if os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
         providers = providers + [_AZURE_OPENAI_PROVIDER]
 
