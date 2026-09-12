@@ -139,42 +139,72 @@ _RESERVED_PROVIDER_NAMES = {
 }
 
 
-def _safe_custom_name(name: str) -> str:
-    """Guard against CUSTOM_LLM_NAME colliding with a hardcoded provider name —
-    a collision would corrupt priority/disabled-list handling and share a
-    probe-cache key with the real provider. Falls back to 'custom-byo'."""
-    if name in _RESERVED_PROVIDER_NAMES or name.startswith("groq"):
-        log.warning(
-            f"[LLM] CUSTOM_LLM_NAME={name!r} collides with a built-in provider name — "
-            f"falling back to 'custom-byo'"
-        )
-        return "custom-byo"
+def _safe_custom_name(name: str, taken: set[str], fallback: str) -> str:
+    """Guard against CUSTOM_LLM_NAME_N colliding with a hardcoded provider name
+    or with another custom slot's name in this batch — a collision would corrupt
+    priority/disabled-list handling and share a probe-cache key. Falls back to
+    a slot-numbered name so multiple later slots don't all collide into one."""
+    if name in _RESERVED_PROVIDER_NAMES or name.startswith("groq") or name in taken:
+        candidate = fallback
+        i = 2
+        while (candidate in _RESERVED_PROVIDER_NAMES or candidate.startswith("groq") or candidate in taken) and i < 20:
+            candidate = f"{fallback}-{i}"
+            i += 1
+        if candidate in _RESERVED_PROVIDER_NAMES or candidate.startswith("groq") or candidate in taken:
+            # Bounded loop above exhausted — guaranteed-unique fallback: taken is
+            # finite (max 10 custom slots), so at most len(taken)+1 more tries
+            # are needed to find an unused "fallback-N" name.
+            while candidate in taken:
+                candidate = f"{fallback}-{i}"
+                i += 1
+            log.error(
+                f"[LLM] custom provider name={name!r} exhausted normal fallback attempts "
+                f"without finding a unique name — forcing unique name {candidate!r}"
+            )
+        else:
+            log.warning(
+                f"[LLM] custom provider name={name!r} collides with a built-in or "
+                f"already-used provider name — falling back to {candidate!r}"
+            )
+        taken.add(candidate)
+        return candidate
+    taken.add(name)
     return name
 
 
-def _build_custom_provider() -> dict | None:
-    """Bring-your-own-provider slot. Configured via CUSTOM_LLM_* env vars.
-    Returns None (no-op) if base_url or api_key missing."""
-    base_url = os.getenv("CUSTOM_LLM_BASE_URL", "").strip()
-    api_key = os.getenv("CUSTOM_LLM_API_KEY", "").strip()
-    if not base_url or not api_key:
-        return None
-    model_large = os.getenv("CUSTOM_LLM_MODEL", "").strip()
-    model_small = os.getenv("CUSTOM_LLM_MODEL_SMALL", "").strip() or model_large
-    if not model_large:
-        return None
-    name = os.getenv("CUSTOM_LLM_NAME", "custom").strip() or "custom"
-    name = _safe_custom_name(name)
-    json_mode = os.getenv("CUSTOM_LLM_JSON_MODE", "true").strip().lower() != "false"
-    return {
-        "name": name,
-        "env_key": "CUSTOM_LLM_API_KEY",
-        "base_url": base_url,
-        "model_large": model_large,
-        "model_small": model_small,
-        "json_mode": json_mode,
-        "_api_key_override": api_key,
-    }
+_CUSTOM_LLM_SLOT_CAP = 10
+
+
+def _build_custom_providers() -> list[dict]:
+    """Bring-your-own-provider slots. Slot 1 is the unnumbered CUSTOM_LLM_* env
+    vars (backward compatible). Slots 2..10 use CUSTOM_LLM_*_N, same convention
+    as GROQ_API_KEY_2/3/… in _build_groq_slots(). Each slot independently
+    no-ops if base_url/api_key/model are missing."""
+    providers: list[dict] = []
+    taken: set[str] = set()
+    for idx in range(1, _CUSTOM_LLM_SLOT_CAP + 1):
+        suffix = "" if idx == 1 else f"_{idx}"
+        base_url = os.getenv(f"CUSTOM_LLM_BASE_URL{suffix}", "").strip()
+        api_key = os.getenv(f"CUSTOM_LLM_API_KEY{suffix}", "").strip()
+        model_large = os.getenv(f"CUSTOM_LLM_MODEL{suffix}", "").strip()
+        if not base_url or not api_key or not model_large:
+            continue
+        model_small = os.getenv(f"CUSTOM_LLM_MODEL_SMALL{suffix}", "").strip() or model_large
+        default_name = "custom" if idx == 1 else f"custom-{idx}"
+        name = os.getenv(f"CUSTOM_LLM_NAME{suffix}", default_name).strip() or default_name
+        fallback = "custom-byo" if idx == 1 else f"custom-byo-{idx}"
+        name = _safe_custom_name(name, taken, fallback)
+        json_mode = os.getenv(f"CUSTOM_LLM_JSON_MODE{suffix}", "true").strip().lower() != "false"
+        providers.append({
+            "name": name,
+            "env_key": f"CUSTOM_LLM_API_KEY{suffix}",
+            "base_url": base_url,
+            "model_large": model_large,
+            "model_small": model_small,
+            "json_mode": json_mode,
+            "_api_key_override": api_key,
+        })
+    return providers
 
 
 _OPENROUTER_PAID_PROVIDER = {
@@ -317,9 +347,7 @@ def _get_providers() -> list[dict]:
     # Custom BYO provider + OpenRouter paid tier — tried before everything else by default.
     # xml_priority/LLM_PROVIDER_PRIORITY (below) can still reorder these if named explicitly.
     front: list[dict] = []
-    custom_provider = _build_custom_provider()
-    if custom_provider is not None:
-        front.append(custom_provider)
+    front.extend(_build_custom_providers())
     openrouter_paid = _build_openrouter_paid_provider()
     if openrouter_paid is not None:
         front.append(openrouter_paid)

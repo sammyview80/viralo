@@ -54,6 +54,10 @@ providers:
   #   model_small: <CUSTOM_LLM_MODEL_SMALL or falls back to CUSTOM_LLM_MODEL>
   #   json_mode: <CUSTOM_LLM_JSON_MODE, default true>
   #   notes: "Bring-your-own provider slot, e.g. xAI/Grok or any OpenAI-compatible endpoint."
+  #   Multi-provider support via CUSTOM_LLM_*_2 .. CUSTOM_LLM_*_10 (same convention
+  #   as GROQ_API_KEY_2/3/...): CUSTOM_LLM_NAME_2, CUSTOM_LLM_BASE_URL_2,
+  #   CUSTOM_LLM_API_KEY_2, CUSTOM_LLM_MODEL_2, CUSTOM_LLM_MODEL_SMALL_2,
+  #   CUSTOM_LLM_JSON_MODE_2, etc. Unnamed default: slot 1 -> "custom", slot N -> "custom-N".
   #
   # openrouter-custom:
   #   env_key: OPENROUTER_API_KEY

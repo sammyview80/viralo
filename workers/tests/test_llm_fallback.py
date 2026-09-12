@@ -200,3 +200,40 @@ def test_upload_files_skips_missing_thumbnail():
 
     assert result[0].endswith("vid.mp4")
     assert result[1] is None
+
+
+# ── _build_custom_providers fallback-name dedup regression ────────────────────
+
+def test_build_custom_providers_fallback_names_no_duplicate(monkeypatch):
+    """Codex repro: slot 2 explicitly named 'custom-byo-3' (user-controllable),
+    slot 3 collides on a reserved name ('groq') and would naively fall back to
+    'custom-byo-3' too -> duplicate provider names. Fallback resolution must
+    keep incrementing until unique."""
+    from shared.llm import _build_custom_providers
+
+    for i in list(range(2, 11)):
+        for var in ("NAME", "BASE_URL", "API_KEY", "MODEL", "MODEL_SMALL", "JSON_MODE"):
+            monkeypatch.delenv(f"CUSTOM_LLM_{var}_{i}", raising=False)
+    for var in ("NAME", "BASE_URL", "API_KEY", "MODEL", "MODEL_SMALL", "JSON_MODE"):
+        monkeypatch.delenv(f"CUSTOM_LLM_{var}", raising=False)
+
+    monkeypatch.setenv("CUSTOM_LLM_BASE_URL", "https://slot1.example.com/v1")
+    monkeypatch.setenv("CUSTOM_LLM_API_KEY", "key1")
+    monkeypatch.setenv("CUSTOM_LLM_MODEL", "model1")
+
+    monkeypatch.setenv("CUSTOM_LLM_NAME_2", "custom-byo-3")
+    monkeypatch.setenv("CUSTOM_LLM_BASE_URL_2", "https://slot2.example.com/v1")
+    monkeypatch.setenv("CUSTOM_LLM_API_KEY_2", "key2")
+    monkeypatch.setenv("CUSTOM_LLM_MODEL_2", "model2")
+
+    monkeypatch.setenv("CUSTOM_LLM_NAME_3", "groq")
+    monkeypatch.setenv("CUSTOM_LLM_BASE_URL_3", "https://slot3.example.com/v1")
+    monkeypatch.setenv("CUSTOM_LLM_API_KEY_3", "key3")
+    monkeypatch.setenv("CUSTOM_LLM_MODEL_3", "model3")
+
+    providers = _build_custom_providers()
+    names = [p["name"] for p in providers]
+
+    assert len(names) == len(set(names)), f"duplicate provider names: {names}"
+    assert names[1] == "custom-byo-3"
+    assert names[2] != "custom-byo-3"
