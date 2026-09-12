@@ -283,3 +283,36 @@ def _webshare_rotating_proxies() -> list[str]:
     logging.info("Proxy pool: %d connections via Webshare rotating endpoint %s:%s",
                  pool, host, port)
     return proxies
+
+
+def get_static_fallback_proxy() -> str | None:
+    """Return a single STATIC (non-rotating) Webshare proxy URL, or None if unset.
+
+    Real production failure: when the rotating-endpoint account runs out of
+    balance, EVERY rotating connection gets a 402 Payment Required, and the
+    download loop falls straight through to direct/no-proxy — which YouTube
+    bot-blocks on this host's flagged IP. A separate static Webshare plan
+    (different balance/billing) gives one more proxy tier to try before
+    giving up on a proxied connection entirely.
+
+    Configure with either:
+      WEBSHARE_STATIC_PROXY_URL             full "scheme://user:pass@host:port" URL, or
+      WEBSHARE_STATIC_PROXY_HOST/PORT/USER/PASS/SCHEME (mirrors the rotating-endpoint
+                                             vars above; SCHEME defaults to http)
+
+    Silently returns None (no fallback tier, no behavior change) when neither
+    form is configured — this is an opt-in ops safety net, not a required var.
+    """
+    full_url = os.getenv("WEBSHARE_STATIC_PROXY_URL", "").strip()
+    if full_url:
+        return full_url
+
+    host = os.getenv("WEBSHARE_STATIC_PROXY_HOST", "").strip()
+    port = os.getenv("WEBSHARE_STATIC_PROXY_PORT", "").strip()
+    user = os.getenv("WEBSHARE_STATIC_PROXY_USER", "").strip()
+    pw = os.getenv("WEBSHARE_STATIC_PROXY_PASS", "").strip()
+    if not (host and port and user and pw):
+        return None
+
+    scheme = os.getenv("WEBSHARE_STATIC_PROXY_SCHEME", "http").strip()
+    return f"{scheme}://{quote(user, safe='')}:{quote(pw, safe='')}@{host}:{port}"
