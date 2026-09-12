@@ -43,7 +43,7 @@ __all__ = [
     '_seed_live_cookies',
     '_active_cookies_path',
     '_cookies_flags',
-    '_redact_proxy',
+    '_redact_secrets',
     '_ytdlp_base_flags',
     '_POT_CLIENTS',
     '_pot_args',
@@ -83,7 +83,7 @@ def _record_good_proxy(proxy: str) -> None:
     try:
         redis_client.setex(_GOOD_PROXY_REDIS_KEY, _GOOD_PROXY_TTL_SEC, proxy)
     except Exception as exc:
-        logging.warning("Could not persist good proxy to redis: %s", exc)
+        logging.warning("Could not persist good proxy to redis: %s", _redact_secrets(exc))
 
 
 _PROXY_SCORE_REDIS_KEY = "ytdlp:proxy_scores"
@@ -108,7 +108,7 @@ def _top_scored_proxies(proxies: list[str]) -> list[str]:
     try:
         raw = redis_client.hgetall(_PROXY_SCORE_REDIS_KEY)
     except Exception as exc:
-        logging.warning("Could not read proxy scores from redis: %s", exc)
+        logging.warning("Could not read proxy scores from redis: %s", _redact_secrets(exc))
         return []
     if not raw:
         return []
@@ -148,11 +148,11 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
         if redis_good:
             good = redis_good.decode() if isinstance(redis_good, bytes) else redis_good
     except Exception as exc:
-        logging.warning("Could not read good proxy from redis, using in-process fallback: %s", exc)
+        logging.warning("Could not read good proxy from redis, using in-process fallback: %s", _redact_secrets(exc))
     if good and good in proxies:
         proxies.remove(good)
         proxies.insert(0, good)
-        logging.info("Trying last known-good proxy first: %s", good)
+        logging.info("Trying last known-good proxy first: %s", _redact_secrets(good))
     return proxies
 
 
@@ -188,7 +188,7 @@ def _seed_live_cookies() -> None:
             live.write_bytes(Path(_COOKIES_BUNDLED).read_bytes())
             logging.info("Seeded live cookie store %s from bundled file", _COOKIES_LIVE)
     except Exception as e:
-        logging.warning("_seed_live_cookies: %s", e)
+        logging.warning("_seed_live_cookies: %s", _redact_secrets(e))
 
 
 def _active_cookies_path() -> str | None:
@@ -217,26 +217,35 @@ def _cookies_flags(unique: bool = False) -> list[str]:
         tmp.close()
         return ["--cookies", tmp.name]
     except Exception as e:
-        logging.warning("_cookies_flags: %s", e)
+        logging.warning("_cookies_flags: %s", _redact_secrets(e))
         return []
 
-def _redact_proxy(value) -> str:
-    """Strip `user:pass@` credentials out of a proxy URL before it is logged.
+# Matches the `user:pass@` (or bare `user@`) segment of any `scheme://...@host`
+# URL. Greedy `[^\s]+` (not `[^/@\s]+`) so credentials containing unencoded `/`
+# are still consumed up to the LAST `@` before the host, instead of stopping at
+# the first `/` and leaving the rest of the credential exposed.
+_URL_CRED_RE = re.compile(r"//[^\s@]+@")
 
-    Real leak found in production: every `Proxy[%d] %s ... failed` warning wrote the
-    FULL Webshare proxy URL — including username and password — into the container
-    logs in plaintext, where any log reader or shipper could harvest them. Logs are
-    not a secret store, so every log/exception path that mentions a proxy MUST go
-    through this helper.
 
-    Returns a stable `scheme://***@host:port` form so the logs stay useful for
-    telling proxies apart without exposing the credential itself. `None` (direct
-    connection) is rendered explicitly rather than as an empty string.
+def _redact_secrets(value) -> str:
+    """Scrub any `scheme://user:pass@host` credential out of a value before logging.
+
+    Real leak found in production: proxy URLs (and any exception/stderr text
+    that echoes one back — subprocess errors embed the full argv, yt-dlp's own
+    stderr echoes `--proxy user:pass@host`) reached container logs in
+    plaintext. ONE function, used at every log/print/exception site that might
+    carry a proxy URL or wrap a subprocess/driver error — no separate
+    "redact this known value" vs "scrub this free-form text" split, since both
+    are the same substitution.
+
+    Returns a stable `scheme://***@host:port` form (or `"direct"` for a falsy
+    value, e.g. no proxy in use) so logs stay useful for telling proxies/errors
+    apart without exposing the credential itself.
     """
     if not value:
         return "direct"
     try:
-        return re.sub(r"//[^/@\s]+:[^/@\s]*@", "//***@", str(value))
+        return _URL_CRED_RE.sub("//***@", str(value))
     except Exception:
         return "***"
 
@@ -323,7 +332,7 @@ def _check_pot_provider_health() -> None:
         except Exception:
             logging.warning("bgutil-pot-provider unreachable at %s (ping failed)", base_url)
     except Exception as e:
-        logging.warning("_check_pot_provider_health: %s", e)
+        logging.warning("_check_pot_provider_health: %s", _redact_secrets(e))
 
 
 def _resolve_downloaded(template_path: str) -> str | None:

@@ -19,7 +19,7 @@ from workers.tasks.video.cookies import (
     _is_429,
     _is_bot_blocked,
     _is_pot_rejected,
-    _redact_proxy,
+    _redact_secrets,
 )
 
 
@@ -62,32 +62,32 @@ class TestProxyRedaction:
 
     def test_webshare_credentials_are_stripped(self):
         raw = "http://someuserresidential-rotate:sup3rs3cret@p.webshare.io:80"
-        out = _redact_proxy(raw)
+        out = _redact_secrets(raw)
         assert "sup3rs3cret" not in out
         assert "someuserresidential-rotate" not in out
         assert out == "http://***@p.webshare.io:80"
 
     def test_host_and_port_survive_so_logs_stay_useful(self):
-        out = _redact_proxy("http://user:pass@p.webshare.io:80")
+        out = _redact_secrets("http://user:pass@p.webshare.io:80")
         assert "p.webshare.io:80" in out
 
     def test_proxy_without_credentials_is_unchanged(self):
         raw = "http://150.241.110.112:7116"
-        assert _redact_proxy(raw) == raw
+        assert _redact_secrets(raw) == raw
 
     def test_direct_connection_is_labelled_not_blank(self):
-        assert _redact_proxy(None) == "direct"
-        assert _redact_proxy("") == "direct"
+        assert _redact_secrets(None) == "direct"
+        assert _redact_secrets("") == "direct"
 
     def test_no_password_survives_any_scheme(self):
         for scheme in ("http", "https", "socks5"):
-            out = _redact_proxy(f"{scheme}://u:p4ssw0rd@host:1080")
+            out = _redact_secrets(f"{scheme}://u:p4ssw0rd@host:1080")
             assert "p4ssw0rd" not in out
 
     def test_the_exact_leaked_production_line_is_now_safe(self):
         # Real line found in dev-celery-video-pipeline-1 logs.
         leaked = "http://bjhcnjumresidential-rotate:y84s5ckl1y4j@p.webshare.io:80"
-        out = _redact_proxy(leaked)
+        out = _redact_secrets(leaked)
         assert "y84s5ckl1y4j" not in out
         assert "bjhcnjum" not in out
 
