@@ -1410,6 +1410,7 @@ def refresh_youtube_cookies(self) -> dict:
     lock = redis_client.set("yt:cookie-warm:lock", "1", nx=True, ex=140)
     if not lock:
         return {"status": "locked"}
+    _check_pot_provider_health()
     try:
         path = _active_cookies_path()
         if not path:

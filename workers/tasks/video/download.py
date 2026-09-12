@@ -582,6 +582,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
         else:
             # Default: for each client tier, try every proxy in turn; only drop to the
             # next (lower-quality) client after the current one fails on ALL proxies.
+            try:
+                inter_sleep = float(os.getenv("YTDLP_INTER_ATTEMPT_SLEEP", "1") or "0")
+            except ValueError:
+                inter_sleep = 1.0
             for client in _CLIENT_TIERS:
                 logging.info("Phase 1: trying client=%s across %d proxies", client, len(proxies))
                 for idx, proxy in enumerate(proxies):
@@ -589,6 +593,8 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         return winner["client"]
                     if moved.is_set():
                         return winner["client"]
+                    if inter_sleep > 0:
+                        time.sleep(random.uniform(0.5, 1.5) * inter_sleep)
                 logging.info("Client=%s failed on all proxies, dropping to next client", client)
         errors.extend(proxy_errors)
 
