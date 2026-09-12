@@ -421,17 +421,18 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
     # parallel hammered the same video from N IPs at once, which itself trips bot
     # detection; sequential is gentler and stops as soon as one proxy wins.
     # Set YTDLP_PROXY_PARALLEL=1 to restore the old parallel race.
-    if proxies:
-        import concurrent.futures, threading as _threading
-        _parallel = os.getenv("YTDLP_PROXY_PARALLEL", "") == "1"
-        logging.info("Phase 1: trying %d env proxies (%s)", len(proxies),
-                     "parallel race" if _parallel else "sequential")
-        proxy_errors: list[str] = []
-        proxy_errors_lock = _threading.Lock()
-        move_lock = _threading.Lock()
-        moved = _threading.Event()
+    # Shared across the rotating-proxy phase (below) AND the static-proxy fallback
+    # phase (after it): both reuse the same `_try_proxy` helper/locks so a static
+    # fallback attempt participates in the same "first strategy to move() wins"
+    # coordination as the rotating pool, instead of duplicating that machinery.
+    import concurrent.futures, threading as _threading
+    _parallel = os.getenv("YTDLP_PROXY_PARALLEL", "") == "1"
+    proxy_errors: list[str] = []
+    proxy_errors_lock = _threading.Lock()
+    move_lock = _threading.Lock()
+    moved = _threading.Event()
 
-        def _try_proxy(proxy: str, idx: int, clients: list[str]) -> bool:
+    def _try_proxy(proxy: str, idx: int | str, clients: list[str]) -> bool:
             if moved.is_set():
                 return False
             import threading as _t
@@ -495,7 +496,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                     if reason == "bot":
                         bot_blocked_seen["flag"] = True
                     is_fmt_unavailable = "not available" in actual_error and "format" in actual_error.lower()
-                    logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | ERROR: %s", idx, _redact_secrets(proxy), client, reason, proc.returncode, actual_error[:300])
+                    logging.warning("Proxy[%s] %s client=%s → %s | rc=%s | ERROR: %s", idx, _redact_secrets(proxy), client, reason, proc.returncode, actual_error[:300])
                     with proxy_errors_lock:
                         proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: {reason}: {actual_error[:150]}")
                     if _is_429(stderr) or _is_bot_blocked(stderr):
@@ -529,17 +530,17 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                         winner["client"] = client
                                         _record_good_proxy(proxy)
                                         logging.info(
-                                            "Proxy[%d] %s client=%s won WITHOUT PO token "
+                                            "Proxy[%s] %s client=%s won WITHOUT PO token "
                                             "(provider token was rejected by YouTube)",
                                             idx, _redact_secrets(proxy), client)
                                         return True
-                            logging.warning("Proxy[%d] %s client=%s no-PO retry also failed",
+                            logging.warning("Proxy[%s] %s client=%s no-PO retry also failed",
                                             idx, _redact_secrets(proxy), client)
                         except subprocess.TimeoutExpired:
-                            logging.warning("Proxy[%d] %s client=%s no-PO retry timed out",
+                            logging.warning("Proxy[%s] %s client=%s no-PO retry timed out",
                                             idx, _redact_secrets(proxy), client)
                         except Exception as _e:
-                            logging.warning("Proxy[%d] %s client=%s no-PO retry error: %s",
+                            logging.warning("Proxy[%s] %s client=%s no-PO retry error: %s",
                                             idx, _redact_secrets(proxy), client, _redact_secrets(_e))
                         finally:
                             import glob as _glob
@@ -573,7 +574,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                         _record_good_proxy(proxy)
                                         logging.info("Proxy race won by %s client=%s fmt=permissive", _redact_secrets(proxy), client)
                                         return True
-                            logging.warning("Proxy[%d] %s client=%s fmt-fallback found no a/v formats either",
+                            logging.warning("Proxy[%s] %s client=%s fmt-fallback found no a/v formats either",
                                             idx, _redact_secrets(proxy), client)
                         except Exception:
                             pass
@@ -590,12 +591,12 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         proc.wait(timeout=5)
                     except Exception:
                         pass
-                    logging.warning("Proxy[%d] %s client=%s → timeout", idx, _redact_secrets(proxy), client)
+                    logging.warning("Proxy[%s] %s client=%s → timeout", idx, _redact_secrets(proxy), client)
                     with proxy_errors_lock:
                         proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: timeout")
                 except Exception as e:
                     _safe_e = _redact_secrets(e)
-                    logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, _redact_secrets(proxy), client, _safe_e)
+                    logging.warning("Proxy[%s] %s client=%s → exception: %s", idx, _redact_secrets(proxy), client, _safe_e)
                     with proxy_errors_lock:
                         proxy_errors.append(f"proxy[{idx}] [{client}]: {_safe_e}")
                 finally:
@@ -609,16 +610,19 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                             pass
             return False
 
-        # Client-MAJOR order: exhaust a high-quality client across EVERY proxy before
-        # settling for a lower-quality one. `tv` carries the full HD/4K ladder — BUT
-        # YouTube now runs a DRM experiment that, on many datacenter/proxy IPs, marks
-        # every `tv` https format DRM-protected so only storyboard images remain
-        # ("Requested format is not available"; yt-dlp #12563). `mweb` and `web_safari`
-        # return the same full adaptive ladder (4K/1080p, +PO +cookies), are NOT under
-        # that tv DRM experiment, and are NOT 360p-capped like plain `web` — so they sit
-        # right after `tv`. Plain `web` (360p-only on these IPs) and ios go last.
-        _CLIENT_TIERS = ["mweb", "web_safari", "tv", "android_vr", "web", "ios"]
+    # Client-MAJOR order: exhaust a high-quality client across EVERY proxy before
+    # settling for a lower-quality one. `tv` carries the full HD/4K ladder — BUT
+    # YouTube now runs a DRM experiment that, on many datacenter/proxy IPs, marks
+    # every `tv` https format DRM-protected so only storyboard images remain
+    # ("Requested format is not available"; yt-dlp #12563). `mweb` and `web_safari`
+    # return the same full adaptive ladder (4K/1080p, +PO +cookies), are NOT under
+    # that tv DRM experiment, and are NOT 360p-capped like plain `web` — so they sit
+    # right after `tv`. Plain `web` (360p-only on these IPs) and ios go last.
+    _CLIENT_TIERS = ["mweb", "web_safari", "tv", "android_vr", "web", "ios"]
 
+    if proxies:
+        logging.info("Phase 1: trying %d env proxies (%s)", len(proxies),
+                     "parallel race" if _parallel else "sequential")
         if _parallel:
             # Opt-in legacy behaviour: race all proxies in parallel batches, per client tier.
             BATCH = 10
@@ -653,6 +657,24 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         time.sleep(random.uniform(0.5, 1.5) * inter_sleep)
                 logging.info("Client=%s failed on all proxies, dropping to next client", client)
         errors.extend(proxy_errors)
+
+    # Phase 1.5: rotating pool exhausted/unavailable (e.g. Webshare rotating plan
+    # out of balance → every rotating proxy 402s) — try a single STATIC Webshare
+    # proxy (separate plan/credentials) before giving up and going direct, since
+    # direct almost always hits YouTube's bot-block on this host's flagged IP.
+    # Silently skipped if the static proxy env vars aren't configured — no
+    # behavior change for deployments that don't set them.
+    static_proxy = _webshare_static_proxy()
+    if static_proxy and not moved.is_set():
+        logging.info("Phase 1.5: rotating pool failed — trying static fallback proxy %s",
+                     _redact_secrets(static_proxy))
+        _errors_before_static = len(proxy_errors)
+        for client in _CLIENT_TIERS:
+            if _try_proxy(static_proxy, "static", [client]):
+                return winner["client"]
+            if moved.is_set():
+                return winner["client"]
+        errors.extend(proxy_errors[_errors_before_static:])
 
     # Phase 2: direct strategies (android_vr no-cookies, then cookie-based clients)
     logging.info("Phase 2: trying direct strategies (no proxy)")
