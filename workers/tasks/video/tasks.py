@@ -1431,13 +1431,23 @@ def refresh_youtube_cookies(self) -> dict:
         tmp.close()
         # --simulate: no download, just a metadata request that refreshes the session.
         # tv_embedded + PO token mirrors the real download path.
+        proxies, proxies_trusted = _ytdlp_proxies_with_trust()
+        proxy = (proxies or [None])[0]
+        # SECURITY (default-deny): this cookie file IS the live YouTube session —
+        # never send it over an untrusted proxy (see _ytdlp_base_flags in
+        # cookies.py for the full rationale). `proxies_trusted` came from the
+        # SAME call that produced `proxy`, so there's nothing to go stale.
+        cookies_flag = ["--cookies", tmp.name] if (proxy is None or proxies_trusted) else []
+        if proxy and not proxies_trusted:
+            logging.warning(
+                "refresh_youtube_cookies: skipping cookies for untrusted proxy %s",
+                _redact_secrets(proxy))
         cmd = (["yt-dlp", "--simulate", "--no-warnings",
-                "--socket-timeout", "20", "--retries", "1",
-                "--cookies", tmp.name]
+                "--socket-timeout", "20", "--retries", "1"]
+               + cookies_flag
                + _pot_args("tv_embedded")
                + ["--extractor-args", "youtube:player_client=tv_embedded",
                   "-f", "bestvideo+bestaudio/best", _COOKIE_WARM_URL])
-        proxy = (_ytdlp_proxies() or [None])[0]
         if proxy:
             cmd += ["--proxy", proxy]
         try:

@@ -34,7 +34,10 @@ from workers.tasks.video._core import *
 
 __all__ = [
     '_ytdlp_proxies',
+    '_ytdlp_proxies_with_trust',
     '_ytdlp_proxies_with_refresh',
+    '_ytdlp_proxies_with_refresh_with_trust',
+    '_webshare_static_proxy',
     '_COOKIES_BUNDLED',
     '_COOKIES_LIVE',
     '_MIN_COOKIE_BYTES',
@@ -60,9 +63,25 @@ def _ytdlp_proxies() -> list[str]:
 
     See workers/tasks/proxies.py. Returns list[str] of proxy URLs — residential
     entries differ only by session token, so each resolves to a fresh egress IP.
+
+    Backward-compatible list[str] view — discards trust. Any caller that will
+    attach cookies MUST use _ytdlp_proxies_with_trust() instead; see its
+    docstring for why a separate "is this proxy trusted" lookup is unsafe.
+    """
+    proxies, _trusted = _ytdlp_proxies_with_trust()
+    return proxies
+
+
+def _ytdlp_proxies_with_trust() -> tuple[list[str], bool]:
+    """(proxies, trusted) as ONE atomic pair — see proxies.get_proxies_with_trust().
+
+    `trusted` is False only when the pool actually came from the untrusted
+    free/public provider; every operator-configured provider (static,
+    residential, webshare) is True. Callers MUST gate cookie attachment
+    (_ytdlp_base_flags(..., proxy_trusted=...)) on this value, not re-derive it.
     """
     from workers.tasks import proxies as _proxies
-    return _proxies.get_proxies()
+    return _proxies.get_proxies_with_trust()
 
 
 _GOOD_PROXY_REDIS_KEY = "ytdlp:last_good_proxy"
@@ -134,7 +153,18 @@ def _top_scored_proxies(proxies: list[str]) -> list[str]:
 
 
 def _ytdlp_proxies_with_refresh() -> list[str]:
-    proxies = _ytdlp_proxies()
+    """Backward-compatible list[str] view of _ytdlp_proxies_with_refresh_with_trust()."""
+    proxies, _trusted = _ytdlp_proxies_with_refresh_with_trust()
+    return proxies
+
+
+def _ytdlp_proxies_with_refresh_with_trust() -> tuple[list[str], bool]:
+    """Same reordering as _ytdlp_proxies_with_refresh(), but ALSO returns whether
+    the whole (reordered) pool is trusted — reordering never changes which
+    provider produced the list, so the trust value from the single underlying
+    _ytdlp_proxies_with_trust() call applies unchanged to every entry.
+    """
+    proxies, trusted = _ytdlp_proxies_with_trust()
 
     top_scored = _top_scored_proxies(proxies)
     if top_scored:
@@ -153,7 +183,7 @@ def _ytdlp_proxies_with_refresh() -> list[str]:
         proxies.remove(good)
         proxies.insert(0, good)
         logging.info("Trying last known-good proxy first: %s", _redact_secrets(good))
-    return proxies
+    return proxies, trusted
 
 
 # Bundled cookies: read-only, baked into the image / mounted from the repo.
@@ -200,7 +230,7 @@ def _active_cookies_path() -> str | None:
     return None
 
 
-def _cookies_flags(unique: bool = False) -> list[str]:
+def _cookies_flags() -> list[str]:
     """Return --cookies flag pointing to a per-call writable copy of the active file.
 
     Per-call copy so parallel download workers don't corrupt each other's file
@@ -250,8 +280,28 @@ def _redact_secrets(value) -> str:
         return "***"
 
 
-def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> list[str]:
-    """Return common yt-dlp flags."""
+def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False,
+                       proxy_trusted: bool = False) -> list[str]:
+    """Return common yt-dlp flags.
+
+    SECURITY (default-deny): `proxy_trusted` defaults to False, so any call
+    site that passes a proxy WITHOUT explicitly marking it trusted gets NO
+    cookies — the safe direction to fail in. Cookies are attached only when
+    `use_cookies` AND (`proxy` is None, i.e. a direct/no-proxy request, OR
+    `proxy_trusted` is True). Callers MUST get `proxy_trusted` from
+    workers.tasks.proxies.get_proxies_with_trust() (or
+    cookies._ytdlp_proxies_with_trust() / _ytdlp_proxies_with_refresh_with_trust()),
+    evaluated in the SAME call that produced `proxy` — never inferred later
+    from the proxy string, and never read from a separate mutable registry
+    that could go stale between when a proxy was fetched and when it's used.
+
+    Why this matters: yt-dlp always runs with `--no-check-certificate` (many
+    proxies, trusted or not, break strict cert validation on the CONNECT
+    tunnel) — for an untrusted public proxy that means it can terminate TLS
+    and read the YouTube session cookie in plaintext. The fix is "never send
+    cookies over an untrusted proxy", not "trust proxies more" — certificate
+    verification stays off for everyone regardless of trust.
+    """
     limit_rate = os.getenv("YTDLP_LIMIT_RATE", "5M").strip()
     rate_flags = ["--limit-rate", limit_rate] if limit_rate else []
     if proxy:
@@ -262,7 +312,13 @@ def _ytdlp_base_flags(proxy: str | None = None, use_cookies: bool = False) -> li
         flags = ["--no-check-certificate", "--retries", "2", "--fragment-retries", "3",
                  "--socket-timeout", "20"] + rate_flags
     if use_cookies:
-        flags += _cookies_flags()
+        if proxy and not proxy_trusted:
+            logging.warning(
+                "Skipping cookies for untrusted proxy %s — proxies run with "
+                "--no-check-certificate and could intercept the session cookie",
+                _redact_secrets(proxy))
+        else:
+            flags += _cookies_flags()
     return flags
 
 

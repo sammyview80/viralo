@@ -35,5 +35,6 @@ from workers.tasks.video.transcribe import *  # noqa: F401,F403
 from workers.tasks.video.ai import *  # noqa: F401,F403
 from workers.tasks.video.render import *  # noqa: F401,F403
 from workers.tasks.video.download import *  # noqa: F401,F403
+from workers.tasks.video.proxy_refresh import *  # noqa: F401,F403
 from workers.tasks.video.pipeline import *  # noqa: F401,F403
 from workers.tasks.video.tasks import *  # noqa: F401,F403
