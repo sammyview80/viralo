@@ -58,7 +58,7 @@ def _ytdlp_fetch_json_worker(url: str, timeout: int = 20) -> dict:
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout.strip().splitlines()[0])
     except Exception as e:
-        logging.warning("_ytdlp_fetch_json_worker failed: %s", e)
+        logging.warning("_ytdlp_fetch_json_worker failed: %s", _redact_secrets(e))
     return {}
 
 
@@ -101,11 +101,11 @@ def _fetch_youtube_metadata(url: str, video_id: str | None = None) -> dict:
                     storage = get_storage(provider)
                     thumbnail_url = asyncio.run(storage.upload(thumb_data, storage_key, "image/jpeg"))
             except Exception as e:
-                logging.warning("thumbnail upload failed, using raw URL: %s", e)
+                logging.warning("thumbnail upload failed, using raw URL: %s", _redact_secrets(e))
 
         return {"title": title, "thumbnail_url": thumbnail_url}
     except Exception as e:
-        logging.warning("_fetch_youtube_metadata failed: %s", e)
+        logging.warning("_fetch_youtube_metadata failed: %s", _redact_secrets(e))
         return {"title": "", "thumbnail_url": ""}
 
 
@@ -131,7 +131,7 @@ def _get_youtube_info(url: str) -> dict:
                 "live_status": info.get("live_status") or "",
             }
     except Exception as e:
-        logging.warning("_get_youtube_info failed: %s", e)
+        logging.warning("_get_youtube_info failed: %s", _redact_secrets(e))
     return {}
 
 
@@ -378,7 +378,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
             t_out.join(timeout=5); t_err.join(timeout=5)
             if proc.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 0:
                 return True, ""
-            return False, "\n".join(stderr_lines[-20:])
+            return False, _redact_secrets("\n".join(stderr_lines[-20:]))
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
@@ -387,7 +387,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 pass
             return False, "timeout"
         except Exception as e:
-            return False, str(e)
+            return False, _redact_secrets(e)
 
     # Phase 0: high-quality DIRECT attempt (no proxy) FIRST. Our own egress IP is
     # usually unflagged, so the `tv` client (full HD/4K ladder, +PO +cookies) succeeds
@@ -473,7 +473,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                 moved.set()
                                 winner["client"] = client
                                 _record_good_proxy(proxy)
-                                logging.info("Proxy race won by %s client=%s", _redact_proxy(proxy), client)
+                                logging.info("Proxy race won by %s client=%s", _redact_secrets(proxy), client)
                                 return True
                     # Find the actual ERROR line. Skip [debug]/[download]/[info] progress
                     # lines — with metadata-only clients (android_vr) the last stderr
@@ -489,15 +489,15 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                             "no downloadable formats (metadata-only extraction — missing PO token?)"
                             if proc.returncode == 0 else (stderr_lines[-1] if stderr_lines else "")
                         ]
-                    actual_error = error_lines[-1]
-                    stderr = "\n".join(stderr_lines[-5:])
+                    actual_error = _redact_secrets(error_lines[-1])
+                    stderr = _redact_secrets("\n".join(stderr_lines[-5:]))
                     reason = "429" if _is_429(stderr) else ("bot" if _is_bot_blocked(stderr) else "failed")
                     if reason == "bot":
                         bot_blocked_seen["flag"] = True
                     is_fmt_unavailable = "not available" in actual_error and "format" in actual_error.lower()
-                    logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | ERROR: %s", idx, _redact_proxy(proxy), client, reason, proc.returncode, actual_error[:300])
+                    logging.warning("Proxy[%d] %s client=%s → %s | rc=%s | ERROR: %s", idx, _redact_secrets(proxy), client, reason, proc.returncode, actual_error[:300])
                     with proxy_errors_lock:
-                        proxy_errors.append(f"proxy[{idx}] {_redact_proxy(proxy)} [{client}]: {reason}: {actual_error[:150]}")
+                        proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: {reason}: {actual_error[:150]}")
                     if _is_429(stderr) or _is_bot_blocked(stderr):
                         break  # same proxy, different clients won't help if IP is blocked
                     if _is_pot_rejected(stderr) and _pot_args(client):
@@ -531,16 +531,16 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                         logging.info(
                                             "Proxy[%d] %s client=%s won WITHOUT PO token "
                                             "(provider token was rejected by YouTube)",
-                                            idx, _redact_proxy(proxy), client)
+                                            idx, _redact_secrets(proxy), client)
                                         return True
                             logging.warning("Proxy[%d] %s client=%s no-PO retry also failed",
-                                            idx, _redact_proxy(proxy), client)
+                                            idx, _redact_secrets(proxy), client)
                         except subprocess.TimeoutExpired:
                             logging.warning("Proxy[%d] %s client=%s no-PO retry timed out",
-                                            idx, _redact_proxy(proxy), client)
+                                            idx, _redact_secrets(proxy), client)
                         except Exception as _e:
                             logging.warning("Proxy[%d] %s client=%s no-PO retry error: %s",
-                                            idx, _redact_proxy(proxy), client, _e)
+                                            idx, _redact_secrets(proxy), client, _redact_secrets(_e))
                         finally:
                             import glob as _glob
                             for _f in [tmp_path_np] + _glob.glob(_glob.escape(tmp_path_np) + ".*"):
@@ -571,10 +571,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                                         moved.set()
                                         winner["client"] = client
                                         _record_good_proxy(proxy)
-                                        logging.info("Proxy race won by %s client=%s fmt=permissive", _redact_proxy(proxy), client)
+                                        logging.info("Proxy race won by %s client=%s fmt=permissive", _redact_secrets(proxy), client)
                                         return True
                             logging.warning("Proxy[%d] %s client=%s fmt-fallback found no a/v formats either",
-                                            idx, _redact_proxy(proxy), client)
+                                            idx, _redact_secrets(proxy), client)
                         except Exception:
                             pass
                         finally:
@@ -590,13 +590,14 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                         proc.wait(timeout=5)
                     except Exception:
                         pass
-                    logging.warning("Proxy[%d] %s client=%s → timeout", idx, _redact_proxy(proxy), client)
+                    logging.warning("Proxy[%d] %s client=%s → timeout", idx, _redact_secrets(proxy), client)
                     with proxy_errors_lock:
-                        proxy_errors.append(f"proxy[{idx}] {_redact_proxy(proxy)} [{client}]: timeout")
+                        proxy_errors.append(f"proxy[{idx}] {_redact_secrets(proxy)} [{client}]: timeout")
                 except Exception as e:
-                    logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, _redact_proxy(proxy), client, e)
+                    _safe_e = _redact_secrets(e)
+                    logging.warning("Proxy[%d] %s client=%s → exception: %s", idx, _redact_secrets(proxy), client, _safe_e)
                     with proxy_errors_lock:
-                        proxy_errors.append(f"proxy[{idx}] [{client}]: {e}")
+                        proxy_errors.append(f"proxy[{idx}] [{client}]: {_safe_e}")
                 finally:
                     # Remove the template path AND any extension-rewritten file
                     # (tmp_path + ".mp4" etc.) plus stray intermediates.
@@ -689,7 +690,7 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return winner["client"]
         errors.append("pytubefix: no suitable stream")
     except Exception as e:
-        errors.append(f"pytubefix: {e}")
+        errors.append(f"pytubefix: {_redact_secrets(e)}")
 
     # RapidAPI TikTok fallback — handles IP-blocked TikTok URLs
     rapidapi_key = os.getenv("RAPIDAPI_TIKTOK_KEY", "")
@@ -720,8 +721,10 @@ def _download_youtube(url: str, out_path: str, quality: str = "source", progress
                 return winner["client"]
             errors.append("RapidAPI TikTok: downloaded file is empty")
         except Exception as e:
-            errors.append(f"RapidAPI TikTok: {e}")
+            errors.append(f"RapidAPI TikTok: {_redact_secrets(e)}")
 
+    # Every entry in `errors` is already scrubbed at its source (each append
+    # above redacts before storing), so no second pass is needed here.
     msg = "YouTube download failed after all strategies.\n" + "\n".join(errors)
     is_youtube_url = "youtube.com" in url.lower() or "youtu.be" in url.lower()
     if bot_blocked_seen["flag"] and is_youtube_url:
