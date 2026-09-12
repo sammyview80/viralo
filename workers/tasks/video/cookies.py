@@ -35,6 +35,7 @@ from workers.tasks.video._core import *
 __all__ = [
     '_ytdlp_proxies',
     '_ytdlp_proxies_with_refresh',
+    '_webshare_static_proxy',
     '_COOKIES_BUNDLED',
     '_COOKIES_LIVE',
     '_MIN_COOKIE_BYTES',
@@ -63,6 +64,17 @@ def _ytdlp_proxies() -> list[str]:
     """
     from workers.tasks import proxies as _proxies
     return _proxies.get_proxies()
+
+
+def _webshare_static_proxy() -> str | None:
+    """Return the configured static Webshare fallback proxy, or None if unset.
+
+    See workers/tasks/proxies.py:get_static_fallback_proxy — tried once the
+    rotating pool is exhausted/failing (e.g. out of balance), before falling
+    all the way back to direct/no-proxy.
+    """
+    from workers.tasks import proxies as _proxies
+    return _proxies.get_static_fallback_proxy()
 
 
 _GOOD_PROXY_REDIS_KEY = "ytdlp:last_good_proxy"
